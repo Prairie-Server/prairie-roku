@@ -1,0 +1,39 @@
+namespace tests
+    @suite("Prairie.Catalog")
+    class CatalogSuite extends rooibos.BaseTestSuite
+
+        @describe("buildCatalogPath")
+        @it("returns bare path without query")
+        sub _()
+            m.assertEqual(Prairie.Catalog.buildCatalogPath({}), "/api/v1/catalog")
+        end sub
+
+        @it("encodes query parameters")
+        sub _()
+            path = Prairie.Catalog.buildCatalogPath({
+                libraryId: 3,
+                q: "star wars",
+                offset: 10,
+                limit: 25,
+                sort: "title",
+                order: "asc"
+            })
+            m.assertTrue(path.instr("/api/v1/catalog?") = 0)
+            m.assertTrue(path.instr("library_id=3") >= 0)
+            m.assertTrue(path.instr("q=star%20wars") >= 0)
+            m.assertTrue(path.instr("offset=10") >= 0)
+            m.assertTrue(path.instr("limit=25") >= 0)
+        end sub
+
+        @describe("response helpers")
+        @it("normalizes items/seasons/episodes shapes")
+        sub _()
+            m.assertEqual(Prairie.Catalog.itemsFromResponse({ items: [1, 2] }).count(), 2)
+            m.assertEqual(Prairie.Catalog.seasonsFromResponse({ seasons: [1] }).count(), 1)
+            m.assertEqual(Prairie.Catalog.seasonsFromResponse([1, 2]).count(), 2)
+            m.assertEqual(Prairie.Catalog.episodesFromResponse({ episodes: [1] }).count(), 1)
+            m.assertEqual(Prairie.Catalog.itemDetailPath("id/1").instr("id%2F1") >= 0, true)
+        end sub
+
+    end class
+end namespace

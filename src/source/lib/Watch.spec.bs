@@ -1,0 +1,49 @@
+namespace tests
+    @suite("Prairie.Watch")
+    class WatchSuite extends rooibos.BaseTestSuite
+
+        @describe("selectPlaybackFileId")
+        @it("prefers explicit then last then first version")
+        sub _()
+            watch = {
+                versions: [
+                    { file_id: 10 },
+                    { file_id: 20 }
+                ],
+                user_data: {
+                    last_file_id: 20
+                }
+            }
+            m.assertEqual(Prairie.Watch.selectPlaybackFileId(watch, 10), 10)
+            m.assertEqual(Prairie.Watch.selectPlaybackFileId(watch, invalid), 20)
+            m.assertEqual(Prairie.Watch.selectPlaybackFileId({
+                versions: [{ file_id: 7 }],
+                user_data: {}
+            }, invalid), 7)
+            m.assertInvalid(Prairie.Watch.selectPlaybackFileId({ versions: [] }, invalid))
+        end sub
+
+        @describe("labels")
+        @it("formats audio and subtitle labels")
+        sub _()
+            m.assertEqual(Prairie.Watch.formatAudioLabel({
+                language: "eng",
+                title: "Director",
+                codec: "aac",
+                channels: 2
+            }, 0), "eng · Director · aac · 2ch")
+            m.assertEqual(Prairie.Watch.formatAudioLabel({}, 2), "Audio 3")
+            m.assertEqual(Prairie.Watch.formatSubtitleLabel({
+                language: "spa",
+                forced: true,
+                hearing_impaired: true
+            }), "spa (Forced, HI)")
+        end sub
+
+        @it("builds watch path")
+        sub _()
+            m.assertTrue(Prairie.Watch.watchPath("a b").instr("a%20b") >= 0)
+        end sub
+
+    end class
+end namespace

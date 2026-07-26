@@ -1,0 +1,83 @@
+namespace Prairie.Watch
+
+    function watchPath(contentId as string) as string
+        return "/api/v1/watch/" + contentId.encodeUriComponent()
+    end function
+
+    function selectPlaybackFileId(watch as object, preferredFileId = invalid as dynamic) as dynamic
+        versions = watch.versions
+        if versions = invalid or versions.count() = 0
+            return invalid
+        end if
+
+        if preferredFileId <> invalid and (preferredFileId as integer) > 0
+            for each version in versions
+                if version.file_id = preferredFileId
+                    return preferredFileId
+                end if
+            end for
+        end if
+
+        if watch.user_data <> invalid and watch.user_data.last_file_id <> invalid
+            lastId = watch.user_data.last_file_id as integer
+            if lastId > 0
+                for each version in versions
+                    if version.file_id = lastId
+                        return lastId
+                    end if
+                end for
+            end if
+        end if
+
+        return versions[0].file_id
+    end function
+
+    function formatAudioLabel(track as object, index as integer) as string
+        parts = []
+        if track.language <> invalid and (track.language as string).len() > 0
+            parts.push(track.language as string)
+        end if
+        title = invalid
+        if track.title <> invalid and (track.title as string).len() > 0
+            title = track.title as string
+        else if track.embedded_title <> invalid and (track.embedded_title as string).len() > 0
+            title = track.embedded_title as string
+        end if
+        if title <> invalid
+            parts.push(title)
+        end if
+        if track.codec <> invalid and (track.codec as string).len() > 0
+            parts.push(track.codec as string)
+        end if
+        if track.channels <> invalid
+            parts.push((track.channels as integer).toStr() + "ch")
+        end if
+        if parts.count() > 0
+            return parts.join(" · ")
+        end if
+        return "Audio " + (index + 1).toStr()
+    end function
+
+    function formatSubtitleLabel(track as object) as string
+        base = "Subtitle"
+        if track.label <> invalid and (track.label as string).len() > 0
+            base = track.label as string
+        else if track.title <> invalid and (track.title as string).len() > 0
+            base = track.title as string
+        else if track.language <> invalid and (track.language as string).len() > 0
+            base = track.language as string
+        end if
+        tags = []
+        if track.forced = true
+            tags.push("Forced")
+        end if
+        if track.hearing_impaired = true
+            tags.push("HI")
+        end if
+        if tags.count() = 0
+            return base
+        end if
+        return base + " (" + tags.join(", ") + ")"
+    end function
+
+end namespace

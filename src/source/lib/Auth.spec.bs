@@ -1,0 +1,42 @@
+namespace tests
+    @suite("Prairie.Auth")
+    class AuthSuite extends rooibos.BaseTestSuite
+
+        @describe("paths and bodies")
+        @it("builds login and verify-pin payloads")
+        sub _()
+            m.assertEqual(Prairie.Auth.loginPath(), "/api/v1/auth/login")
+            body = ParseJson(Prairie.Auth.buildLoginBody("ada", "secret"))
+            m.assertEqual(body.username, "ada")
+            m.assertEqual(body.password, "secret")
+            pinBody = ParseJson(Prairie.Auth.buildVerifyPinBody("1234"))
+            m.assertEqual(pinBody.pin, "1234")
+            m.assertTrue(Prairie.Auth.verifyPinPath("p 1").instr("p%201") >= 0)
+        end sub
+
+        @describe("profiles")
+        @it("picks primary profile then falls back to first")
+        sub _()
+            m.assertInvalid(Prairie.Auth.pickDefaultProfile([]))
+            primary = Prairie.Auth.pickDefaultProfile([
+                { id: "a", is_primary: false },
+                { id: "b", is_primary: true }
+            ])
+            m.assertEqual(primary.id, "b")
+            first = Prairie.Auth.pickDefaultProfile([
+                { id: "a", is_primary: false }
+            ])
+            m.assertEqual(first.id, "a")
+        end sub
+
+        @it("reads profiles array from response objects")
+        sub _()
+            list = Prairie.Auth.profilesFromResponse({
+                profiles: [{ id: "1" }]
+            })
+            m.assertEqual(list.count(), 1)
+            m.assertEqual(Prairie.Auth.profilesFromResponse(invalid).count(), 0)
+        end sub
+
+    end class
+end namespace

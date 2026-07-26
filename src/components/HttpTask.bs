@@ -1,0 +1,98 @@
+import "pkg:/source/lib/ApiClient.bs"
+
+sub init()
+    m.top.functionName = "runRequest"
+end sub
+
+sub runRequest()
+    request = m.top.request
+    if request = invalid or request.url = invalid
+        m.top.response = {
+            ok: false,
+            error: Prairie.Api.createError("Missing request URL", 0, "invalid_request")
+        }
+        return
+    end if
+
+    transfer = CreateObject("roUrlTransfer")
+    port = CreateObject("roMessagePort")
+    transfer.setMessagePort(port)
+    transfer.setUrl(request.url)
+    transfer.setCertificatesFile("common:/certs/ca-bundle.crt")
+    transfer.initClientCertificates()
+    transfer.retainBodyOnError(true)
+
+    method = "GET"
+    if request.method <> invalid
+        method = request.method as string
+    end if
+    transfer.setRequest(method)
+
+    if request.headers <> invalid
+        transfer.setHeaders(request.headers)
+    end if
+
+    timeoutMs = Prairie.Api.defaultTimeoutMs()
+    if request.timeoutMs <> invalid
+        timeoutMs = request.timeoutMs as integer
+    end if
+
+    sent = false
+    if method = "GET" or method = "DELETE"
+        sent = transfer.asyncGetToString()
+    else
+        body = ""
+        if request.body <> invalid
+            body = request.body as string
+        end if
+        sent = transfer.asyncPostFromString(body)
+    end if
+
+    if not sent
+        m.top.response = {
+            ok: false,
+            error: Prairie.Api.createError("Failed to start HTTP request", 0, "send_failed")
+        }
+        return
+    end if
+
+    msg = wait(timeoutMs, port)
+    if msg = invalid
+        transfer.asyncCancel()
+        m.top.response = {
+            ok: false,
+            error: Prairie.Api.createError("Request timed out", 408, "timeout")
+        }
+        return
+    end if
+
+    if type(msg) <> "roUrlEvent"
+        m.top.response = {
+            ok: false,
+            error: Prairie.Api.createError("Unexpected HTTP event", 0, "bad_event")
+        }
+        return
+    end if
+
+    status = msg.getResponseCode()
+    bodyText = msg.getString()
+    if status >= 200 and status < 300
+        data = invalid
+        if bodyText <> invalid and bodyText.len() > 0 and status <> 204
+            data = ParseJson(bodyText)
+        end if
+        m.top.response = {
+            ok: true,
+            status: status,
+            data: data,
+            bodyText: bodyText
+        }
+        return
+    end if
+
+    parsed = Prairie.Api.parseErrorBody(status, msg.getFailureReason(), bodyText)
+    m.top.response = {
+        ok: false,
+        error: Prairie.Api.createError(parsed.message, parsed.status, parsed.code, parsed.body)
+    }
+end sub

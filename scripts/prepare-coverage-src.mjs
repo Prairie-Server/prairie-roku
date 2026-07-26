@@ -121,14 +121,23 @@ function copyTree() {
     }
   }
 
-  // Ensure component scopes that import Theme also see the coverage helper.
-  const mainScenePath = path.join(OUT, "components", "MainScene.bs");
-  if (fs.existsSync(mainScenePath)) {
-    const mainScene = fs.readFileSync(mainScenePath, "utf8");
-    if (!mainScene.includes("CoverageDump.bs")) {
-      fs.writeFileSync(mainScenePath, `import "pkg:/source/lib/CoverageDump.bs"\n` + mainScene);
+  // Component scopes that pull instrumented lib files need the coverage helper.
+  function patchComponentScripts(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        patchComponentScripts(full);
+        continue;
+      }
+      if (!entry.name.endsWith(".bs")) continue;
+      const source = fs.readFileSync(full, "utf8");
+      if (!source.includes("CoverageDump.bs")) {
+        fs.writeFileSync(full, `import "pkg:/source/lib/CoverageDump.bs"\n` + source);
+      }
     }
   }
+  patchComponentScripts(path.join(OUT, "components"));
 
   // Rooibos_init creates RooibosScene; production MainScene would fight it under brs-cli.
   fs.writeFileSync(
