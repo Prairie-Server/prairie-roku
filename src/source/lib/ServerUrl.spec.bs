@@ -25,12 +25,19 @@ namespace tests
             m.assertFalse(Prairie.ServerUrl.validate("https://:8080").ok)
         end sub
 
-        @it("allows HTTP only for private or local hosts")
+        @it("allows HTTP only for true private or local hosts")
         sub _()
             m.assertTrue(Prairie.ServerUrl.validate("http://192.168.1.10:8096").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("http://10.0.0.5").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("http://172.16.0.2").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("http://127.0.0.1:8096").ok)
             m.assertTrue(Prairie.ServerUrl.validate("http://localhost:8096").ok)
             m.assertTrue(Prairie.ServerUrl.validate("http://prairie.local").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("http://[::1]:8096").ok)
             m.assertFalse(Prairie.ServerUrl.validate("http://prairie.example.com").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("http://10.attacker.example").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("http://192.168.attacker.example").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("http://172.16.attacker.example").ok)
         end sub
 
     end class

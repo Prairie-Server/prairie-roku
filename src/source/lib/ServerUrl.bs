@@ -2,36 +2,99 @@ import "pkg:/source/lib/UrlUtils.bs"
 
 namespace Prairie.ServerUrl
 
-    function isPrivateOrLocalHost(hostPart as string) as boolean
-        host = LCase(hostPart.trim())
+    function stripPort(hostPart as string) as string
+        host = hostPart.trim()
+        if host.len() = 0
+            return ""
+        end if
+        ' Preserve bracketed IPv6: [::1]:8096 → ::1
+        if host.left(1) = "["
+            close = host.instr("]")
+            if close > 0
+                return host.mid(1, close - 1)
+            end if
+            return host
+        end if
+        ' IPv4 / hostname:port — strip trailing :digits (not bare IPv6).
         colon = host.instr(":")
         if colon >= 0
-            host = host.left(colon)
+            maybePort = host.mid(colon + 1)
+            if maybePort.len() > 0 and isDigits(maybePort)
+                return host.left(colon)
+            end if
         end if
+        return host
+    end function
+
+    function isDigits(value as string) as boolean
+        if value.len() = 0
+            return false
+        end if
+        for i = 0 to value.len() - 1
+            ch = Asc(value.mid(i, 1))
+            if ch < 48 or ch > 57
+                return false
+            end if
+        end for
+        return true
+    end function
+
+    function isIpv4Literal(host as string) as boolean
+        parts = host.split(".")
+        if parts.count() <> 4
+            return false
+        end if
+        for each part in parts
+            if part.len() = 0 or part.len() > 3
+                return false
+            end if
+            for i = 0 to part.len() - 1
+                ch = Asc(part.mid(i, 1))
+                if ch < 48 or ch > 57
+                    return false
+                end if
+            end for
+            value = part.toInt()
+            if value < 0 or value > 255
+                return false
+            end if
+            ' Reject leading-zero tricks like 010.0.0.1 as non-canonical; still numeric.
+        end for
+        return true
+    end function
+
+    function isPrivateIpv4(host as string) as boolean
+        parts = host.split(".")
+        a = parts[0].toInt()
+        b = parts[1].toInt()
+        if a = 10
+            return true
+        end if
+        if a = 192 and b = 168
+            return true
+        end if
+        if a = 172 and b >= 16 and b <= 31
+            return true
+        end if
+        if a = 127
+            return true
+        end if
+        return false
+    end function
+
+    function isPrivateOrLocalHost(hostPart as string) as boolean
+        host = LCase(stripPort(hostPart))
         if host.len() = 0
             return false
         end if
-        if host = "localhost" or host = "127.0.0.1" or host = "[::1]" or host = "::1"
+        if host = "localhost" or host = "::1"
             return true
         end if
         if host.right(6) = ".local"
             return true
         end if
-        if host.left(3) = "10."
-            return true
-        end if
-        if host.left(8) = "192.168."
-            return true
-        end if
-        if host.left(4) = "172."
-            rest = host.mid(4)
-            dot = rest.instr(".")
-            if dot > 0
-                second = rest.left(dot).toInt()
-                if second >= 16 and second <= 31
-                    return true
-                end if
-            end if
+        if isIpv4Literal(host)
+            return isPrivateIpv4(host)
         end if
         return false
     end function
@@ -44,12 +107,8 @@ namespace Prairie.ServerUrl
         if host.left(1) = "?" or host.left(1) = "#" or host.left(1) = ":"
             return false
         end if
-        ' Reject bare ports / empty host before path-like junk.
-        if host.instr(".") < 0 and host.instr(":") < 0 and LCase(host) <> "localhost"
-            ' Allow single-label hosts like "prairie" on LAN, but not "?"-only leftovers.
-            if host.instr("/") >= 0
-                return false
-            end if
+        if host.left(1) = "[" and host.instr("]") < 0
+            return false
         end if
         return true
     end function
