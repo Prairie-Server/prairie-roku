@@ -16,11 +16,19 @@ namespace Prairie.Session
             return invalid
         end if
 
+        serverUrl = Prairie.Url.normalizeServerUrl(parsed.serverUrl as string)
+        accessToken = (parsed.accessToken as string).trim()
+        username = (parsed.username as string).trim()
+        profileId = (parsed.profileId as string).trim()
+        if serverUrl.len() = 0 or accessToken.len() = 0 or username.len() = 0 or profileId.len() = 0
+            return invalid
+        end if
+
         session = {
-            serverUrl: Prairie.Url.normalizeServerUrl(parsed.serverUrl as string),
-            accessToken: parsed.accessToken as string,
-            username: parsed.username as string,
-            profileId: parsed.profileId as string
+            serverUrl: serverUrl,
+            accessToken: accessToken,
+            username: username,
+            profileId: profileId
         }
         if parsed.profileName <> invalid
             session.profileName = parsed.profileName as string

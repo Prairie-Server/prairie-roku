@@ -36,7 +36,10 @@ namespace tests
             })
             m.assertEqual(list.count(), 1)
             m.assertEqual(Prairie.Auth.profilesFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.Auth.profilesFromResponse([]).count(), 0)
+            m.assertEqual(Prairie.Auth.profilesFromResponse({ profiles: "nope" }).count(), 0)
         end sub
 
     end class
 end namespace
+

@@ -25,6 +25,19 @@ namespace tests
             m.assertTrue(path.instr("limit=25") >= 0)
         end sub
 
+        @describe("detail paths")
+        @it("encodes seasons and episodes path segments")
+        sub _()
+            seasons = Prairie.Catalog.seasonsPath("show/1")
+            m.assertTrue(seasons.instr("/api/v1/catalog/series/") = 0)
+            m.assertTrue(seasons.instr("show%2F1") >= 0)
+            m.assertTrue(seasons.right(8) = "/seasons")
+            episodes = Prairie.Catalog.episodesPath("show/1", 2)
+            m.assertTrue(episodes.instr("show%2F1") >= 0)
+            m.assertTrue(episodes.instr("/seasons/2/episodes") >= 0)
+            m.assertTrue(Prairie.Catalog.itemDetailPath("id/1").instr("id%2F1") >= 0)
+        end sub
+
         @describe("response helpers")
         @it("normalizes items/seasons/episodes shapes")
         sub _()
@@ -32,8 +45,9 @@ namespace tests
             m.assertEqual(Prairie.Catalog.seasonsFromResponse({ seasons: [1] }).count(), 1)
             m.assertEqual(Prairie.Catalog.seasonsFromResponse([1, 2]).count(), 2)
             m.assertEqual(Prairie.Catalog.episodesFromResponse({ episodes: [1] }).count(), 1)
-            m.assertEqual(Prairie.Catalog.itemDetailPath("id/1").instr("id%2F1") >= 0, true)
+            m.assertEqual(Prairie.Catalog.itemsFromResponse("nope").count(), 0)
         end sub
 
     end class
 end namespace
+

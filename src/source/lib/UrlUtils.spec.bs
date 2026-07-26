@@ -33,7 +33,9 @@ namespace tests
         @it("matches same host and scheme")
         sub _()
             m.assertTrue(Prairie.Url.isSameServerOrigin("https://prairie.example.com", "https://prairie.example.com/stream.m3u8"))
+            m.assertTrue(Prairie.Url.isSameServerOrigin("HTTPS://Prairie.Example.com", "https://prairie.example.com/stream.m3u8"))
         end sub
+
 
         @it("rejects cross-origin absolute URLs")
         sub _()

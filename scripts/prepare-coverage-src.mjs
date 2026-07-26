@@ -55,6 +55,60 @@ function isExecutableStatement(trimmed, aaDepth, inFunction) {
   );
 }
 
+/** Strip BrightScript comments while preserving apostrophes inside "strings". */
+function codeWithoutComments(line) {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inString) {
+      out += ch;
+      if (ch === '"') {
+        // BrightScript escapes quotes by doubling them.
+        if (line[i + 1] === '"') {
+          out += '"';
+          i += 1;
+        } else {
+          inString = false;
+        }
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === "'") break;
+    if ((ch === "r" || ch === "R") && /^\s*rem\b/i.test(line.slice(i))) break;
+    out += ch;
+  }
+  return out;
+}
+
+/** Count `{`/`[` nesting outside of string literals. */
+function adjustAaDepth(code, depth) {
+  let next = depth;
+  let inString = false;
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    if (inString) {
+      if (ch === '"') {
+        if (code[i + 1] === '"') i += 1;
+        else inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") next += 1;
+    else if (ch === "}" || ch === "]") next = Math.max(0, next - 1);
+  }
+  return next;
+}
+
 function instrumentBs(source, relPosix) {
   const lines = source.split(/\r?\n/);
   const out = [];
@@ -68,7 +122,7 @@ function instrumentBs(source, relPosix) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const code = line.split("'")[0];
+    const code = codeWithoutComments(line);
     const trimmed = code.trim();
     const originalLine = i + 1;
     const depthAtStart = aaDepth;
@@ -88,10 +142,7 @@ function instrumentBs(source, relPosix) {
       inFunction = false;
     }
 
-    for (const ch of code) {
-      if (ch === "{" || ch === "[") aaDepth += 1;
-      else if (ch === "}" || ch === "]") aaDepth = Math.max(0, aaDepth - 1);
-    }
+    aaDepth = adjustAaDepth(code, aaDepth);
   }
 
   return { source: out.join("\n") + "\n", executable };

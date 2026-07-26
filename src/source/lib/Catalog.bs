@@ -51,40 +51,34 @@ namespace Prairie.Catalog
         return "/api/v1/catalog/series/" + seriesId.encodeUriComponent() + "/seasons/" + seasonNumber.toStr() + "/episodes"
     end function
 
-    function itemsFromResponse(data as dynamic) as object
+    function arrayFromResponse(data as dynamic, key as string) as object
         if data = invalid
             return []
         end if
-        if data.items <> invalid
-            return data.items
+        if GetInterface(data, "ifArray") <> invalid
+            return data
+        end if
+        if type(data) <> "roAssociativeArray"
+            return []
+        end if
+        value = data[key]
+        if type(value) = "roArray"
+            return value
         end if
         return []
+    end function
+
+    function itemsFromResponse(data as dynamic) as object
+        return arrayFromResponse(data, "items")
     end function
 
     function seasonsFromResponse(data as dynamic) as object
-        if data = invalid
-            return []
-        end if
-        if GetInterface(data, "ifArray") <> invalid
-            return data
-        end if
-        if data.seasons <> invalid
-            return data.seasons
-        end if
-        return []
+        return arrayFromResponse(data, "seasons")
     end function
 
     function episodesFromResponse(data as dynamic) as object
-        if data = invalid
-            return []
-        end if
-        if GetInterface(data, "ifArray") <> invalid
-            return data
-        end if
-        if data.episodes <> invalid
-            return data.episodes
-        end if
-        return []
+        return arrayFromResponse(data, "episodes")
     end function
 
 end namespace
+

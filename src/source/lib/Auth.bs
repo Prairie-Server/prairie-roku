@@ -41,7 +41,10 @@ namespace Prairie.Auth
         if data = invalid
             return []
         end if
-        if data.profiles <> invalid
+        if type(data) <> "roAssociativeArray"
+            return []
+        end if
+        if type(data.profiles) = "roArray"
             return data.profiles
         end if
         return []
