@@ -1,0 +1,51 @@
+namespace tests
+    @suite("Prairie.LiveTv")
+    class LiveTvSuite extends rooibos.BaseTestSuite
+
+        @describe("paths and response helpers")
+        @it("filters enabled channels and builds paths")
+        sub _()
+            m.assertEqual(Prairie.LiveTv.channelsPath(), "/api/v1/livetv/channels")
+            m.assertTrue(Prairie.LiveTv.guidePath(["a", "b"]).instr("channels=a%2Cb") >= 0)
+            m.assertTrue(Prairie.LiveTv.channelSessionPath("ch/1").instr("ch%2F1") >= 0)
+            channels = Prairie.LiveTv.channelsFromResponse({
+                channels: [
+                    { id: "1", enabled: true, name: "One" },
+                    { id: "2", enabled: false, name: "Two" }
+                ]
+            })
+            m.assertEqual(channels.count(), 1)
+            m.assertEqual(Prairie.LiveTv.programsFromResponse({ programs: [{ id: "p" }] }).count(), 1)
+        end sub
+
+        @describe("labels and stream resolution")
+        @it("labels channels and rejects cross-origin streams")
+        sub _()
+            m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ name: " PBS " }), "PBS")
+            m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ callsign: "WXYZ", number: "7.1" }), "WXYZ")
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl({ hls_url: "/live.m3u8" }), "/live.m3u8")
+            ok = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "/live.m3u8", "tok")
+            m.assertTrue(ok.ok)
+            m.assertTrue(ok.url.instr("token=tok") >= 0)
+            bad = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "https://tuner.example/x", "tok")
+            m.assertFalse(bad.ok)
+        end sub
+
+        @describe("guide helpers")
+        @it("picks current and next programs from a guide window")
+        sub _()
+            programs = [
+                { channel_id: "c1", start: "2020-01-01T00:00:00Z", stop: "2020-01-01T01:00:00Z", title: "Past" },
+                { channel_id: "c1", start: "2020-01-01T01:00:00Z", stop: "2020-01-01T02:00:00Z", title: "Now" },
+                { channel_id: "c1", start: "2020-01-01T02:00:00Z", stop: "2020-01-01T03:00:00Z", title: "Next" }
+            ]
+            ' 2020-01-01T01:30:00Z
+            nowSec = Prairie.LiveTv.isoToSeconds("2020-01-01T01:30:00Z")
+            current = Prairie.LiveTv.currentProgramForChannel(programs, "c1", nowSec)
+            nextProgram = Prairie.LiveTv.nextProgramForChannel(programs, "c1", nowSec)
+            m.assertEqual(current.title, "Now")
+            m.assertEqual(nextProgram.title, "Next")
+        end sub
+
+    end class
+end namespace

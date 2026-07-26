@@ -1,0 +1,161 @@
+import "pkg:/source/lib/UrlUtils.bs"
+
+namespace Prairie.LiveTv
+
+    function channelsPath() as string
+        return "/api/v1/livetv/channels"
+    end function
+
+    function guidePath(channelIds as object) as string
+        joined = channelIds.join(",")
+        return "/api/v1/livetv/guide?channels=" + joined.encodeUriComponent()
+    end function
+
+    function channelSessionPath(channelId as string) as string
+        return "/api/v1/livetv/channels/" + channelId.encodeUriComponent() + "/session"
+    end function
+
+    function liveSessionPath(sessionId as string) as string
+        return "/api/v1/livetv/sessions/" + sessionId.encodeUriComponent()
+    end function
+
+    function channelsFromResponse(data as dynamic) as object
+        channels = []
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return channels
+        end if
+        if type(data.channels) <> "roArray"
+            return channels
+        end if
+        for each channel in data.channels
+            if type(channel) = "roAssociativeArray" and channel.enabled <> false
+                channels.push(channel)
+            end if
+        end for
+        return channels
+    end function
+
+    function programsFromResponse(data as dynamic) as object
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return []
+        end if
+        if type(data.programs) = "roArray"
+            return data.programs
+        end if
+        return []
+    end function
+
+    function channelDisplayLabel(channel as object) as string
+        if channel.name <> invalid and (channel.name as string).trim().len() > 0
+            return (channel.name as string).trim()
+        end if
+        if channel.callsign <> invalid and (channel.callsign as string).trim().len() > 0
+            return (channel.callsign as string).trim()
+        end if
+        number = ""
+        if channel.number_override <> invalid and (channel.number_override as string).len() > 0
+            number = channel.number_override as string
+        else if channel.number <> invalid
+            number = channel.number as string
+        end if
+        return "Channel " + number
+    end function
+
+    function playableLiveUrl(start as object) as dynamic
+        if start = invalid
+            return invalid
+        end if
+        url = ""
+        if start.hls_url <> invalid and (start.hls_url as string).trim().len() > 0
+            url = (start.hls_url as string).trim()
+        else if start.stream_url <> invalid and (start.stream_url as string).trim().len() > 0
+            url = (start.stream_url as string).trim()
+        end if
+        if url.len() = 0
+            return invalid
+        end if
+        return url
+    end function
+
+    function resolveLivePlaybackUrl(serverUrl as string, streamPath as string, token as dynamic) as object
+        trimmed = streamPath.trim()
+        if trimmed.len() = 0
+            return {
+                ok: false,
+                message: "Live TV session returned no stream URL"
+            }
+        end if
+        isAbsolute = trimmed.left(7) = "http://" or trimmed.left(8) = "https://"
+        if isAbsolute and not Prairie.Url.isSameServerOrigin(serverUrl, trimmed)
+            return {
+                ok: false,
+                message: "Live TV requires a server-proxied stream"
+            }
+        end if
+        return {
+            ok: true,
+            url: Prairie.Url.buildStreamUrl(serverUrl, trimmed, token)
+        }
+    end function
+
+    function isoToSeconds(iso as string) as integer
+        if iso.len() = 0
+            return -1
+        end if
+        dt = CreateObject("roDateTime")
+        dt.FromISO8601String(iso)
+        return dt.AsSeconds()
+    end function
+
+    function nowSeconds() as integer
+        dt = CreateObject("roDateTime")
+        dt.Mark()
+        return dt.AsSeconds()
+    end function
+
+    function programsForChannel(programs as object, channelId as string) as object
+        matched = []
+        if programs = invalid
+            return matched
+        end if
+        for each program in programs
+            if type(program) = "roAssociativeArray" and program.channel_id <> invalid
+                if (program.channel_id as string) = channelId
+                    matched.push(program)
+                end if
+            end if
+        end for
+        return matched
+    end function
+
+    function currentProgramForChannel(programs as object, channelId as string, nowSec = -1 as integer) as dynamic
+        if nowSec < 0
+            nowSec = nowSeconds()
+        end if
+        for each program in programsForChannel(programs, channelId)
+            startSec = isoToSeconds(program.start)
+            stopSec = isoToSeconds(program.stop)
+            if startSec >= 0 and stopSec >= 0 and startSec <= nowSec and nowSec < stopSec
+                return program
+            end if
+        end for
+        return invalid
+    end function
+
+    function nextProgramForChannel(programs as object, channelId as string, nowSec = -1 as integer) as dynamic
+        if nowSec < 0
+            nowSec = nowSeconds()
+        end if
+        soonest = invalid
+        soonestStart = 2147483647
+        for each program in programsForChannel(programs, channelId)
+            startSec = isoToSeconds(program.start)
+            if startSec > nowSec and startSec < soonestStart
+                soonest = program
+                soonestStart = startSec
+            end if
+        end for
+        return soonest
+    end function
+
+end namespace

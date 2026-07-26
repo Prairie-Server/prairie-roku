@@ -1,0 +1,157 @@
+import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/LiveTv.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.title = m.top.findNode("title")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.nowLabel = m.top.findNode("nowLabel")
+    m.nextLabel = m.top.findNode("nextLabel")
+    m.channelList = m.top.findNode("channelList")
+
+    m.eyebrow.color = colors.amber
+    m.title.color = colors.ink
+    m.statusLabel.color = colors.muted
+    m.errorLabel.color = colors.danger
+    m.nowLabel.color = colors.ink
+    m.nextLabel.color = colors.muted
+
+    m.top.observeField("channels", "onChannels")
+    m.top.observeField("programs", "onPrograms")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("statusText", "onStatusText")
+    m.top.observeField("busy", "onBusy")
+    m.channelList.observeField("rowItemFocused", "onChannelFocused")
+    m.channelList.observeField("rowItemSelected", "onChannelSelected")
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onStatusText()
+    m.statusLabel.text = m.top.statusText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.statusLabel.text = "Loading channels…"
+    end if
+end sub
+
+sub onChannels()
+    channels = m.top.channels
+    content = CreateObject("roSGNode", "ContentNode")
+    columns = 4
+    row = invalid
+    index = 0
+    if channels <> invalid
+        for each channel in channels
+            if index mod columns = 0
+                row = content.createChild("ContentNode")
+            end if
+            node = row.createChild("ContentNode")
+            node.title = Prairie.LiveTv.channelDisplayLabel(channel)
+            number = ""
+            if channel.number_override <> invalid
+                number = channel.number_override as string
+            else if channel.number <> invalid
+                number = channel.number as string
+            end if
+            node.description = number
+            if channel.logo_url <> invalid
+                node.hdPosterUrl = channel.logo_url as string
+            end if
+            node.addFields({ channel: channel })
+            index = index + 1
+        end for
+    end if
+    m.channelList.content = content
+    if channels <> invalid and channels.count() > 0
+        updateGuideLabels(channels[0])
+    else
+        m.nowLabel.text = ""
+        m.nextLabel.text = ""
+    end if
+end sub
+
+sub onPrograms()
+    channels = m.top.channels
+    if channels <> invalid and channels.count() > 0
+        updateGuideLabels(channels[0])
+    end if
+end sub
+
+sub updateGuideLabels(channel as object)
+    if channel = invalid or channel.id = invalid
+        m.nowLabel.text = ""
+        m.nextLabel.text = ""
+        return
+    end if
+    channelId = channel.id as string
+    current = Prairie.LiveTv.currentProgramForChannel(m.top.programs, channelId)
+    nextProgram = Prairie.LiveTv.nextProgramForChannel(m.top.programs, channelId)
+    if current <> invalid
+        m.nowLabel.text = "Now · " + (current.title as string)
+    else
+        m.nowLabel.text = "Now · No guide data"
+    end if
+    if nextProgram <> invalid
+        m.nextLabel.text = "Next · " + (nextProgram.title as string)
+    else
+        m.nextLabel.text = ""
+    end if
+end sub
+
+sub focusDefault()
+    m.channelList.setFocus(true)
+end sub
+
+sub onChannelFocused()
+    selection = m.channelList.rowItemFocused
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.channelList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.channel = invalid
+        return
+    end if
+    updateGuideLabels(item.channel)
+end sub
+
+sub onChannelSelected()
+    selection = m.channelList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.channelList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.channel = invalid
+        return
+    end if
+    m.top.selectedChannel = item.channel
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    else if key = "options"
+        m.top.openSettings = true
+        return true
+    end if
+    return false
+end function

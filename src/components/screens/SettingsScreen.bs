@@ -1,0 +1,133 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.title = m.top.findNode("title")
+    m.lede = m.top.findNode("lede")
+    m.methodLabel = m.top.findNode("methodLabel")
+    m.subLabel = m.top.findNode("subLabel")
+    m.autoBg = m.top.findNode("autoBg")
+    m.directBg = m.top.findNode("directBg")
+    m.transcodeBg = m.top.findNode("transcodeBg")
+    m.autoLabel = m.top.findNode("autoLabel")
+    m.directLabel = m.top.findNode("directLabel")
+    m.transcodeLabel = m.top.findNode("transcodeLabel")
+    m.subtitleInput = m.top.findNode("subtitleInput")
+    m.saveBg = m.top.findNode("saveBg")
+    m.saveLabel = m.top.findNode("saveLabel")
+    m.savedLabel = m.top.findNode("savedLabel")
+
+    m.colors = colors
+    m.eyebrow.color = colors.amber
+    m.title.color = colors.ink
+    m.lede.color = colors.muted
+    m.methodLabel.color = colors.amber
+    m.subLabel.color = colors.amber
+    m.saveBg.color = colors.amber
+    m.saveLabel.color = colors.bg
+    m.savedLabel.color = colors.muted
+
+    m.top.observeField("forceDirectPlay", "refreshMethodChrome")
+    m.top.observeField("forceTranscode", "refreshMethodChrome")
+    m.top.observeField("preferredSubtitleLanguage", "onPreferredLang")
+    refreshMethodChrome()
+end sub
+
+sub onPreferredLang()
+    m.subtitleInput.text = m.top.preferredSubtitleLanguage
+end sub
+
+sub paintOption(bg as object, label as object, active as boolean)
+    if active
+        bg.color = m.colors.amber
+        label.color = m.colors.bg
+    else
+        bg.color = m.colors.bgSoft
+        label.color = m.colors.ink
+    end if
+end sub
+
+sub refreshMethodChrome()
+    direct = m.top.forceDirectPlay
+    transcode = m.top.forceTranscode
+    paintOption(m.autoBg, m.autoLabel, not direct and not transcode)
+    paintOption(m.directBg, m.directLabel, direct)
+    paintOption(m.transcodeBg, m.transcodeLabel, transcode)
+end sub
+
+sub focusDefault()
+    m.autoBg.setFocus(true)
+end sub
+
+sub saveSettings()
+    m.top.saveRequested = {
+        forceDirectPlay: m.top.forceDirectPlay,
+        forceTranscode: m.top.forceTranscode,
+        preferredSubtitleLanguage: m.subtitleInput.text.trim()
+    }
+    m.savedLabel.text = "Saved"
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    end if
+    if key = "OK" or key = "play"
+        if m.autoBg.isInFocusChain()
+            m.top.forceDirectPlay = false
+            m.top.forceTranscode = false
+            return true
+        else if m.directBg.isInFocusChain()
+            m.top.forceDirectPlay = true
+            m.top.forceTranscode = false
+            return true
+        else if m.transcodeBg.isInFocusChain()
+            m.top.forceDirectPlay = false
+            m.top.forceTranscode = true
+            return true
+        else if m.saveBg.isInFocusChain()
+            saveSettings()
+            return true
+        end if
+    end if
+    if key = "right"
+        if m.autoBg.isInFocusChain()
+            m.directBg.setFocus(true)
+            return true
+        else if m.directBg.isInFocusChain()
+            m.transcodeBg.setFocus(true)
+            return true
+        end if
+    else if key = "left"
+        if m.transcodeBg.isInFocusChain()
+            m.directBg.setFocus(true)
+            return true
+        else if m.directBg.isInFocusChain()
+            m.autoBg.setFocus(true)
+            return true
+        end if
+    else if key = "down"
+        if m.autoBg.isInFocusChain() or m.directBg.isInFocusChain() or m.transcodeBg.isInFocusChain()
+            m.subtitleInput.setFocus(true)
+            return true
+        else if m.subtitleInput.isInFocusChain()
+            m.saveBg.setFocus(true)
+            return true
+        end if
+    else if key = "up"
+        if m.saveBg.isInFocusChain()
+            m.subtitleInput.setFocus(true)
+            return true
+        else if m.subtitleInput.isInFocusChain()
+            m.autoBg.setFocus(true)
+            return true
+        end if
+    end if
+    return false
+end function

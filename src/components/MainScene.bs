@@ -10,6 +10,8 @@ import "pkg:/source/lib/Catalog.bs"
 import "pkg:/source/lib/Collections.bs"
 import "pkg:/source/lib/Watch.bs"
 import "pkg:/source/lib/Playback.bs"
+import "pkg:/source/lib/LiveTv.bs"
+import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
 
 sub init()
@@ -43,6 +45,11 @@ sub init()
     m.playbackSession = invalid
     m.audioTrackIndex = 0
     m.exitingPlayer = false
+    m.liveChannels = []
+    m.livePrograms = []
+    m.liveSessionId = ""
+    m.liveChannel = invalid
+    m.settingsBackRoute = "home"
 
     if m.session <> invalid
         showHome()
@@ -104,10 +111,42 @@ sub showHome()
     screen.observeField("selectedContentId", "onHomeItemSelected")
     screen.observeField("openLibraries", "onOpenLibraries")
     screen.observeField("openSearch", "onOpenSearch")
+    screen.observeField("openLiveTv", "onOpenLiveTv")
     screen.observeField("signOutRequested", "onSignOut")
     m.screenHost.appendChild(screen)
     m.screen = screen
     loadHomeSections()
+end sub
+
+sub showLiveTv()
+    clearScreen()
+    m.route = "livetv"
+    m.liveChannels = []
+    m.livePrograms = []
+    screen = CreateObject("roSGNode", "LiveTvScreen")
+    screen.busy = true
+    screen.observeField("selectedChannel", "onLiveChannelChosen")
+    screen.observeField("openSettings", "onOpenSettings")
+    screen.observeField("backRequested", "onBrowseBackHome")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadLiveTvChannels()
+end sub
+
+sub showSettings()
+    m.settingsBackRoute = m.route
+    clearScreen()
+    m.route = "settings"
+    settings = Prairie.PlaybackSettings.load(m.store)
+    screen = CreateObject("roSGNode", "SettingsScreen")
+    screen.forceDirectPlay = settings.forceDirectPlay
+    screen.forceTranscode = settings.forceTranscode
+    screen.preferredSubtitleLanguage = settings.preferredSubtitleLanguage
+    screen.observeField("saveRequested", "onSettingsSave")
+    screen.observeField("backRequested", "onSettingsBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
 end sub
 
 sub showLibraries()
@@ -540,8 +579,83 @@ sub onOpenSearch()
     showSearch()
 end sub
 
+sub onOpenLiveTv()
+    showLiveTv()
+end sub
+
+sub onOpenSettings()
+    showSettings()
+end sub
+
 sub onOpenCollections()
     showCollections()
+end sub
+
+sub onSettingsSave()
+    payload = m.screen.saveRequested
+    if payload = invalid
+        return
+    end if
+    Prairie.PlaybackSettings.save(payload, m.store)
+end sub
+
+sub onSettingsBack()
+    back = m.settingsBackRoute
+    if back = "livetv"
+        showLiveTv()
+    else
+        showHome()
+    end if
+end sub
+
+sub loadLiveTvChannels()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "liveChannels"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.channelsPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub loadLiveTvGuide(channels as object)
+    if m.session = invalid or channels.count() = 0
+        return
+    end if
+    ids = []
+    for each channel in channels
+        if channel.id <> invalid
+            ids.push(channel.id as string)
+        end if
+    end for
+    if ids.count() = 0
+        return
+    end if
+    m.pending = "liveGuide"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.guidePath(ids), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub onLiveChannelChosen()
+    channel = m.screen.selectedChannel
+    if channel = invalid or m.session = invalid
+        return
+    end if
+    m.liveChannel = channel
+    m.pending = "liveSession"
+    m.screen.busy = true
+    path = Prairie.LiveTv.channelSessionPath(channel.id as string)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "POST", "{}")
+    m.httpTask.control = "RUN"
+end sub
+
+sub releaseLiveSessionAsync()
+    if m.session = invalid or m.liveSessionId.len() = 0
+        return
+    end if
+    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.liveSessionPath(m.liveSessionId), "DELETE")
+    m.progressTask.request = req
+    m.progressTask.control = "RUN"
+    m.liveSessionId = ""
 end sub
 
 sub onBrowseBackHome()
@@ -630,6 +744,12 @@ sub onPlayerExit()
     m.exitingPlayer = true
     if m.screen <> invalid
         m.screen.callFunc("stopPlayback")
+    end if
+    if m.liveSessionId.len() > 0
+        releaseLiveSessionAsync()
+        m.playbackSession = invalid
+        showLiveTv()
+        return
     end if
     reportPlayerProgress(true)
     stopPlaybackSessionAsync()
@@ -761,10 +881,27 @@ sub onHttpResponse()
         if response.error <> invalid and response.error.message <> invalid
             message = response.error.message
         end if
+        status = 0
+        if response.error <> invalid and response.error.status <> invalid
+            status = response.error.status as integer
+        end if
         ' Personal collections are optional on some servers.
         if pending = "personalCollections"
             m.personalCollectionCards = []
             finishCollectionsScreen()
+            return
+        end if
+        ' Live TV may be absent on older Prairie servers.
+        if pending = "liveChannels" and status = 404
+            m.liveChannels = []
+            m.screen.channels = []
+            m.screen.statusText = "Live TV is not enabled on this server"
+            m.screen.callFunc("focusDefault")
+            return
+        end if
+        if pending = "liveGuide"
+            m.livePrograms = []
+            m.screen.programs = []
             return
         end if
         if chainingCollections
@@ -941,5 +1078,51 @@ sub onHttpResponse()
         m.screen.streamFormat = Prairie.Playback.detectStreamFormat(m.playbackSession)
         m.screen.streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, m.playbackSession, m.session.accessToken)
         m.screen.errorText = "Audio track " + (m.audioTrackIndex + 1).toStr()
+    else if pending = "liveChannels"
+        channels = Prairie.LiveTv.channelsFromResponse(response.data)
+        m.liveChannels = channels
+        m.screen.channels = channels
+        if channels.count() = 0
+            m.screen.statusText = "No enabled channels on this server"
+            m.screen.callFunc("focusDefault")
+        else
+            m.screen.statusText = channels.count().toStr() + " channels"
+            m.screen.callFunc("focusDefault")
+            loadLiveTvGuide(channels)
+        end if
+    else if pending = "liveGuide"
+        programs = Prairie.LiveTv.programsFromResponse(response.data)
+        m.livePrograms = programs
+        m.screen.programs = programs
+    else if pending = "liveSession"
+        start = response.data
+        streamPath = Prairie.LiveTv.playableLiveUrl(start)
+        if streamPath = invalid
+            m.screen.errorText = "Live TV session returned no stream URL"
+            return
+        end if
+        resolved = Prairie.LiveTv.resolveLivePlaybackUrl(m.session.serverUrl, streamPath as string, m.session.accessToken)
+        if resolved.ok <> true
+            m.screen.errorText = resolved.message
+            return
+        end if
+        if start.session_id <> invalid
+            m.liveSessionId = start.session_id as string
+        end if
+        title = Prairie.LiveTv.channelDisplayLabel(m.liveChannel)
+        clearScreen()
+        m.route = "player"
+        m.exitingPlayer = false
+        m.playbackSession = invalid
+        screen = CreateObject("roSGNode", "PlayerScreen")
+        screen.titleText = title
+        screen.streamFormat = "hls"
+        screen.startPosition = 0
+        screen.observeField("exitRequested", "onPlayerExit")
+        m.screenHost.appendChild(screen)
+        m.screen = screen
+        screen.busy = false
+        screen.streamUrl = resolved.url
+        screen.callFunc("focusDefault")
     end if
 end sub
