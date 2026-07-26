@@ -1,0 +1,14 @@
+{
+  "rootDir": "src",
+  "files": ["**/*", "!**/*.spec.bs", "!**/__snapshots__/**"],
+  "outDir": "dist",
+  "outFile": "out/prairie-roku.zip",
+  "retainStagingDir": true,
+  "createPackage": false,
+  "sourceMap": true,
+  "autoImportComponentScript": true,
+  "diagnosticLevel": "error",
+  "strict": true,
+  "plugins": ["@rokucommunity/bslint"],
+  "lintConfig": "bslint.json"
+}

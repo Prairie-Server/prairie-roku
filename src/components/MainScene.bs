@@ -1,0 +1,22 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    m.top.backgroundURI = ""
+    m.top.backgroundColor = Prairie.Theme.colors().bg
+
+    brand = m.top.findNode("brandLabel")
+    if brand <> invalid
+        brand.text = Prairie.Theme.brandName()
+        brand.color = Prairie.Theme.colors().ink
+    end if
+
+    lede = m.top.findNode("ledeLabel")
+    if lede <> invalid
+        lede.color = Prairie.Theme.colors().muted
+    end if
+
+    backdrop = m.top.findNode("backdrop")
+    if backdrop <> invalid
+        backdrop.color = Prairie.Theme.colors().bg
+    end if
+end sub

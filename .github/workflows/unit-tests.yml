@@ -1,0 +1,62 @@
+name: Unit Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roku-unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint (bslint)
+        run: npm run lint
+
+      - name: Typecheck (BrighterScript, diagnosticLevel=error)
+        run: npm run typecheck
+
+      - name: Unit tests with 75% coverage gate
+        run: |
+          # Rooibos headless via brs-cli. Coverage gate: 75% lines on
+          # source/lib/** (see scripts/check-coverage.mjs).
+          npm run test:coverage
+
+      - name: Production package
+        run: |
+          npm run package
+          test -f out/prairie-roku.zip
+
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: roku-coverage
+          path: coverage
+          if-no-files-found: ignore

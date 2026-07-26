@@ -1,0 +1,11 @@
+dist
+out
+test-build
+coverage
+.coverage-src
+node_modules
+package-lock.json
+*.png
+*.jpg
+*.zip
+LICENSE

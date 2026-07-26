@@ -1,0 +1,24 @@
+namespace tests
+    @suite("Prairie.Theme")
+    class ThemeSuite extends rooibos.BaseTestSuite
+
+        @describe("colors")
+        @it("exposes the Prairie Dusk tokens")
+        sub _()
+            c = Prairie.Theme.colors()
+            m.assertEqual(c.bg, "0x141820FF")
+            m.assertEqual(c.amber, "0xE0A84AFF")
+            m.assertEqual(c.ink, "0xF3EFE6FF")
+            m.assertEqual(c.danger, "0xE07070FF")
+        end sub
+
+        @describe("brand and device headers")
+        @it("returns Prairie brand and roku platform headers")
+        sub _()
+            m.assertEqual(Prairie.Theme.brandName(), "Prairie")
+            m.assertEqual(Prairie.Theme.devicePlatformHeader(), "roku")
+            m.assertEqual(Prairie.Theme.deviceNameHeader(), "Prairie Roku")
+        end sub
+
+    end class
+end namespace

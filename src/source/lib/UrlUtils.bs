@@ -1,0 +1,95 @@
+namespace Prairie.Url
+
+    ' Trim trailing slashes from a Prairie server base URL.
+    function normalizeServerUrl(url as string) as string
+        trimmed = url.trim()
+        while trimmed.len() > 0 and trimmed.right(1) = "/"
+            trimmed = trimmed.left(trimmed.len() - 1)
+        end while
+        return trimmed
+    end function
+
+    ' Join a server base URL with an absolute or relative API path.
+    function joinUrl(base as string, path as string) as string
+        normalizedBase = normalizeServerUrl(base)
+        normalizedPath = path
+        if normalizedPath.len() = 0
+            return normalizedBase
+        end if
+        if normalizedPath.left(1) <> "/"
+            normalizedPath = "/" + normalizedPath
+        end if
+        return normalizedBase + normalizedPath
+    end function
+
+    ' True when candidate resolves to the same origin as serverUrl.
+    function isSameServerOrigin(serverUrl as string, candidate as string) as boolean
+        server = normalizeServerUrl(serverUrl)
+        target = candidate.trim()
+        if server.len() = 0 or target.len() = 0
+            return false
+        end if
+
+        if target.left(7) <> "http://" and target.left(8) <> "https://"
+            target = joinUrl(server, target)
+        end if
+
+        serverParts = parseOrigin(server)
+        targetParts = parseOrigin(target)
+        if serverParts = invalid or targetParts = invalid
+            return false
+        end if
+        return serverParts.scheme = targetParts.scheme and serverParts.host = targetParts.host
+    end function
+
+    ' Attach a bearer token query only for same-origin Prairie stream URLs.
+    function buildStreamUrl(serverUrl as string, streamPath as string, token as dynamic) as string
+        base = streamPath.trim()
+        if base.left(7) <> "http://" and base.left(8) <> "https://"
+            base = joinUrl(serverUrl, base)
+        end if
+
+        tokenText = ""
+        if token <> invalid
+            tokenText = (token as string).trim()
+        end if
+        if tokenText.len() = 0 or not isSameServerOrigin(serverUrl, base)
+            return base
+        end if
+
+        separator = "?"
+        if base.instr("?") >= 0
+            separator = "&"
+        end if
+        return base + separator + "token=" + tokenText
+    end function
+
+    function parseOrigin(url as string) as dynamic
+        lower = url
+        scheme = ""
+        rest = ""
+        if lower.left(8) = "https://"
+            scheme = "https"
+            rest = url.mid(8)
+        else if lower.left(7) = "http://"
+            scheme = "http"
+            rest = url.mid(7)
+        else
+            return invalid
+        end if
+
+        slash = rest.instr("/")
+        host = rest
+        if slash >= 0
+            host = rest.left(slash)
+        end if
+        if host.len() = 0
+            return invalid
+        end if
+        return {
+            scheme: scheme,
+            host: host
+        }
+    end function
+
+end namespace

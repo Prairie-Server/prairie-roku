@@ -1,0 +1,7 @@
+{
+  "files.associations": {
+    "*.bs": "brighterscript",
+    "manifest": "ini"
+  },
+  "brightscript.bsconfig": "bsconfig.json"
+}

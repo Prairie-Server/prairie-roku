@@ -1,0 +1,80 @@
+namespace tests
+    @suite("Prairie.Url")
+    class UrlUtilsSuite extends rooibos.BaseTestSuite
+
+        @describe("normalizeServerUrl")
+        @it("trims whitespace and trailing slashes")
+        sub _()
+            m.assertEqual(Prairie.Url.normalizeServerUrl("  https://prairie.example.com///  "), "https://prairie.example.com")
+        end sub
+
+        @it("leaves a clean URL unchanged")
+        sub _()
+            m.assertEqual(Prairie.Url.normalizeServerUrl("https://prairie.example.com"), "https://prairie.example.com")
+        end sub
+
+        @describe("joinUrl")
+        @it("joins base and absolute path")
+        sub _()
+            m.assertEqual(Prairie.Url.joinUrl("https://prairie.example.com/", "/api/v1/home"), "https://prairie.example.com/api/v1/home")
+        end sub
+
+        @it("joins base and relative path")
+        sub _()
+            m.assertEqual(Prairie.Url.joinUrl("https://prairie.example.com", "api/v1/catalog"), "https://prairie.example.com/api/v1/catalog")
+        end sub
+
+        @it("returns base when path is empty")
+        sub _()
+            m.assertEqual(Prairie.Url.joinUrl("https://prairie.example.com/", ""), "https://prairie.example.com")
+        end sub
+
+        @describe("isSameServerOrigin")
+        @it("matches same host and scheme")
+        sub _()
+            m.assertTrue(Prairie.Url.isSameServerOrigin("https://prairie.example.com", "https://prairie.example.com/stream.m3u8"))
+        end sub
+
+        @it("rejects cross-origin absolute URLs")
+        sub _()
+            m.assertFalse(Prairie.Url.isSameServerOrigin("https://prairie.example.com", "https://cdn.example.net/a.m3u8"))
+        end sub
+
+        @it("treats relative paths as same origin")
+        sub _()
+            m.assertTrue(Prairie.Url.isSameServerOrigin("https://prairie.example.com", "/api/v1/playback/1/stream"))
+        end sub
+
+        @it("rejects empty inputs")
+        sub _()
+            m.assertFalse(Prairie.Url.isSameServerOrigin("", "/x"))
+            m.assertFalse(Prairie.Url.isSameServerOrigin("https://prairie.example.com", ""))
+        end sub
+
+        @describe("buildStreamUrl")
+        @it("attaches token for same-origin relative paths")
+        sub _()
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "tok")
+            m.assertEqual(url, "https://prairie.example.com/stream?token=tok")
+        end sub
+
+        @it("uses ampersand when query already present")
+        sub _()
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream?x=1", "tok")
+            m.assertEqual(url, "https://prairie.example.com/stream?x=1&token=tok")
+        end sub
+
+        @it("does not attach token for cross-origin URLs")
+        sub _()
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "https://cdn.example.net/a.m3u8", "tok")
+            m.assertEqual(url, "https://cdn.example.net/a.m3u8")
+        end sub
+
+        @it("skips empty tokens")
+        sub _()
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "")
+            m.assertEqual(url, "https://prairie.example.com/stream")
+        end sub
+
+    end class
+end namespace

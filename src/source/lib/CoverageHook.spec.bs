@@ -1,0 +1,17 @@
+namespace tests
+    ' Suite name sorts last so other Prairie.* suites populate hits first.
+    @suite("zzz.PrairieCoverageDump")
+    class CoverageHookSuite extends rooibos.BaseTestSuite
+
+        @describe("dump")
+        @it("prints coverage JSON for the CI gate")
+        sub _()
+            m.assertEqual(Prairie.Theme.brandName(), "Prairie")
+            m.assertTrue(Prairie.Url.normalizeServerUrl("https://x/").len() > 0)
+            json = PrairieCoverageDumpJson()
+            m.assertTrue(json.len() > 2)
+            print "[PRAIRIE_COVERAGE]" + json
+        end sub
+
+    end class
+end namespace

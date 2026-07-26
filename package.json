@@ -1,0 +1,33 @@
+{
+  "name": "prairie-roku",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AGPL Prairie client for Roku (BrightScript / SceneGraph)",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "clean": "rimraf dist out test-build coverage .coverage-src",
+    "lint": "bslint --project bsconfig.json",
+    "typecheck": "bsc --project bsconfig.json --create-package=false --copy-to-staging=false",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "build": "npm run typecheck && bsc --project bsconfig.json --create-package=false",
+    "package": "npm run build && node scripts/package-channel.mjs",
+    "build-tests": "node scripts/prepare-coverage-src.mjs && rimraf test-build && bsc --project bsconfig.test.json --create-package=false",
+    "test": "npm run build-tests && node scripts/run-tests-ci.mjs",
+    "test:coverage": "npm run test && node scripts/check-coverage.mjs",
+    "validate": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run package"
+  },
+  "devDependencies": {
+    "@rokucommunity/bslint": "1.0.0-alpha.50",
+    "brighterscript": "1.0.0-alpha.52",
+    "brs-node": "2.3.0",
+    "prettier": "3.9.6",
+    "rimraf": "6.1.3",
+    "roku-deploy": "3.18.2",
+    "rooibos-roku": "6.0.0-alpha.52"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
