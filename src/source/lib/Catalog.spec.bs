@@ -48,6 +48,23 @@ namespace tests
             m.assertEqual(Prairie.Catalog.itemsFromResponse("nope").count(), 0)
         end sub
 
+        @it("builds a catalog page with pagination metadata")
+        sub _()
+            page = Prairie.Catalog.pageFromResponse({
+                items: [{ content_id: "1" }],
+                has_more: true,
+                snapshot: "snap",
+                total: 12
+            })
+            m.assertEqual(page.items.count(), 1)
+            m.assertTrue(page.has_more)
+            m.assertEqual(page.snapshot, "snap")
+            m.assertEqual(page.total, 12)
+            empty = Prairie.Catalog.pageFromResponse(invalid)
+            m.assertEqual(empty.items.count(), 0)
+            m.assertFalse(empty.has_more)
+        end sub
+
     end class
 end namespace
 

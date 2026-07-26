@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="CollectionsScreen" extends="Group">
+    <interface>
+        <field id="libraryCollections" type="array" />
+        <field id="personalCollections" type="array" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="selectedCollection" type="assocarray" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="CollectionsScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="title"
+            text="Collections"
+            translation="[80, 60]"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="lede"
+            text="Library franchises and personal lists."
+            translation="[80, 140]"
+            width="1200"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 200]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="statusLabel"
+            text=""
+            translation="[80, 240]"
+            width="1400"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="rails"
+            translation="[40, 290]"
+            itemSize="[1840, 300]"
+            rowItemSize="[[220, 280]]"
+            numRows="3"
+            itemSpacing="[24, 24]"
+            rowItemSpacing="[[24, 0]]"
+            showRowLabel="[true]"
+            rowLabelOffset="[[20, 10]]"
+            drawFocusFeedback="true"
+        />
+    </children>
+</component>

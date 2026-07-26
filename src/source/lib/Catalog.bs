@@ -80,5 +80,33 @@ namespace Prairie.Catalog
         return arrayFromResponse(data, "episodes")
     end function
 
+    ' Normalize a catalog page for browse / search / collection grids.
+    function pageFromResponse(data as dynamic) as object
+        page = {
+            items: [],
+            has_more: false,
+            snapshot: "",
+            total: 0
+        }
+        if data = invalid
+            return page
+        end if
+        page.items = itemsFromResponse(data)
+        if type(data) <> "roAssociativeArray"
+            return page
+        end if
+        if data.has_more = true
+            page.has_more = true
+        end if
+        if data.snapshot <> invalid
+            page.snapshot = data.snapshot as string
+        end if
+        if data.total <> invalid
+            page.total = data.total as integer
+        end if
+        return page
+    end function
+
 end namespace
+
 

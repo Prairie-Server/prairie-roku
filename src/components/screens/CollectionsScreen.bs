@@ -1,0 +1,94 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.title = m.top.findNode("title")
+    m.lede = m.top.findNode("lede")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.rails = m.top.findNode("rails")
+
+    m.title.color = colors.ink
+    m.lede.color = colors.muted
+    m.errorLabel.color = colors.danger
+    m.statusLabel.color = colors.muted
+
+    m.top.observeField("libraryCollections", "onCollections")
+    m.top.observeField("personalCollections", "onCollections")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("busy", "onBusy")
+    m.rails.observeField("rowItemSelected", "onCollectionSelected")
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.statusLabel.text = "Loading…"
+    else
+        m.statusLabel.text = ""
+    end if
+end sub
+
+sub appendCollectionRow(content as object, title as string, cards as object)
+    if cards = invalid or cards.count() = 0
+        return
+    end if
+    row = content.createChild("ContentNode")
+    row.title = title
+    for each card in cards
+        node = row.createChild("ContentNode")
+        node.title = card.title
+        if card.item_count <> invalid and card.item_count > 0
+            node.description = (card.item_count as integer).toStr() + " titles"
+        end if
+        if card.poster_url <> invalid and (card.poster_url as string).len() > 0
+            node.hdPosterUrl = card.poster_url as string
+        end if
+        node.addFields({ collection: card })
+    end for
+end sub
+
+sub onCollections()
+    content = CreateObject("roSGNode", "ContentNode")
+    appendCollectionRow(content, "Library collections", m.top.libraryCollections)
+    appendCollectionRow(content, "Your collections", m.top.personalCollections)
+    m.rails.content = content
+    if content.getChildCount() = 0 and not m.top.busy
+        m.statusLabel.text = "No collections yet"
+    end if
+end sub
+
+sub focusDefault()
+    m.rails.setFocus(true)
+end sub
+
+sub onCollectionSelected()
+    selection = m.rails.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.rails.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.collection = invalid
+        return
+    end if
+    m.top.selectedCollection = item.collection
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    end if
+    return false
+end function

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="CatalogBrowseScreen" extends="Group">
+    <interface>
+        <field id="eyebrow" type="string" value="Library" />
+        <field id="titleText" type="string" value="" />
+        <field id="items" type="array" />
+        <field id="hasMore" type="bool" value="false" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="selectedContentId" type="string" value="" alwaysNotify="true" />
+        <field id="loadMoreRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="CatalogBrowseScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="eyebrowLabel"
+            text="LIBRARY"
+            translation="[80, 60]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text=""
+            translation="[80, 110]"
+            width="1400"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 200]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="statusLabel"
+            text=""
+            translation="[80, 240]"
+            width="1400"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="grid"
+            translation="[40, 280]"
+            itemSize="[1840, 300]"
+            rowItemSize="[[200, 280]]"
+            numRows="3"
+            itemSpacing="[20, 20]"
+            rowItemSpacing="[[20, 0]]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+        />
+        <Rectangle id="moreBg" translation="[80, 980]" width="240" height="56" color="0xE0A84AFF" focusable="true" visible="false">
+            <Label
+                id="moreLabel"
+                text="Load more"
+                width="240"
+                height="56"
+                horizAlign="center"
+                vertAlign="center"
+                color="0x141820FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Rectangle>
+    </children>
+</component>

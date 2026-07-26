@@ -1,0 +1,139 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.eyebrowLabel = m.top.findNode("eyebrowLabel")
+    m.title = m.top.findNode("title")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.grid = m.top.findNode("grid")
+    m.moreBg = m.top.findNode("moreBg")
+    m.moreLabel = m.top.findNode("moreLabel")
+
+    m.eyebrowLabel.color = colors.amber
+    m.title.color = colors.ink
+    m.errorLabel.color = colors.danger
+    m.statusLabel.color = colors.muted
+    m.moreBg.color = colors.amber
+    m.moreLabel.color = colors.bg
+
+    m.top.observeField("eyebrow", "onEyebrow")
+    m.top.observeField("titleText", "onTitleText")
+    m.top.observeField("items", "onItems")
+    m.top.observeField("hasMore", "onHasMore")
+    m.top.observeField("busy", "onBusy")
+    m.top.observeField("errorText", "onErrorText")
+    m.grid.observeField("rowItemSelected", "onItemSelected")
+end sub
+
+sub onEyebrow()
+    m.eyebrowLabel.text = UCase(m.top.eyebrow)
+end sub
+
+sub onTitleText()
+    m.title.text = m.top.titleText
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.statusLabel.text = "Loading…"
+    else if m.top.items <> invalid and m.top.items.count() = 0
+        m.statusLabel.text = "No titles yet"
+    else
+        m.statusLabel.text = ""
+    end if
+end sub
+
+sub onHasMore()
+    m.moreBg.visible = m.top.hasMore
+end sub
+
+sub onItems()
+    items = m.top.items
+    content = CreateObject("roSGNode", "ContentNode")
+    columns = 8
+    row = invalid
+    index = 0
+    if items <> invalid
+        for each entry in items
+            if index mod columns = 0
+                row = content.createChild("ContentNode")
+            end if
+            node = row.createChild("ContentNode")
+            title = "Title"
+            if entry.title <> invalid
+                title = entry.title as string
+            end if
+            node.title = title
+            subtitle = ""
+            if entry.year <> invalid
+                subtitle = (entry.year as integer).toStr()
+            else if entry.type <> invalid
+                subtitle = entry.type as string
+            end if
+            node.description = subtitle
+            if entry.poster_url <> invalid
+                node.hdPosterUrl = entry.poster_url as string
+            end if
+            contentId = ""
+            if entry.content_id <> invalid
+                contentId = entry.content_id as string
+            end if
+            node.id = contentId
+            node.addFields({ contentId: contentId })
+            index = index + 1
+        end for
+    end if
+    m.grid.content = content
+    onBusy()
+end sub
+
+sub focusDefault()
+    m.grid.setFocus(true)
+end sub
+
+sub onItemSelected()
+    selection = m.grid.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.grid.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.contentId = invalid or (item.contentId as string).len() = 0
+        return
+    end if
+    m.top.selectedContentId = item.contentId
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    end if
+    if (key = "OK" or key = "play") and m.moreBg.visible and m.moreBg.isInFocusChain()
+        if not m.top.busy
+            m.top.loadMoreRequested = true
+        end if
+        return true
+    end if
+    if key = "down" and m.top.hasMore and m.grid.isInFocusChain()
+        ' Allow moving to Load more when focused near bottom rows.
+        m.moreBg.setFocus(true)
+        return true
+    else if key = "up" and m.moreBg.isInFocusChain()
+        m.grid.setFocus(true)
+        return true
+    end if
+    return false
+end function
