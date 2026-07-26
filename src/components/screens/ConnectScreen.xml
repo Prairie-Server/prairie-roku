@@ -5,6 +5,8 @@
         <field id="busy" type="bool" value="false" />
         <field id="errorText" type="string" value="" />
         <field id="submitRequest" type="assocarray" />
+        <field id="openServers" type="boolean" value="false" alwaysNotify="true" />
+        <field id="scanRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>
     <script type="text/brightscript" uri="ConnectScreen.bs" />
@@ -111,6 +113,44 @@
                 vertAlign="center"
                 font="font:MediumBoldSystemFont"
                 color="0x141820FF"
+            />
+        </Rectangle>
+        <Rectangle
+            id="serversBg"
+            translation="[420, 940]"
+            width="280"
+            height="64"
+            color="0x222B38FF"
+            focusable="true"
+        >
+            <Label
+                id="serversLabel"
+                text="Servers"
+                width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                font="font:MediumSystemFont"
+                color="0xF3EFE6FF"
+            />
+        </Rectangle>
+        <Rectangle
+            id="scanBg"
+            translation="[720, 940]"
+            width="280"
+            height="64"
+            color="0x222B38FF"
+            focusable="true"
+        >
+            <Label
+                id="scanLabel"
+                text="Scan LAN"
+                width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                font="font:MediumSystemFont"
+                color="0xF3EFE6FF"
             />
         </Rectangle>
     </children>

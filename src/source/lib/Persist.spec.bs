@@ -15,6 +15,8 @@ namespace tests
             m.assertEqual(Prairie.Persist.lastServerUrlKey(), "prairie.lastServerUrl")
             m.assertEqual(Prairie.Persist.playbackSettingsKey(), "prairie.playbackSettings")
             m.assertEqual(Prairie.Persist.storageSchemaKey(), "prairie.storageSchemaVersion")
+            m.assertEqual(Prairie.Persist.serverRegistryKey(), "prairie.serverRegistry")
+            m.assertEqual(Prairie.Persist.storageSchemaVersion(), 2)
         end sub
 
         @describe("last server URL")
@@ -41,7 +43,7 @@ namespace tests
         end sub
 
         @describe("ensureStorageSchema")
-        @it("promotes session URL and stamps schema v1")
+        @it("promotes session URL and stamps schema v2")
         sub _()
             m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
                 serverUrl: "https://migrate.example.com",
@@ -50,8 +52,8 @@ namespace tests
                 profileId: "p"
             }))
             version = Prairie.Persist.ensureStorageSchema(m.store)
-            m.assertEqual(version, 1)
-            m.assertEqual(m.store.getItem(Prairie.Persist.storageSchemaKey()), "1")
+            m.assertEqual(version, 2)
+            m.assertEqual(m.store.getItem(Prairie.Persist.storageSchemaKey()), "2")
             m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://migrate.example.com")
         end sub
 
@@ -60,8 +62,8 @@ namespace tests
             Prairie.Persist.saveLastServerUrl("https://keep.example.com", m.store)
             first = Prairie.Persist.ensureStorageSchema(m.store)
             second = Prairie.Persist.ensureStorageSchema(m.store)
-            m.assertEqual(first, 1)
-            m.assertEqual(second, 1)
+            m.assertEqual(first, 2)
+            m.assertEqual(second, 2)
             m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://keep.example.com")
         end sub
 

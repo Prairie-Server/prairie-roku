@@ -13,12 +13,15 @@ import "pkg:/source/lib/Playback.bs"
 import "pkg:/source/lib/LiveTv.bs"
 import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
+import "pkg:/source/lib/ServerRegistry.bs"
+import "pkg:/source/lib/Discover.bs"
 
 sub init()
     m.top.backgroundURI = ""
     m.top.backgroundColor = Prairie.Theme.colors().bg
     m.store = Prairie.Store.createRegistryStore("prairie")
     Prairie.Persist.ensureStorageSchema(m.store)
+    m.registry = Prairie.ServerRegistry.migrateFromLegacy(m.store)
 
     m.screenHost = m.top.findNode("screenHost")
     m.httpTask = m.top.findNode("httpTask")
@@ -50,18 +53,47 @@ sub init()
     m.liveSessionId = ""
     m.liveChannel = invalid
     m.settingsBackRoute = "home"
+    m.discoverQueue = []
+    m.discoverHits = []
+    m.discoverIndex = 0
+    m.discoverCurrentUrl = ""
+    m.discoverDeep = false
+    m.serverListBackRoute = "connect"
+    m.connectPrefillUrl = ""
+
+    if m.session = invalid
+        m.session = sessionFromActiveRegistry()
+    end if
 
     if m.session <> invalid
         showHome()
+    else if m.registry.entries.count() > 0
+        showServerList("connect")
     else
         showConnect()
     end if
 end sub
 
+function sessionFromActiveRegistry() as dynamic
+    if m.registry = invalid or m.registry.activeServerId = invalid
+        return invalid
+    end if
+    idx = Prairie.ServerRegistry.findIndex(m.registry, m.registry.activeServerId)
+    if idx < 0
+        return invalid
+    end if
+    session = Prairie.ServerRegistry.sessionFromEntry(m.registry.entries[idx])
+    if session = invalid
+        return invalid
+    end if
+    return Prairie.Session.saveSession(session, m.store)
+end function
+
 sub clearScreen()
     if m.screenHost = invalid
         return
     end if
+    stopDiscovery()
     if m.httpTask <> invalid
         m.httpTask.control = "STOP"
     end if
@@ -78,12 +110,125 @@ sub showConnect()
     m.route = "connect"
     m.auth = invalid
     m.session = invalid
+    stopDiscovery()
     screen = CreateObject("roSGNode", "ConnectScreen")
-    screen.initialServerUrl = Prairie.Persist.loadLastServerUrl(m.store)
+    prefill = m.connectPrefillUrl
+    if prefill.len() = 0
+        prefill = Prairie.Persist.loadLastServerUrl(m.store)
+    end if
+    m.connectPrefillUrl = ""
+    screen.initialServerUrl = prefill
     screen.observeField("submitRequest", "onConnectSubmit")
+    screen.observeField("openServers", "onOpenServers")
+    screen.observeField("scanRequested", "onConnectScanRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
     screen.callFunc("focusDefault")
+end sub
+
+sub showServerList(backRoute = "connect" as string)
+    clearScreen()
+    m.route = "servers"
+    m.serverListBackRoute = backRoute
+    screen = CreateObject("roSGNode", "ServerListScreen")
+    screen.observeField("selectedServer", "onServerSelected")
+    screen.observeField("selectedDiscovery", "onDiscoverySelected")
+    screen.observeField("scanRequested", "onServerScanRequested")
+    screen.observeField("addManualRequested", "onServerAddManual")
+    screen.observeField("removeRequested", "onServerRemoveRequested")
+    screen.observeField("backRequested", "onServerListBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    paintServerList()
+    screen.callFunc("focusDefault")
+end sub
+
+sub paintServerList()
+    if m.screen = invalid or m.route <> "servers"
+        return
+    end if
+    m.registry = Prairie.ServerRegistry.load(m.store)
+    cards = []
+    for each entry in Prairie.ServerRegistry.sortedEntries(m.registry)
+        cards.push({
+            id: entry.id,
+            url: entry.url,
+            displayName: Prairie.ServerRegistry.displayName(entry),
+            isActive: entry.id = m.registry.activeServerId
+        })
+    end for
+    m.screen.servers = cards
+    m.screen.discovered = m.discoverHits
+end sub
+
+sub stopDiscovery()
+    m.discoverQueue = []
+    m.discoverIndex = 0
+    m.discoverCurrentUrl = ""
+    if m.pending = "discoverProbe"
+        m.pending = ""
+        if m.httpTask <> invalid
+            m.httpTask.control = "STOP"
+        end if
+    end if
+end sub
+
+sub startDiscovery(deepScan = true as boolean)
+    m.registry = Prairie.ServerRegistry.load(m.store)
+    m.discoverDeep = deepScan
+    m.discoverHits = []
+    m.discoverQueue = Prairie.Discover.buildCandidates(m.registry.scanCidrs, deepScan, 254)
+    m.discoverIndex = 0
+    m.discoverCurrentUrl = ""
+    if m.screen <> invalid and m.screen.hasField("busy")
+        m.screen.busy = true
+    end if
+    if m.screen <> invalid and m.screen.hasField("statusText")
+        m.screen.statusText = "Scanning for Prairie servers…"
+    end if
+    if m.screen <> invalid and m.screen.hasField("errorText")
+        m.screen.errorText = ""
+    end if
+    if m.route = "servers"
+        paintServerList()
+    end if
+    probeNextDiscoverCandidate()
+end sub
+
+sub probeNextDiscoverCandidate()
+    if m.discoverIndex >= m.discoverQueue.count()
+        finishDiscovery()
+        return
+    end if
+    url = m.discoverQueue[m.discoverIndex]
+    m.discoverCurrentUrl = url
+    m.discoverIndex = m.discoverIndex + 1
+    m.pending = "discoverProbe"
+    if m.screen <> invalid and m.screen.hasField("statusText")
+        total = m.discoverQueue.count()
+        done = m.discoverIndex
+        m.screen.statusText = "Scanning " + done.toStr() + "/" + total.toStr() + "…"
+    end if
+    m.httpTask.request = Prairie.Discover.buildProbeRequest(url, 400)
+    m.httpTask.control = "RUN"
+end sub
+
+sub finishDiscovery()
+    m.pending = ""
+    if m.screen <> invalid and m.screen.hasField("busy")
+        m.screen.busy = false
+    end if
+    if m.screen <> invalid and m.screen.hasField("statusText")
+        if m.discoverHits.count() = 0
+            m.screen.statusText = "No Prairie servers found on the LAN"
+        else
+            m.screen.statusText = "Found " + m.discoverHits.count().toStr() + " server(s)"
+        end if
+    end if
+    if m.route = "servers"
+        paintServerList()
+        m.screen.callFunc("focusDefault")
+    end if
 end sub
 
 sub showProfiles()
@@ -143,10 +288,15 @@ sub showSettings()
     screen.forceTranscode = settings.forceTranscode
     screen.preferredSubtitleLanguage = settings.preferredSubtitleLanguage
     screen.observeField("saveRequested", "onSettingsSave")
+    screen.observeField("switchServerRequested", "onSettingsSwitchServer")
     screen.observeField("backRequested", "onSettingsBack")
     m.screenHost.appendChild(screen)
     m.screen = screen
     screen.callFunc("focusDefault")
+end sub
+
+sub onSettingsSwitchServer()
+    showServerList("home")
 end sub
 
 sub showLibraries()
@@ -548,19 +698,115 @@ sub finishProfile(profile as object, profileToken as dynamic)
         session.profileToken = profileToken as string
     end if
     m.session = Prairie.Session.saveSession(session, m.store)
+    m.registry = Prairie.ServerRegistry.rememberSession(m.registry, m.session, "")
+    Prairie.ServerRegistry.save(m.registry, m.store)
+    Prairie.Persist.saveLastServerUrl(m.session.serverUrl, m.store)
     m.pinProfile = invalid
     showHome()
 end sub
 
 sub onProfilesCancel()
     Prairie.Session.clearSession(m.store)
-    showConnect()
+    if m.registry.entries.count() > 0
+        showServerList("connect")
+    else
+        showConnect()
+    end if
 end sub
 
 sub onSignOut()
+    if m.registry <> invalid and m.registry.activeServerId <> invalid and m.registry.activeServerId.len() > 0
+        m.registry = Prairie.ServerRegistry.clearTokens(m.registry, m.registry.activeServerId)
+        Prairie.ServerRegistry.save(m.registry, m.store)
+    end if
     Prairie.Session.clearSession(m.store)
     m.session = invalid
+    m.auth = invalid
+    if m.registry.entries.count() > 0
+        showServerList("connect")
+    else
+        showConnect()
+    end if
+end sub
+
+sub onOpenServers()
+    showServerList("connect")
+end sub
+
+sub onConnectScanRequested()
+    showServerList("connect")
+    startDiscovery(true)
+end sub
+
+sub onServerScanRequested()
+    startDiscovery(true)
+end sub
+
+sub onServerAddManual()
+    stopDiscovery()
     showConnect()
+end sub
+
+sub onServerListBack()
+    stopDiscovery()
+    if m.serverListBackRoute = "home" and m.session <> invalid
+        showHome()
+    else
+        showConnect()
+    end if
+end sub
+
+sub onServerSelected()
+    entry = m.screen.selectedServer
+    if entry = invalid or entry.id = invalid
+        return
+    end if
+    stopDiscovery()
+    m.registry = Prairie.ServerRegistry.load(m.store)
+    idx = Prairie.ServerRegistry.findIndex(m.registry, entry.id)
+    if idx < 0
+        return
+    end if
+    full = m.registry.entries[idx]
+    m.registry = Prairie.ServerRegistry.switchTo(m.registry, full.id)
+    Prairie.ServerRegistry.save(m.registry, m.store)
+    session = Prairie.ServerRegistry.sessionFromEntry(full)
+    if session <> invalid
+        m.session = Prairie.Session.saveSession(session, m.store)
+        Prairie.Persist.saveLastServerUrl(session.serverUrl, m.store)
+        showHome()
+        return
+    end if
+    m.connectPrefillUrl = full.url
+    showConnect()
+end sub
+
+sub onDiscoverySelected()
+    hit = m.screen.selectedDiscovery
+    if hit = invalid or hit.url = invalid
+        return
+    end if
+    stopDiscovery()
+    m.connectPrefillUrl = hit.url as string
+    if hit.serverName <> invalid and (hit.serverName as string).trim().len() > 0
+        m.registry = Prairie.ServerRegistry.addOrUpdate(m.registry, {
+            url: hit.url,
+            fetchedName: hit.serverName as string
+        })
+        Prairie.ServerRegistry.save(m.registry, m.store)
+    end if
+    showConnect()
+end sub
+
+sub onServerRemoveRequested()
+    entry = m.screen.removeRequested
+    if entry = invalid or entry.id = invalid
+        return
+    end if
+    m.registry = Prairie.ServerRegistry.remove(m.registry, entry.id)
+    Prairie.ServerRegistry.save(m.registry, m.store)
+    paintServerList()
+    m.screen.callFunc("focusDefault")
 end sub
 
 sub onHomeItemSelected()
@@ -868,11 +1114,26 @@ sub onHttpResponse()
     m.pending = ""
 
     chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
-    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections
+    chainingDiscover = pending = "discoverProbe"
+    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover
         m.screen.busy = false
     end if
 
     if response = invalid
+        return
+    end if
+
+    if pending = "discoverProbe"
+        if response.ok = true
+            health = Prairie.Discover.parseHealth(response.data)
+            if health <> invalid and m.discoverCurrentUrl.len() > 0
+                m.discoverHits = Prairie.Discover.mergeHits(m.discoverHits, m.discoverCurrentUrl, health)
+                if m.route = "servers"
+                    paintServerList()
+                end if
+            end if
+        end if
+        probeNextDiscoverCandidate()
         return
     end if
 

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="ServerListScreen" extends="Group">
+    <interface>
+        <field id="servers" type="array" />
+        <field id="discovered" type="array" />
+        <field id="busy" type="bool" value="false" />
+        <field id="statusText" type="string" value="" />
+        <field id="errorText" type="string" value="" />
+        <field id="selectedServer" type="assocarray" alwaysNotify="true" />
+        <field id="selectedDiscovery" type="assocarray" alwaysNotify="true" />
+        <field id="scanRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="addManualRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="removeRequested" type="assocarray" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="ServerListScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="eyebrow"
+            text="SERVERS"
+            translation="[120, 100]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text="Prairie servers"
+            translation="[120, 150]"
+            width="1200"
+            font="font:LargeBoldSystemFont"
+            color="0xF3EFE6FF"
+        />
+        <Label
+            id="lede"
+            text="Switch to a saved server, or scan the LAN for Prairie via /api/v1/health."
+            translation="[120, 240]"
+            width="1400"
+            wrap="true"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="statusLabel"
+            text=""
+            translation="[120, 310]"
+            width="1400"
+            color="0xE0A84AFF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[120, 350]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+
+        <RowList
+            id="serverList"
+            translation="[100, 400]"
+            itemSize="[500, 220]"
+            rowItemSize="[[460, 180]]"
+            numRows="1"
+            itemSpacing="[28, 0]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+        />
+
+        <Rectangle id="scanBg" translation="[120, 700]" width="280" height="64" color="0xE0A84AFF" focusable="true">
+            <Label
+                id="scanLabel"
+                text="Scan LAN"
+                width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                color="0x141820FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Rectangle>
+        <Rectangle id="addBg" translation="[420, 700]" width="280" height="64" color="0x222B38FF" focusable="true">
+            <Label
+                id="addLabel"
+                text="Add manually"
+                width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+        </Rectangle>
+        <Rectangle id="removeBg" translation="[720, 700]" width="280" height="64" color="0x222B38FF" focusable="true">
+            <Label
+                id="removeLabel"
+                text="Remove"
+                width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+        </Rectangle>
+        <Rectangle id="backBg" translation="[1600, 100]" width="180" height="56" color="0x222B38FF" focusable="true">
+            <Label
+                id="backLabel"
+                text="Back"
+                width="180"
+                height="56"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+        </Rectangle>
+    </children>
+</component>

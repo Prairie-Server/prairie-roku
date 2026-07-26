@@ -1,0 +1,214 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.title = m.top.findNode("title")
+    m.lede = m.top.findNode("lede")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.serverList = m.top.findNode("serverList")
+    m.scanBg = m.top.findNode("scanBg")
+    m.scanLabel = m.top.findNode("scanLabel")
+    m.addBg = m.top.findNode("addBg")
+    m.removeBg = m.top.findNode("removeBg")
+    m.backBg = m.top.findNode("backBg")
+
+    m.eyebrow.color = colors.amber
+    m.title.color = colors.ink
+    m.lede.color = colors.muted
+    m.statusLabel.color = colors.amber
+    m.errorLabel.color = colors.danger
+    m.scanBg.color = colors.amber
+    m.scanLabel.color = colors.bg
+    m.addBg.color = colors.bgSoft
+    m.removeBg.color = colors.bgSoft
+    m.backBg.color = colors.bgSoft
+
+    m.focusedEntry = invalid
+    m.top.observeField("servers", "onServersChanged")
+    m.top.observeField("discovered", "onServersChanged")
+    m.top.observeField("statusText", "onStatusText")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("busy", "onBusy")
+    m.serverList.observeField("rowItemSelected", "onItemSelected")
+    m.serverList.observeField("rowItemFocused", "onItemFocused")
+end sub
+
+sub onStatusText()
+    m.statusLabel.text = m.top.statusText
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.scanLabel.text = "Scanning…"
+    else
+        m.scanLabel.text = "Scan LAN"
+    end if
+end sub
+
+sub onServersChanged()
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+
+    servers = m.top.servers
+    if servers <> invalid
+        for each entry in servers
+            item = row.createChild("ContentNode")
+            name = entry.url
+            if entry.displayName <> invalid and (entry.displayName as string).len() > 0
+                name = entry.displayName as string
+            end if
+            meta = entry.url
+            if entry.isActive = true
+                meta = "Active · " + meta
+            end if
+            item.title = name
+            item.description = meta
+            item.addFields({
+                kind: "saved",
+                entry: entry
+            })
+        end for
+    end if
+
+    discovered = m.top.discovered
+    if discovered <> invalid
+        for each hit in discovered
+            item = row.createChild("ContentNode")
+            name = hit.url
+            if hit.serverName <> invalid and (hit.serverName as string).trim().len() > 0
+                name = hit.serverName as string
+            end if
+            item.title = name
+            item.description = "Found · " + hit.url
+            item.addFields({
+                kind: "discovered",
+                hit: hit
+            })
+        end for
+    end if
+
+    m.serverList.content = content
+end sub
+
+sub focusDefault()
+    if m.serverList.content <> invalid and m.serverList.content.getChildCount() > 0
+        row = m.serverList.content.getChild(0)
+        if row <> invalid and row.getChildCount() > 0
+            m.serverList.setFocus(true)
+            return
+        end if
+    end if
+    m.scanBg.setFocus(true)
+end sub
+
+sub onItemFocused()
+    selection = m.serverList.rowItemFocused
+    m.focusedEntry = entryFromSelection(selection)
+end sub
+
+sub onItemSelected()
+    if m.top.busy
+        return
+    end if
+    selection = m.serverList.rowItemSelected
+    node = nodeFromSelection(selection)
+    if node = invalid
+        return
+    end if
+    if node.kind = "saved" and node.entry <> invalid
+        m.top.selectedServer = node.entry
+    else if node.kind = "discovered" and node.hit <> invalid
+        m.top.selectedDiscovery = node.hit
+    end if
+end sub
+
+function nodeFromSelection(selection as dynamic) as dynamic
+    if selection = invalid or selection.count() < 2
+        return invalid
+    end if
+    content = m.serverList.content
+    if content = invalid
+        return invalid
+    end if
+    row = content.getChild(selection[0])
+    if row = invalid
+        return invalid
+    end if
+    return row.getChild(selection[1])
+end function
+
+function entryFromSelection(selection as dynamic) as dynamic
+    node = nodeFromSelection(selection)
+    if node = invalid or node.kind <> "saved"
+        return invalid
+    end if
+    return node.entry
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    end if
+
+    if key = "OK" or key = "play"
+        if m.scanBg.isInFocusChain()
+            if not m.top.busy
+                m.top.scanRequested = true
+            end if
+            return true
+        else if m.addBg.isInFocusChain()
+            m.top.addManualRequested = true
+            return true
+        else if m.removeBg.isInFocusChain()
+            if m.focusedEntry <> invalid
+                m.top.removeRequested = m.focusedEntry
+            end if
+            return true
+        else if m.backBg.isInFocusChain()
+            m.top.backRequested = true
+            return true
+        end if
+    end if
+
+    if key = "down"
+        if m.serverList.isInFocusChain()
+            m.scanBg.setFocus(true)
+            return true
+        end if
+    else if key = "up"
+        if m.scanBg.isInFocusChain() or m.addBg.isInFocusChain() or m.removeBg.isInFocusChain()
+            focusDefault()
+            return true
+        end if
+    else if key = "right"
+        if m.scanBg.isInFocusChain()
+            m.addBg.setFocus(true)
+            return true
+        else if m.addBg.isInFocusChain()
+            m.removeBg.setFocus(true)
+            return true
+        end if
+    else if key = "left"
+        if m.removeBg.isInFocusChain()
+            m.addBg.setFocus(true)
+            return true
+        else if m.addBg.isInFocusChain()
+            m.scanBg.setFocus(true)
+            return true
+        end if
+    end if
+
+    return false
+end function

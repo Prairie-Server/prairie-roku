@@ -1,0 +1,79 @@
+namespace tests
+    @suite("Prairie.Discover")
+    class DiscoverSuite extends rooibos.BaseTestSuite
+
+        @describe("health parsing")
+        @it("accepts ok health payloads and builds probe requests")
+        sub _()
+            hit = Prairie.Discover.parseHealth({
+                status: "ok",
+                server_name: "Prairie Home",
+                server_id: "abc"
+            })
+            m.assertEqual(hit.serverName, "Prairie Home")
+            m.assertEqual(hit.serverId, "abc")
+            m.assertEqual(Prairie.Discover.parseHealth({ status: "down" }), invalid)
+            req = Prairie.Discover.buildProbeRequest("https://prairie.example.com", 1200)
+            m.assertTrue(req.url.instr("/api/v1/health") >= 0)
+            m.assertEqual(req.timeoutMs, 1200)
+            m.assertEqual(Prairie.Discover.healthPath(), "/api/v1/health")
+            m.assertEqual(Prairie.Discover.deepScanPorts()[0], 8080)
+        end sub
+
+        @describe("cidr and candidates")
+        @it("includes Litefin-style common /24s and priority hosts for Prairie ports")
+        sub _()
+            parsed = Prairie.Discover.parseCidr("192.168.1.0/24")
+            m.assertEqual(parsed.prefix, 24)
+            m.assertEqual(Prairie.Discover.parseCidr("10.0.0.0/16"), invalid)
+            m.assertEqual(Prairie.Discover.subnetCidrForIp("192.168.1.50"), "192.168.1.0/24")
+            hosts = Prairie.Discover.priorityHostsForSubnet([192, 168, 1, 0])
+            m.assertTrue(hosts.count() >= 5)
+            m.assertEqual(hosts[0], "192.168.1.1")
+
+            common = Prairie.Discover.commonCidrs()
+            m.assertTrue(common.count() >= 3)
+            m.assertEqual(common[0], "192.168.0.0/24")
+
+            candidates = Prairie.Discover.buildCandidates(["192.168.2.0/24"], false, 16)
+            m.assertTrue(candidates.count() > 0)
+            joined = candidates.join(",")
+            m.assertTrue(joined.instr("prairie.local") >= 0)
+            m.assertTrue(joined.instr("192.168.2.1") >= 0)
+            m.assertTrue(joined.instr("192.168.0.1") >= 0)
+            m.assertTrue(joined.instr("192.168.1.1") >= 0)
+            m.assertTrue(joined.instr("10.0.0.1") >= 0)
+            m.assertTrue(joined.instr(":8080") >= 0)
+            ' Priority scan must not hit Jellyfin-shaped public-info paths.
+            m.assertTrue(joined.instr("/System/Info") < 0)
+        end sub
+
+        @describe("deep scan")
+        @it("expands a /24 on the Prairie listen port only")
+        sub _()
+            deep = Prairie.Discover.buildCandidates(["192.168.9.0/24"], true, 12)
+            joined = deep.join(",")
+            m.assertTrue(joined.instr("192.168.9.1:8080") >= 0)
+            m.assertTrue(joined.instr("192.168.9.12:8080") >= 0)
+            ' Deep sweep should not dual-probe https on :8080.
+            m.assertTrue(joined.instr("https://192.168.9.1:8080") < 0)
+        end sub
+
+        @describe("mergeHits")
+        @it("dedupes discovered servers by normalized URL")
+        sub _()
+            hits = []
+            hits = Prairie.Discover.mergeHits(hits, "https://prairie.example.com/", {
+                serverName: "One",
+                serverId: "1"
+            })
+            hits = Prairie.Discover.mergeHits(hits, "https://prairie.example.com", {
+                serverName: "Two",
+                serverId: "1"
+            })
+            m.assertEqual(hits.count(), 1)
+            m.assertEqual(hits[0].serverName, "Two")
+        end sub
+
+    end class
+end namespace
