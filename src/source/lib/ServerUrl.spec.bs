@@ -3,7 +3,7 @@ namespace tests
     class ServerUrlSuite extends rooibos.BaseTestSuite
 
         @describe("validate")
-        @it("accepts normalized http(s) URLs")
+        @it("accepts normalized https URLs")
         sub _()
             result = Prairie.ServerUrl.validate(" https://prairie.example.com/// ")
             m.assertTrue(result.ok)
@@ -16,6 +16,21 @@ namespace tests
             m.assertFalse(Prairie.ServerUrl.validate("ftp://prairie.example.com").ok)
             m.assertFalse(Prairie.ServerUrl.validate("https://user:pass@prairie.example.com").ok)
             m.assertFalse(Prairie.ServerUrl.validate("https://").ok)
+        end sub
+
+        @it("rejects authority-less https URLs")
+        sub _()
+            m.assertFalse(Prairie.ServerUrl.validate("https://?server=x").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("https://#fragment").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("https://:8080").ok)
+        end sub
+
+        @it("allows HTTP only for private or local hosts")
+        sub _()
+            m.assertTrue(Prairie.ServerUrl.validate("http://192.168.1.10:8096").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("http://localhost:8096").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("http://prairie.local").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("http://prairie.example.com").ok)
         end sub
 
     end class

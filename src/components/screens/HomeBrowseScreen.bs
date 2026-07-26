@@ -96,7 +96,6 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return false
     end if
     if key = "options"
-        ' Cycle quick actions via options button: libraries → search → sign out prompts through fields.
         m.top.openLibraries = true
         return true
     else if key = "replay"

@@ -2,8 +2,61 @@ import "pkg:/source/lib/UrlUtils.bs"
 
 namespace Prairie.ServerUrl
 
+    function isPrivateOrLocalHost(hostPart as string) as boolean
+        host = LCase(hostPart.trim())
+        colon = host.instr(":")
+        if colon >= 0
+            host = host.left(colon)
+        end if
+        if host.len() = 0
+            return false
+        end if
+        if host = "localhost" or host = "127.0.0.1" or host = "[::1]" or host = "::1"
+            return true
+        end if
+        if host.right(6) = ".local"
+            return true
+        end if
+        if host.left(3) = "10."
+            return true
+        end if
+        if host.left(8) = "192.168."
+            return true
+        end if
+        if host.left(4) = "172."
+            rest = host.mid(4)
+            dot = rest.instr(".")
+            if dot > 0
+                second = rest.left(dot).toInt()
+                if second >= 16 and second <= 31
+                    return true
+                end if
+            end if
+        end if
+        return false
+    end function
+
+    function hasUsableHost(hostPart as string) as boolean
+        host = hostPart.trim()
+        if host.len() = 0
+            return false
+        end if
+        if host.left(1) = "?" or host.left(1) = "#" or host.left(1) = ":"
+            return false
+        end if
+        ' Reject bare ports / empty host before path-like junk.
+        if host.instr(".") < 0 and host.instr(":") < 0 and LCase(host) <> "localhost"
+            ' Allow single-label hosts like "prairie" on LAN, but not "?"-only leftovers.
+            if host.instr("/") >= 0
+                return false
+            end if
+        end if
+        return true
+    end function
+
     ' Validate a user-entered Prairie server base URL.
     ' Returns { ok: true, url: string } or { ok: false, message: string }.
+    ' HTTP is only allowed for private/LAN hosts; public hosts require HTTPS.
     function validate(raw as string) as object
         trimmed = Prairie.Url.normalizeServerUrl(raw)
         if trimmed.len() = 0
@@ -14,16 +67,17 @@ namespace Prairie.ServerUrl
         end if
 
         lower = LCase(trimmed)
-        if lower.left(8) <> "https://" and lower.left(7) <> "http://"
+        isHttps = lower.left(8) = "https://"
+        isHttp = lower.left(7) = "http://"
+        if not isHttps and not isHttp
             return {
                 ok: false,
                 message: "Server URL must use http or https"
             }
         end if
 
-        ' Reject credentials embedded in the URL (user:pass@host).
         rest = trimmed
-        if lower.left(8) = "https://"
+        if isHttps
             rest = trimmed.mid(8)
         else
             rest = trimmed.mid(7)
@@ -41,10 +95,17 @@ namespace Prairie.ServerUrl
         if slash >= 0
             hostPart = rest.left(slash)
         end if
-        if hostPart.trim().len() = 0
+        if not hasUsableHost(hostPart)
             return {
                 ok: false,
                 message: "Server URL must be a valid http(s) address"
+            }
+        end if
+
+        if isHttp and not isPrivateOrLocalHost(hostPart)
+            return {
+                ok: false,
+                message: "Use HTTPS, or HTTP only for a local/LAN server"
             }
         end if
 

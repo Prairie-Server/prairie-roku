@@ -159,6 +159,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
             m.pinContinueBg.setFocus(true)
             return true
         end if
+    else if not m.top.pinMode and key = "up"
+        if m.profileList.isInFocusChain()
+            m.backBg.setFocus(true)
+            return true
+        end if
+    else if not m.top.pinMode and key = "down"
+        if m.backBg.isInFocusChain()
+            m.profileList.setFocus(true)
+            return true
+        end if
     end if
 
     return false

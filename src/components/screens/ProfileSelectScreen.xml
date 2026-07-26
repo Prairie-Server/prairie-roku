@@ -7,8 +7,8 @@
         <field id="errorText" type="string" value="" />
         <field id="pinMode" type="bool" value="false" />
         <field id="pinProfileName" type="string" value="" />
-        <field id="selectedProfile" type="assocarray" />
-        <field id="pinSubmit" type="assocarray" />
+        <field id="selectedProfile" type="assocarray" alwaysNotify="true" />
+        <field id="pinSubmit" type="assocarray" alwaysNotify="true" />
         <field id="cancelRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>

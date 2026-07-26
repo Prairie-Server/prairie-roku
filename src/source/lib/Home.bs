@@ -30,7 +30,13 @@ namespace Prairie.Home
                     item.title = section.title as string
                 end if
                 if type(section.items) = "roArray"
-                    item.items = section.items
+                    filtered = []
+                    for each entry in section.items
+                        if type(entry) = "roAssociativeArray"
+                            filtered.push(entry)
+                        end if
+                    end for
+                    item.items = filtered
                 end if
                 sections.push(item)
             end if

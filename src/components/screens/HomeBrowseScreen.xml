@@ -49,7 +49,7 @@
         />
         <Label
             id="hint"
-            text="OK opens an item · ★ Options: Libraries / Search / Sign out"
+            text="OK opens an item · ★ Options: Libraries · Replay: Search · Back: Sign out"
             translation="[80, 1000]"
             width="1600"
             color="0x9AA3B2FF"

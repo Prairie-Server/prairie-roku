@@ -7,7 +7,7 @@ namespace tests
         sub _()
             sections = Prairie.Home.sectionsFromResponse({
                 sections: [
-                    { id: "continue", section_type: "continue", title: "Continue", items: [{ content_id: "1" }] },
+                    { id: "continue", section_type: "continue", title: "Continue", items: [{ content_id: "1" }, "bad"] },
                     { id: "recent", title: "Recent" }
                 ]
             })

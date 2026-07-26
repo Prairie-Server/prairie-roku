@@ -26,9 +26,9 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 
 ## 1.0 feature checklist
 
-- [x] Connect (username / password) to Prairie server
-- [x] Profile picker (+ PIN when required)
-- [x] Home sections from `/api/v1/home/sections`
+- [x] Connect (username / password) to Prairie server _(implemented; device validation pending)_
+- [x] Profile picker (+ PIN when required) _(implemented; device validation pending)_
+- [x] Home sections from `/api/v1/home/sections` _(implemented; device validation pending)_
 - [ ] Libraries + catalog pagination
 - [ ] Collections (library + personal)
 - [ ] Search
