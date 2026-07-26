@@ -1,0 +1,57 @@
+import "pkg:/source/lib/UrlUtils.bs"
+
+namespace Prairie.ServerUrl
+
+    ' Validate a user-entered Prairie server base URL.
+    ' Returns { ok: true, url: string } or { ok: false, message: string }.
+    function validate(raw as string) as object
+        trimmed = Prairie.Url.normalizeServerUrl(raw)
+        if trimmed.len() = 0
+            return {
+                ok: false,
+                message: "Enter your Prairie server URL"
+            }
+        end if
+
+        lower = LCase(trimmed)
+        if lower.left(8) <> "https://" and lower.left(7) <> "http://"
+            return {
+                ok: false,
+                message: "Server URL must use http or https"
+            }
+        end if
+
+        ' Reject credentials embedded in the URL (user:pass@host).
+        rest = trimmed
+        if lower.left(8) = "https://"
+            rest = trimmed.mid(8)
+        else
+            rest = trimmed.mid(7)
+        end if
+        at = rest.instr("@")
+        slash = rest.instr("/")
+        if at >= 0 and (slash < 0 or at < slash)
+            return {
+                ok: false,
+                message: "Server URL must not include credentials"
+            }
+        end if
+
+        hostPart = rest
+        if slash >= 0
+            hostPart = rest.left(slash)
+        end if
+        if hostPart.trim().len() = 0
+            return {
+                ok: false,
+                message: "Server URL must be a valid http(s) address"
+            }
+        end if
+
+        return {
+            ok: true,
+            url: trimmed
+        }
+    end function
+
+end namespace

@@ -1,0 +1,22 @@
+namespace tests
+    @suite("Prairie.ServerUrl")
+    class ServerUrlSuite extends rooibos.BaseTestSuite
+
+        @describe("validate")
+        @it("accepts normalized http(s) URLs")
+        sub _()
+            result = Prairie.ServerUrl.validate(" https://prairie.example.com/// ")
+            m.assertTrue(result.ok)
+            m.assertEqual(result.url, "https://prairie.example.com")
+        end sub
+
+        @it("rejects empty, bad schemes, and embedded credentials")
+        sub _()
+            m.assertFalse(Prairie.ServerUrl.validate("").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("ftp://prairie.example.com").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("https://user:pass@prairie.example.com").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("https://").ok)
+        end sub
+
+    end class
+end namespace

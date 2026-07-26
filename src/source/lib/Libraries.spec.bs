@@ -1,0 +1,15 @@
+namespace tests
+    @suite("Prairie.Libraries")
+    class LibrariesSuite extends rooibos.BaseTestSuite
+
+        @describe("librariesFromResponse")
+        @it("accepts bare arrays and wrapped objects")
+        sub _()
+            m.assertEqual(Prairie.Libraries.librariesFromResponse([{ id: 1 }]).count(), 1)
+            m.assertEqual(Prairie.Libraries.librariesFromResponse({ libraries: [{ id: 2 }] }).count(), 1)
+            m.assertEqual(Prairie.Libraries.librariesFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.Libraries.librariesPath(), "/api/v1/user/libraries")
+        end sub
+
+    end class
+end namespace

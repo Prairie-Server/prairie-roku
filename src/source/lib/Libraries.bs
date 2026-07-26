@@ -1,0 +1,20 @@
+namespace Prairie.Libraries
+
+    function librariesPath() as string
+        return "/api/v1/user/libraries"
+    end function
+
+    function librariesFromResponse(data as dynamic) as object
+        if data = invalid
+            return []
+        end if
+        if GetInterface(data, "ifArray") <> invalid
+            return data
+        end if
+        if type(data) = "roAssociativeArray" and type(data.libraries) = "roArray"
+            return data.libraries
+        end if
+        return []
+    end function
+
+end namespace

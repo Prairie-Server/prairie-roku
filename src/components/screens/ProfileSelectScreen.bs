@@ -1,0 +1,179 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.title = m.top.findNode("title")
+    m.userLabel = m.top.findNode("userLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.profileList = m.top.findNode("profileList")
+    m.pinGroup = m.top.findNode("pinGroup")
+    m.pinInput = m.top.findNode("pinInput")
+    m.pinTitle = m.top.findNode("pinTitle")
+    m.pinContinueBg = m.top.findNode("pinContinueBg")
+    m.pinBackBg = m.top.findNode("pinBackBg")
+    m.backBg = m.top.findNode("backBg")
+
+    m.eyebrow.color = colors.amber
+    m.title.color = colors.ink
+    m.userLabel.color = colors.muted
+    m.errorLabel.color = colors.danger
+
+    m.top.observeField("profiles", "onProfiles")
+    m.top.observeField("username", "onUsername")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("pinMode", "onPinMode")
+    m.top.observeField("pinProfileName", "onPinProfileName")
+    m.profileList.observeField("rowItemSelected", "onProfileSelected")
+end sub
+
+sub onUsername()
+    m.userLabel.text = m.top.username
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onPinProfileName()
+    m.pinTitle.text = "Enter PIN for " + m.top.pinProfileName
+end sub
+
+sub onPinMode()
+    pinMode = m.top.pinMode
+    m.pinGroup.visible = pinMode
+    m.profileList.visible = not pinMode
+    if pinMode
+        m.pinInput.text = ""
+        m.pinInput.setFocus(true)
+    else
+        m.profileList.setFocus(true)
+    end if
+end sub
+
+sub onProfiles()
+    profiles = m.top.profiles
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    if profiles <> invalid
+        for each profile in profiles
+            item = row.createChild("ContentNode")
+            name = "Profile"
+            if profile.name <> invalid
+                name = profile.name as string
+            end if
+            meta = "Profile"
+            if profile.is_primary = true
+                meta = "Primary"
+            else if profile.is_child = true
+                meta = "Child"
+            end if
+            if profile.has_pin = true
+                meta = meta + " · PIN"
+            end if
+            item.title = name
+            item.description = meta
+            item.id = profile.id
+            item.addFields({
+                profile: profile
+            })
+        end for
+    end if
+    m.profileList.content = content
+end sub
+
+sub focusDefault()
+    if m.top.pinMode
+        m.pinInput.setFocus(true)
+    else
+        m.profileList.setFocus(true)
+    end if
+end sub
+
+sub onProfileSelected()
+    if m.top.busy
+        return
+    end if
+    selection = m.profileList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = selection[0]
+    col = selection[1]
+    rowNode = m.profileList.content.getChild(row)
+    if rowNode = invalid
+        return
+    end if
+    item = rowNode.getChild(col)
+    if item = invalid or item.profile = invalid
+        return
+    end if
+    m.top.errorText = ""
+    m.top.selectedProfile = item.profile
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+
+    if key = "back"
+        if m.top.pinMode
+            m.top.pinMode = false
+            return true
+        end if
+        m.top.cancelRequested = true
+        return true
+    end if
+
+    if key = "OK" or key = "play"
+        if m.backBg.isInFocusChain()
+            m.top.cancelRequested = true
+            return true
+        end if
+        if m.top.pinMode
+            if m.pinBackBg.isInFocusChain()
+                m.top.pinMode = false
+                return true
+            end if
+            if m.pinContinueBg.isInFocusChain() or m.pinInput.isInFocusChain()
+                submitPin()
+                return true
+            end if
+        end if
+    end if
+
+    if m.top.pinMode and key = "down"
+        if m.pinInput.isInFocusChain()
+            m.pinContinueBg.setFocus(true)
+            return true
+        end if
+    else if m.top.pinMode and key = "right"
+        if m.pinContinueBg.isInFocusChain()
+            m.pinBackBg.setFocus(true)
+            return true
+        end if
+    else if m.top.pinMode and key = "left"
+        if m.pinBackBg.isInFocusChain()
+            m.pinContinueBg.setFocus(true)
+            return true
+        end if
+    end if
+
+    return false
+end function
+
+sub submitPin()
+    if m.top.busy
+        return
+    end if
+    pin = m.pinInput.text.trim()
+    if pin.len() = 0
+        m.top.errorText = "Enter a PIN"
+        return
+    end if
+    m.top.pinSubmit = {
+        pin: pin
+    }
+end sub

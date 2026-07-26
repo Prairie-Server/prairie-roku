@@ -1,22 +1,279 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/Store.bs"
+import "pkg:/source/lib/Persist.bs"
+import "pkg:/source/lib/Session.bs"
+import "pkg:/source/lib/ApiClient.bs"
+import "pkg:/source/lib/Auth.bs"
+import "pkg:/source/lib/Home.bs"
+import "pkg:/source/lib/UrlUtils.bs"
 
 sub init()
     m.top.backgroundURI = ""
     m.top.backgroundColor = Prairie.Theme.colors().bg
+    m.store = Prairie.Store.createRegistryStore("prairie")
+    Prairie.Persist.ensureStorageSchema(m.store)
 
-    brand = m.top.findNode("brandLabel")
-    if brand <> invalid
-        brand.text = Prairie.Theme.brandName()
-        brand.color = Prairie.Theme.colors().ink
+    m.screenHost = m.top.findNode("screenHost")
+    m.httpTask = m.top.findNode("httpTask")
+    m.httpTask.observeField("response", "onHttpResponse")
+
+    m.pending = ""
+    m.auth = invalid
+    m.session = Prairie.Session.loadSession(m.store)
+    m.pinProfile = invalid
+
+    if m.session <> invalid
+        showHome()
+    else
+        showConnect()
+    end if
+end sub
+
+sub clearScreen()
+    if m.screenHost = invalid
+        return
+    end if
+    while m.screenHost.getChildCount() > 0
+        m.screenHost.removeChildIndex(0)
+    end while
+    m.screen = invalid
+end sub
+
+sub showConnect()
+    clearScreen()
+    m.route = "connect"
+    m.auth = invalid
+    m.session = invalid
+    screen = CreateObject("roSGNode", "ConnectScreen")
+    screen.initialServerUrl = Prairie.Persist.loadLastServerUrl(m.store)
+    screen.observeField("submitRequest", "onConnectSubmit")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
+end sub
+
+sub showProfiles()
+    clearScreen()
+    m.route = "profiles"
+    screen = CreateObject("roSGNode", "ProfileSelectScreen")
+    if m.auth <> invalid
+        screen.username = m.auth.username
+    end if
+    screen.observeField("selectedProfile", "onProfileChosen")
+    screen.observeField("pinSubmit", "onPinSubmit")
+    screen.observeField("cancelRequested", "onProfilesCancel")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadProfiles()
+end sub
+
+sub showHome()
+    clearScreen()
+    m.route = "home"
+    screen = CreateObject("roSGNode", "HomeBrowseScreen")
+    if m.session <> invalid and m.session.profileName <> invalid
+        screen.profileName = m.session.profileName
+    end if
+    screen.observeField("selectedContentId", "onHomeItemSelected")
+    screen.observeField("openLibraries", "onOpenLibraries")
+    screen.observeField("openSearch", "onOpenSearch")
+    screen.observeField("signOutRequested", "onSignOut")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadHomeSections()
+end sub
+
+sub showMessage(title as string, message as string)
+    ' Lightweight placeholder for screens not yet built (libraries/search/detail).
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = title
+    dialog.message = message
+    dialog.buttons = ["OK"]
+    m.top.dialog = dialog
+end sub
+
+sub onConnectSubmit()
+    req = m.screen.submitRequest
+    if req = invalid
+        return
+    end if
+    m.pending = "login"
+    m.loginServerUrl = serverBaseFromRequestUrl(req.url)
+    m.httpTask.request = req
+    m.httpTask.control = "RUN"
+end sub
+
+function serverBaseFromRequestUrl(url as string) as string
+    ' Strip /api/v1/auth/login suffix when present.
+    marker = "/api/v1/auth/login"
+    idx = LCase(url).instr(marker)
+    if idx >= 0
+        return url.left(idx)
+    end if
+    return Prairie.Url.normalizeServerUrl(url)
+end function
+
+sub loadProfiles()
+    if m.auth = invalid
+        return
+    end if
+    m.pending = "profiles"
+    m.screen.busy = true
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: m.auth.serverUrl,
+        accessToken: m.auth.accessToken
+    }, Prairie.Auth.profilesPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub loadHomeSections()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "home"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Home.sectionsPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub onProfileChosen()
+    profile = m.screen.selectedProfile
+    if profile = invalid
+        return
+    end if
+    if profile.has_pin = true
+        m.pinProfile = profile
+        m.screen.pinProfileName = profile.name
+        m.screen.pinMode = true
+        return
+    end if
+    finishProfile(profile, invalid)
+end sub
+
+sub onPinSubmit()
+    payload = m.screen.pinSubmit
+    if payload = invalid or m.pinProfile = invalid or m.auth = invalid
+        return
+    end if
+    m.pending = "verifyPin"
+    m.screen.busy = true
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: m.auth.serverUrl,
+        accessToken: m.auth.accessToken
+    }, Prairie.Auth.verifyPinPath(m.pinProfile.id), "POST", Prairie.Auth.buildVerifyPinBody(payload.pin))
+    m.httpTask.control = "RUN"
+end sub
+
+sub finishProfile(profile as object, profileToken as dynamic)
+    if m.auth = invalid
+        return
+    end if
+    session = {
+        serverUrl: m.auth.serverUrl,
+        accessToken: m.auth.accessToken,
+        username: m.auth.username,
+        profileId: profile.id as string
+    }
+    if profile.name <> invalid
+        session.profileName = profile.name as string
+    end if
+    if profileToken <> invalid
+        session.profileToken = profileToken as string
+    end if
+    m.session = Prairie.Session.saveSession(session, m.store)
+    m.pinProfile = invalid
+    showHome()
+end sub
+
+sub onProfilesCancel()
+    Prairie.Session.clearSession(m.store)
+    showConnect()
+end sub
+
+sub onSignOut()
+    Prairie.Session.clearSession(m.store)
+    m.session = invalid
+    showConnect()
+end sub
+
+sub onHomeItemSelected()
+    contentId = m.screen.selectedContentId
+    if contentId = invalid or contentId.len() = 0
+        return
+    end if
+    showMessage("Item", "Detail and playback land next. Content ID: " + contentId)
+end sub
+
+sub onOpenLibraries()
+    showMessage("Libraries", "Library browse lands in the next slice.")
+end sub
+
+sub onOpenSearch()
+    showMessage("Search", "Catalog search lands in the next slice.")
+end sub
+
+sub onHttpResponse()
+    response = m.httpTask.response
+    pending = m.pending
+    m.pending = ""
+
+    if m.screen <> invalid
+        if m.screen.hasField("busy")
+            m.screen.busy = false
+        end if
     end if
 
-    lede = m.top.findNode("ledeLabel")
-    if lede <> invalid
-        lede.color = Prairie.Theme.colors().muted
+    if response = invalid
+        return
     end if
 
-    backdrop = m.top.findNode("backdrop")
-    if backdrop <> invalid
-        backdrop.color = Prairie.Theme.colors().bg
+    if response.ok <> true
+        message = "Request failed"
+        if response.error <> invalid and response.error.message <> invalid
+            message = response.error.message
+        end if
+        if m.screen <> invalid and m.screen.hasField("errorText")
+            m.screen.errorText = message
+        end if
+        return
+    end if
+
+    if pending = "login"
+        data = response.data
+        if data = invalid or data.access_token = invalid or data.user = invalid
+            m.screen.errorText = "Unexpected login response"
+            return
+        end if
+        username = ""
+        if data.user.username <> invalid
+            username = data.user.username as string
+        end if
+        m.auth = {
+            serverUrl: m.loginServerUrl,
+            accessToken: data.access_token as string,
+            username: username
+        }
+        Prairie.Persist.saveLastServerUrl(m.loginServerUrl, m.store)
+        showProfiles()
+    else if pending = "profiles"
+        profiles = Prairie.Auth.profilesFromResponse(response.data)
+        m.screen.profiles = profiles
+        m.screen.callFunc("focusDefault")
+        if profiles.count() = 0
+            m.screen.errorText = "No profiles on this account"
+        end if
+    else if pending = "verifyPin"
+        data = response.data
+        if data = invalid or data.valid <> true or data.profile_token = invalid
+            m.screen.errorText = "Incorrect PIN"
+            return
+        end if
+        finishProfile(m.pinProfile, data.profile_token)
+    else if pending = "home"
+        sections = Prairie.Home.sectionsFromResponse(response.data)
+        m.screen.sections = sections
+        m.screen.callFunc("focusDefault")
+        if sections.count() = 0
+            m.screen.errorText = "No home sections yet"
+        end if
     end if
 end sub

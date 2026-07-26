@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="ProfileSelectScreen" extends="Group">
+    <interface>
+        <field id="profiles" type="array" />
+        <field id="username" type="string" value="" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="pinMode" type="bool" value="false" />
+        <field id="pinProfileName" type="string" value="" />
+        <field id="selectedProfile" type="assocarray" />
+        <field id="pinSubmit" type="assocarray" />
+        <field id="cancelRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="ProfileSelectScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="eyebrow"
+            text="WHO'S WATCHING"
+            translation="[120, 120]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text="Choose a profile"
+            translation="[120, 170]"
+            width="1200"
+            font="font:LargeBoldSystemFont"
+            color="0xF3EFE6FF"
+        />
+        <Label
+            id="userLabel"
+            text=""
+            translation="[120, 260]"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[120, 310]"
+            width="1000"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+
+        <RowList
+            id="profileList"
+            translation="[100, 380]"
+            itemSize="[400, 280]"
+            rowItemSize="[[360, 240]]"
+            numRows="1"
+            itemSpacing="[36, 0]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+        />
+
+        <Group id="pinGroup" visible="false" translation="[120, 400]">
+            <Label
+                id="pinTitle"
+                text="Enter PIN"
+                width="800"
+                font="font:MediumBoldSystemFont"
+                color="0xF3EFE6FF"
+            />
+            <TextEditBox
+                id="pinInput"
+                translation="[0, 70]"
+                width="400"
+                hintText="PIN"
+                maxTextLength="12"
+                secureMode="true"
+                showKeyboardOnFocus="true"
+            />
+            <Rectangle id="pinContinueBg" translation="[0, 170]" width="240" height="64" color="0xE0A84AFF" focusable="true">
+                <Label
+                    id="pinContinueLabel"
+                    text="Continue"
+                    width="240"
+                    height="64"
+                    horizAlign="center"
+                    vertAlign="center"
+                    color="0x141820FF"
+                    font="font:MediumBoldSystemFont"
+                />
+            </Rectangle>
+            <Rectangle id="pinBackBg" translation="[280, 170]" width="180" height="64" color="0x222B38FF" focusable="true">
+                <Label
+                    id="pinBackLabel"
+                    text="Back"
+                    width="180"
+                    height="64"
+                    horizAlign="center"
+                    vertAlign="center"
+                    color="0xF3EFE6FF"
+                    font="font:MediumSystemFont"
+                />
+            </Rectangle>
+        </Group>
+
+        <Rectangle id="backBg" translation="[1600, 120]" width="180" height="56" color="0x222B38FF" focusable="true">
+            <Label
+                id="backLabel"
+                text="Back"
+                width="180"
+                height="56"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+        </Rectangle>
+    </children>
+</component>

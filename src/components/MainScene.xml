@@ -2,33 +2,7 @@
 <component name="MainScene" extends="Scene">
     <script type="text/brightscript" uri="MainScene.bs" />
     <children>
-        <Rectangle
-            id="backdrop"
-            width="1920"
-            height="1080"
-            color="0x141820FF"
-        />
-        <Label
-            id="brandLabel"
-            text="Prairie"
-            width="1920"
-            height="160"
-            horizAlign="center"
-            vertAlign="center"
-            translation="[0, 360]"
-            font="font:LargeBoldSystemFont"
-            color="0xF3EFE6FF"
-        />
-        <Label
-            id="ledeLabel"
-            text="Connect your Prairie server from Settings once browse lands."
-            width="1200"
-            height="80"
-            horizAlign="center"
-            translation="[360, 540]"
-            font="font:MediumSystemFont"
-            color="0x9AA3B2FF"
-            wrap="true"
-        />
+        <Group id="screenHost" />
+        <HttpTask id="httpTask" />
     </children>
 </component>
