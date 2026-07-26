@@ -23,12 +23,18 @@ namespace tests
         sub _()
             m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ name: " PBS " }), "PBS")
             m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ callsign: "WXYZ", number: "7.1" }), "WXYZ")
+            m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ number: "4.1" }), "Channel 4.1")
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({ hls_url: "/live.m3u8" }), "/live.m3u8")
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl({ stream_url: "/alt" }), "/alt")
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl({}), invalid)
             ok = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "/live.m3u8", "tok")
             m.assertTrue(ok.ok)
             m.assertTrue(ok.url.instr("token=tok") >= 0)
+            empty = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "  ", "tok")
+            m.assertFalse(empty.ok)
             bad = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "https://tuner.example/x", "tok")
             m.assertFalse(bad.ok)
+            m.assertTrue(Prairie.LiveTv.liveSessionPath("s/1").instr("s%2F1") >= 0)
         end sub
 
         @describe("guide helpers")
