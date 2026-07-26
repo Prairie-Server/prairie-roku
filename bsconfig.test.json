@@ -1,0 +1,20 @@
+{
+  "extends": "./bsconfig.json",
+  "rootDir": ".coverage-src",
+  "outDir": "test-build",
+  "outFile": "out/prairie-roku-tests.zip",
+  "files": ["**/*"],
+  "plugins": ["@rokucommunity/bslint", "rooibos-roku"],
+  "rooibos": {
+    "isRecordingCodeCoverage": false,
+    "testsFilePattern": "!**/roku_modules/**/*",
+    "tags": ["!integration", "!deprecated", "!fixme"],
+    "showOnlyFailures": true,
+    "catchCrashes": true,
+    "failFast": false,
+    "sendHomeOnFinish": false,
+    "keepAppOpen": false,
+    "lineWidth": 70,
+    "reporters": ["mocha"]
+  }
+}

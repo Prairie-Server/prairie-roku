@@ -1,0 +1,69 @@
+namespace tests
+    @suite("Prairie.Persist")
+    class PersistSuite extends rooibos.BaseTestSuite
+
+        private store as object
+
+        protected override sub beforeEach()
+            m.store = Prairie.Store.createMemoryStore()
+        end sub
+
+        @describe("keys")
+        @it("exposes stable prairie.* key names")
+        sub _()
+            m.assertEqual(Prairie.Persist.sessionKey(), "prairie.session")
+            m.assertEqual(Prairie.Persist.lastServerUrlKey(), "prairie.lastServerUrl")
+            m.assertEqual(Prairie.Persist.playbackSettingsKey(), "prairie.playbackSettings")
+            m.assertEqual(Prairie.Persist.storageSchemaKey(), "prairie.storageSchemaVersion")
+        end sub
+
+        @describe("last server URL")
+        @it("saves and loads a normalized URL")
+        sub _()
+            Prairie.Persist.saveLastServerUrl(" https://prairie.example.com/// ", m.store)
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://prairie.example.com")
+        end sub
+
+        @it("falls back to session serverUrl when last URL missing")
+        sub _()
+            m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
+                serverUrl: "https://from-session.example.com/",
+                accessToken: "t",
+                username: "u",
+                profileId: "p"
+            }))
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://from-session.example.com")
+        end sub
+
+        @it("returns empty string when nothing is stored")
+        sub _()
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "")
+        end sub
+
+        @describe("ensureStorageSchema")
+        @it("promotes session URL and stamps schema v1")
+        sub _()
+            m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
+                serverUrl: "https://migrate.example.com",
+                accessToken: "t",
+                username: "u",
+                profileId: "p"
+            }))
+            version = Prairie.Persist.ensureStorageSchema(m.store)
+            m.assertEqual(version, 1)
+            m.assertEqual(m.store.getItem(Prairie.Persist.storageSchemaKey()), "1")
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://migrate.example.com")
+        end sub
+
+        @it("is idempotent once schema is current")
+        sub _()
+            Prairie.Persist.saveLastServerUrl("https://keep.example.com", m.store)
+            first = Prairie.Persist.ensureStorageSchema(m.store)
+            second = Prairie.Persist.ensureStorageSchema(m.store)
+            m.assertEqual(first, 1)
+            m.assertEqual(second, 1)
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://keep.example.com")
+        end sub
+
+    end class
+end namespace

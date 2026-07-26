@@ -1,0 +1,141 @@
+import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/UrlUtils.bs"
+
+namespace Prairie.Api
+
+    function defaultTimeoutMs() as integer
+        return 30000
+    end function
+
+    function isAuthLoginPath(path as string) as boolean
+        bare = path
+        q = bare.instr("?")
+        if q >= 0
+            bare = bare.left(q)
+        end if
+        while bare.len() > 0 and bare.right(1) = "/"
+            bare = bare.left(bare.len() - 1)
+        end while
+        return bare = "/api/v1/auth/login" or bare.right(11) = "/auth/login"
+    end function
+
+    function shouldNotifyUnauthorized(status as integer, code = invalid as dynamic) as boolean
+        if status = 401
+            return true
+        end if
+        if status <> 403 or code = invalid
+            return false
+        end if
+        codeText = LCase((code as string).trim())
+        if codeText = "unauthorized"
+            return true
+        end if
+        if codeText = "invalid_token"
+            return true
+        end if
+        if codeText = "token_expired"
+            return true
+        end if
+        if codeText = "authentication_required"
+            return true
+        end if
+        if codeText = "auth_required"
+            return true
+        end if
+        if codeText = "session_expired"
+            return true
+        end if
+        return false
+    end function
+
+    function buildHeaders(options as object) as object
+        headers = {
+            "X-Prairie-Device-Platform": Prairie.Theme.devicePlatformHeader(),
+            "X-Prairie-Device-Name": Prairie.Theme.deviceNameHeader()
+        }
+        if options.accessToken <> invalid and (options.accessToken as string).len() > 0
+            headers["Authorization"] = "Bearer " + (options.accessToken as string)
+        end if
+        if options.profileId <> invalid and (options.profileId as string).len() > 0
+            headers["X-Profile-Id"] = options.profileId as string
+        end if
+        if options.profileToken <> invalid and (options.profileToken as string).len() > 0
+            headers["X-Profile-Token"] = options.profileToken as string
+        end if
+        if options.contentType <> invalid
+            headers["Content-Type"] = options.contentType as string
+        end if
+        return headers
+    end function
+
+    function parseErrorBody(status as integer, statusText as string, bodyText as dynamic) as object
+        message = statusText
+        if message = invalid or (message as string).len() = 0
+            message = "HTTP " + status.toStr()
+        end if
+        code = invalid
+        body = invalid
+        if bodyText <> invalid and (bodyText as string).len() > 0
+            body = ParseJson(bodyText as string)
+            if type(body) = "roAssociativeArray"
+                if body.message <> invalid
+                    message = body.message as string
+                else if body.error <> invalid
+                    message = body.error as string
+                end if
+                if body.code <> invalid
+                    code = body.code as string
+                end if
+            end if
+        end if
+        return {
+            message: message,
+            status: status,
+            code: code,
+            body: body
+        }
+    end function
+
+    function createError(message as string, status as integer, code = invalid as dynamic, body = invalid as dynamic) as object
+        return {
+            name: "ApiError",
+            message: message,
+            status: status,
+            code: code,
+            body: body
+        }
+    end function
+
+    function buildRequest(options as object, path as string, method = "GET" as string, bodyText = invalid as dynamic) as object
+        headersOptions = {
+            accessToken: options.accessToken,
+            profileId: options.profileId,
+            profileToken: options.profileToken
+        }
+        if bodyText <> invalid
+            headersOptions.contentType = "application/json"
+        end if
+        timeoutMs = defaultTimeoutMs()
+        if options.timeoutMs <> invalid
+            timeoutMs = options.timeoutMs as integer
+        end if
+        return {
+            url: Prairie.Url.joinUrl(options.serverUrl as string, path),
+            method: UCase(method),
+            headers: buildHeaders(headersOptions),
+            body: bodyText,
+            timeoutMs: timeoutMs,
+            path: path
+        }
+    end function
+
+    function sessionOptions(session as object) as object
+        return {
+            serverUrl: session.serverUrl,
+            accessToken: session.accessToken,
+            profileId: session.profileId,
+            profileToken: session.profileToken
+        }
+    end function
+
+end namespace

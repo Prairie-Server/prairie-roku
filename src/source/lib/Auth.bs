@@ -1,0 +1,53 @@
+namespace Prairie.Auth
+
+    function loginPath() as string
+        return "/api/v1/auth/login"
+    end function
+
+    function profilesPath() as string
+        return "/api/v1/profiles"
+    end function
+
+    function verifyPinPath(profileId as string) as string
+        return "/api/v1/profiles/" + profileId.encodeUriComponent() + "/verify-pin"
+    end function
+
+    function buildLoginBody(username as string, password as string) as string
+        return FormatJson({
+            username: username,
+            password: password
+        })
+    end function
+
+    function buildVerifyPinBody(pin as string) as string
+        return FormatJson({
+            pin: pin
+        })
+    end function
+
+    function pickDefaultProfile(profiles as object) as dynamic
+        if profiles = invalid or profiles.count() = 0
+            return invalid
+        end if
+        for each profile in profiles
+            if profile.is_primary = true
+                return profile
+            end if
+        end for
+        return profiles[0]
+    end function
+
+    function profilesFromResponse(data as dynamic) as object
+        if data = invalid
+            return []
+        end if
+        if type(data) <> "roAssociativeArray"
+            return []
+        end if
+        if type(data.profiles) = "roArray"
+            return data.profiles
+        end if
+        return []
+    end function
+
+end namespace

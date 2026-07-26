@@ -1,0 +1,30 @@
+namespace tests
+    @suite("Prairie.Store")
+    class StoreSuite extends rooibos.BaseTestSuite
+
+        @describe("memory store")
+        @it("supports get/set/remove")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            m.assertInvalid(store.getItem("missing"))
+            store.setItem("k", "v")
+            m.assertEqual(store.getItem("k"), "v")
+            store.removeItem("k")
+            m.assertInvalid(store.getItem("k"))
+        end sub
+
+        @describe("registry store")
+        @it("reads and writes through roRegistrySection")
+        sub _()
+            store = Prairie.Store.createRegistryStore("prairie-tests")
+            store.removeItem("probe")
+            m.assertInvalid(store.getItem("probe"))
+            store.setItem("probe", "ok")
+            m.assertEqual(store.getItem("probe"), "ok")
+            store.removeItem("probe")
+            m.assertInvalid(store.getItem("probe"))
+        end sub
+
+    end class
+end namespace
+

@@ -1,0 +1,82 @@
+namespace tests
+    @suite("Prairie.Api")
+    class ApiClientSuite extends rooibos.BaseTestSuite
+
+        @describe("isAuthLoginPath")
+        @it("detects login paths with query and trailing slash")
+        sub _()
+            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v1/auth/login"))
+            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v1/auth/login/"))
+            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v1/auth/login?x=1"))
+            m.assertFalse(Prairie.Api.isAuthLoginPath("/api/v1/profiles"))
+        end sub
+
+        @describe("shouldNotifyUnauthorized")
+        @it("notifies on 401 and auth-flavored 403 codes")
+        sub _()
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(401, invalid))
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "token_expired"))
+            m.assertFalse(Prairie.Api.shouldNotifyUnauthorized(403, "forbidden"))
+            m.assertFalse(Prairie.Api.shouldNotifyUnauthorized(500, "token_expired"))
+        end sub
+
+        @describe("buildHeaders")
+        @it("includes device and session headers")
+        sub _()
+            headers = Prairie.Api.buildHeaders({
+                accessToken: "tok",
+                profileId: "p1",
+                profileToken: "pt",
+                contentType: "application/json"
+            })
+            m.assertEqual(headers["Authorization"], "Bearer tok")
+            m.assertEqual(headers["X-Profile-Id"], "p1")
+            m.assertEqual(headers["X-Profile-Token"], "pt")
+            m.assertEqual(headers["Content-Type"], "application/json")
+            m.assertEqual(headers["X-Prairie-Device-Platform"], "roku")
+        end sub
+
+        @describe("parseErrorBody")
+        @it("extracts message and code from JSON bodies")
+        sub _()
+            parsed = Prairie.Api.parseErrorBody(401, "Unauthorized", FormatJson({
+                message: "nope",
+                code: "invalid_token"
+            }))
+            m.assertEqual(parsed.message, "nope")
+            m.assertEqual(parsed.code, "invalid_token")
+            m.assertEqual(parsed.status, 401)
+        end sub
+
+        @it("ignores non-object JSON error bodies")
+        sub _()
+            asArray = Prairie.Api.parseErrorBody(500, "Error", "[1,2]")
+            m.assertEqual(asArray.message, "Error")
+            m.assertInvalid(asArray.code)
+            asScalar = Prairie.Api.parseErrorBody(500, "Error", chr(34) + "oops" + chr(34))
+            m.assertEqual(asScalar.message, "Error")
+            m.assertInvalid(asScalar.code)
+        end sub
+
+
+        @describe("buildRequest")
+        @it("joins URL and attaches JSON content type for bodies")
+        sub _()
+            req = Prairie.Api.buildRequest({
+                serverUrl: "https://prairie.example.com/",
+                accessToken: "tok"
+            }, "/api/v1/home/sections", "get", invalid)
+            m.assertEqual(req.url, "https://prairie.example.com/api/v1/home/sections")
+            m.assertEqual(req.method, "GET")
+            m.assertInvalid(req.headers["Content-Type"])
+
+            posted = Prairie.Api.buildRequest({
+                serverUrl: "https://prairie.example.com",
+                accessToken: "tok"
+            }, "/api/v1/auth/login", "POST", "{}")
+            m.assertEqual(posted.headers["Content-Type"], "application/json")
+            m.assertEqual(posted.body, "{}")
+        end sub
+
+    end class
+end namespace

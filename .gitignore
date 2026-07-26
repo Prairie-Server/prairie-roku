@@ -1,0 +1,14 @@
+node_modules/
+dist/
+out/
+test-build/
+coverage/
+.coverage-src/
+*.zip
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+.roku/
+.vscode/*.log

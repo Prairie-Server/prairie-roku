@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "inline-if-style": "then",
+    "block-if-style": "no-then",
+    "condition-style": "no-group",
+    "named-function-style": "auto",
+    "anon-function-style": "auto",
+    "aa-comma-style": "no-dangling",
+    "no-print": "warn",
+    "no-todo": "off",
+    "no-stop": "error",
+    "eol-last": "always",
+    "color-format": "hex-long",
+    "color-case": "upper",
+    "type-annotations": "all"
+  },
+  "globals": [],
+  "ignores": ["**/roku_modules/**", "dist/**", "test-build/**", "out/**", "coverage/**"]
+}

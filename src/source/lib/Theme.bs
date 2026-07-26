@@ -1,0 +1,30 @@
+namespace Prairie.Theme
+
+    ' Prairie Dusk palette — keep in sync with prairie-smarttv styles.
+    function colors() as object
+        return {
+            bg: "0x141820FF",
+            bgElevated: "0x1C2430FF",
+            bgSoft: "0x222B38FF",
+            amber: "0xE0A84AFF",
+            amberDeep: "0xC48C2EFF",
+            ink: "0xF3EFE6FF",
+            muted: "0x9AA3B2FF",
+            danger: "0xE07070FF",
+            ring: "0xF0C574FF"
+        }
+    end function
+
+    function brandName() as string
+        return "Prairie"
+    end function
+
+    function devicePlatformHeader() as string
+        return "roku"
+    end function
+
+    function deviceNameHeader() as string
+        return "Prairie Roku"
+    end function
+
+end namespace

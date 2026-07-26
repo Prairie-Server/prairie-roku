@@ -1,0 +1,84 @@
+namespace Prairie.Catalog
+
+    function buildCatalogPath(query as object) as string
+        params = []
+        if query.libraryId <> invalid
+            params.push("library_id=" + (query.libraryId as integer).toStr())
+        end if
+        if query.type <> invalid and (query.type as string).len() > 0
+            params.push("type=" + (query.type as string).encodeUriComponent())
+        end if
+        if query.q <> invalid and (query.q as string).len() > 0
+            params.push("q=" + (query.q as string).encodeUriComponent())
+        end if
+        if query.source <> invalid and (query.source as string).len() > 0
+            params.push("source=" + (query.source as string).encodeUriComponent())
+        end if
+        if query.collectionId <> invalid and (query.collectionId as string).len() > 0
+            params.push("collection_id=" + (query.collectionId as string).encodeUriComponent())
+        end if
+        if query.offset <> invalid
+            params.push("offset=" + (query.offset as integer).toStr())
+        end if
+        if query.limit <> invalid
+            params.push("limit=" + (query.limit as integer).toStr())
+        end if
+        if query.snapshot <> invalid and (query.snapshot as string).len() > 0
+            params.push("snapshot=" + (query.snapshot as string).encodeUriComponent())
+        end if
+        if query.sort <> invalid and (query.sort as string).len() > 0
+            params.push("sort=" + (query.sort as string).encodeUriComponent())
+        end if
+        if query.order <> invalid and (query.order as string).len() > 0
+            params.push("order=" + (query.order as string).encodeUriComponent())
+        end if
+
+        if params.count() = 0
+            return "/api/v1/catalog"
+        end if
+        return "/api/v1/catalog?" + params.join("&")
+    end function
+
+    function itemDetailPath(contentId as string) as string
+        return "/api/v1/catalog/items/" + contentId.encodeUriComponent()
+    end function
+
+    function seasonsPath(seriesId as string) as string
+        return "/api/v1/catalog/series/" + seriesId.encodeUriComponent() + "/seasons"
+    end function
+
+    function episodesPath(seriesId as string, seasonNumber as integer) as string
+        return "/api/v1/catalog/series/" + seriesId.encodeUriComponent() + "/seasons/" + seasonNumber.toStr() + "/episodes"
+    end function
+
+    function arrayFromResponse(data as dynamic, key as string) as object
+        if data = invalid
+            return []
+        end if
+        if GetInterface(data, "ifArray") <> invalid
+            return data
+        end if
+        if type(data) <> "roAssociativeArray"
+            return []
+        end if
+        value = data[key]
+        if type(value) = "roArray"
+            return value
+        end if
+        return []
+    end function
+
+    function itemsFromResponse(data as dynamic) as object
+        return arrayFromResponse(data, "items")
+    end function
+
+    function seasonsFromResponse(data as dynamic) as object
+        return arrayFromResponse(data, "seasons")
+    end function
+
+    function episodesFromResponse(data as dynamic) as object
+        return arrayFromResponse(data, "episodes")
+    end function
+
+end namespace
+
