@@ -8,11 +8,26 @@ namespace Prairie.Auth
         return "/api/v1/auth/setup"
     end function
 
-    function needsSetupFromResponse(data as dynamic) as boolean
+    ' Fail-closed parse of GET /auth/setup. Callers must treat ok=false as abort.
+    function parseSetupStatus(data as dynamic) as object
         if data = invalid or type(data) <> "roAssociativeArray"
-            return false
+            return { ok: false }
         end if
-        return data.needs_setup = true
+        ' BrightScript may report Boolean or roBoolean depending on runtime/boxing.
+        needsType = LCase(type(data.needs_setup))
+        if needsType <> "boolean" and needsType <> "roboolean"
+            return { ok: false }
+        end if
+        return {
+            ok: true,
+            needsSetup: data.needs_setup = true
+        }
+    end function
+
+    ' Convenience: true only when the body is valid and needs_setup is true.
+    function needsSetupFromResponse(data as dynamic) as boolean
+        parsed = parseSetupStatus(data)
+        return parsed.ok = true and parsed.needsSetup = true
     end function
 
     function profilesPath() as string

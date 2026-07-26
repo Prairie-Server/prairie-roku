@@ -44,8 +44,15 @@ namespace tests
                 title: "Show"
             }))
             m.assertEqual(body.program_id, "p1")
-            m.assertEqual(body.channel_id, "c1")
-            m.assertEqual(body.title, "Show")
+            m.assertInvalid(body.channel_id)
+            m.assertInvalid(Prairie.LiveTv.buildScheduleRecordingBody({ id: "" }))
+            m.assertInvalid(Prairie.LiveTv.buildScheduleRecordingBody({}))
+            m.assertTrue(Prairie.LiveTv.programBelongsToChannel([
+                { id: "p1", channel_id: "c1" }
+            ], "p1", "c1"))
+            m.assertFalse(Prairie.LiveTv.programBelongsToChannel([
+                { id: "p1", channel_id: "c1" }
+            ], "p1", "c2"))
         end sub
 
         @describe("guide helpers")
