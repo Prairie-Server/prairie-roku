@@ -60,6 +60,7 @@ sub init()
     m.discoverDeep = false
     m.serverListBackRoute = "connect"
     m.connectPrefillUrl = ""
+    m.pendingLoginRequest = invalid
 
     if m.session = invalid
         m.session = sessionFromActiveRegistry()
@@ -271,6 +272,7 @@ sub showLiveTv()
     screen = CreateObject("roSGNode", "LiveTvScreen")
     screen.busy = true
     screen.observeField("selectedChannel", "onLiveChannelChosen")
+    screen.observeField("recordRequested", "onLiveRecordRequested")
     screen.observeField("openSettings", "onOpenSettings")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
@@ -524,9 +526,12 @@ sub onConnectSubmit()
     if req = invalid
         return
     end if
-    m.pending = "login"
+    m.pendingLoginRequest = req
     m.loginServerUrl = serverBaseFromRequestUrl(req.url)
-    m.httpTask.request = req
+    m.pending = "authSetup"
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: m.loginServerUrl
+    }, Prairie.Auth.setupStatusPath(), "GET")
     m.httpTask.control = "RUN"
 end sub
 
@@ -894,6 +899,21 @@ sub onLiveChannelChosen()
     m.httpTask.control = "RUN"
 end sub
 
+sub onLiveRecordRequested()
+    if m.screen.recordRequested <> true
+        return
+    end if
+    program = m.screen.recordProgram
+    if program = invalid or m.session = invalid
+        return
+    end if
+    m.pending = "liveRecord"
+    m.screen.errorText = ""
+    body = Prairie.LiveTv.buildScheduleRecordingBody(program)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.recordingsPath(), "POST", body)
+    m.httpTask.control = "RUN"
+end sub
+
 sub releaseLiveSessionAsync()
     if m.session = invalid or m.liveSessionId.len() = 0
         return
@@ -1115,7 +1135,8 @@ sub onHttpResponse()
 
     chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
     chainingDiscover = pending = "discoverProbe"
-    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover
+    chainingAuth = pending = "authSetup"
+    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover and not chainingAuth
         m.screen.busy = false
     end if
 
@@ -1175,6 +1196,12 @@ sub onHttpResponse()
                 m.screen.busy = false
             end if
         end if
+        if pending = "authSetup"
+            m.pendingLoginRequest = invalid
+            if m.screen <> invalid and m.screen.hasField("busy")
+                m.screen.busy = false
+            end if
+        end if
         if m.screen <> invalid and m.screen.hasField("errorText")
             m.screen.errorText = message
         end if
@@ -1198,6 +1225,26 @@ sub onHttpResponse()
         }
         Prairie.Persist.saveLastServerUrl(m.loginServerUrl, m.store)
         showProfiles()
+    else if pending = "authSetup"
+        if Prairie.Auth.needsSetupFromResponse(response.data)
+            if m.screen <> invalid
+                m.screen.busy = false
+                m.screen.errorText = "Open " + m.loginServerUrl + " in a browser to create the first account, then try again."
+            end if
+            m.pendingLoginRequest = invalid
+            return
+        end if
+        loginReq = m.pendingLoginRequest
+        m.pendingLoginRequest = invalid
+        if loginReq = invalid
+            return
+        end if
+        m.pending = "login"
+        if m.screen <> invalid and m.screen.hasField("busy")
+            m.screen.busy = true
+        end if
+        m.httpTask.request = loginReq
+        m.httpTask.control = "RUN"
     else if pending = "profiles"
         profiles = Prairie.Auth.profilesFromResponse(response.data)
         m.screen.profiles = profiles
@@ -1355,6 +1402,9 @@ sub onHttpResponse()
         programs = Prairie.LiveTv.programsFromResponse(response.data)
         m.livePrograms = programs
         m.screen.programs = programs
+    else if pending = "liveRecord"
+        m.screen.statusText = "Recording scheduled"
+        m.screen.errorText = ""
     else if pending = "liveSession"
         start = response.data
         streamPath = Prairie.LiveTv.playableLiveUrl(start)

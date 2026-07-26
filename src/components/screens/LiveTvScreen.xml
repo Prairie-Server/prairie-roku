@@ -7,6 +7,8 @@
         <field id="errorText" type="string" value="" />
         <field id="statusText" type="string" value="" />
         <field id="selectedChannel" type="assocarray" />
+        <field id="recordProgram" type="assocarray" />
+        <field id="recordRequested" type="boolean" value="false" alwaysNotify="true" />
         <field id="openSettings" type="boolean" value="false" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />

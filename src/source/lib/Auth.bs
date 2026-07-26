@@ -4,6 +4,17 @@ namespace Prairie.Auth
         return "/api/v1/auth/login"
     end function
 
+    function setupStatusPath() as string
+        return "/api/v1/auth/setup"
+    end function
+
+    function needsSetupFromResponse(data as dynamic) as boolean
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return false
+        end if
+        return data.needs_setup = true
+    end function
+
     function profilesPath() as string
         return "/api/v1/profiles"
     end function

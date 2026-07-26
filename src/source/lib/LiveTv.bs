@@ -19,6 +19,26 @@ namespace Prairie.LiveTv
         return "/api/v1/livetv/sessions/" + sessionId.encodeUriComponent()
     end function
 
+    function recordingsPath() as string
+        return "/api/v1/livetv/recordings"
+    end function
+
+    function buildScheduleRecordingBody(program as object) as string
+        programId = ""
+        if program.id <> invalid
+            programId = program.id as string
+        else if program.program_id <> invalid
+            programId = program.program_id as string
+        end if
+        return FormatJson({
+            program_id: programId,
+            channel_id: program.channel_id as string,
+            start: program.start as string,
+            stop: program.stop as string,
+            title: program.title as string
+        })
+    end function
+
     function channelsFromResponse(data as dynamic) as object
         channels = []
         if data = invalid or type(data) <> "roAssociativeArray"
