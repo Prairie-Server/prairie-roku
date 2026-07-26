@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="LiveTvScreen" extends="Group">
+    <interface>
+        <field id="channels" type="array" />
+        <field id="programs" type="array" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="statusText" type="string" value="" />
+        <field id="selectedChannel" type="assocarray" />
+        <field id="openSettings" type="boolean" value="false" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="LiveTvScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="eyebrow"
+            text="BROADCAST"
+            translation="[80, 60]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text="Live TV"
+            translation="[80, 110]"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="statusLabel"
+            text=""
+            translation="[80, 200]"
+            width="1400"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 250]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="nowLabel"
+            text=""
+            translation="[80, 310]"
+            width="1600"
+            color="0xF3EFE6FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="nextLabel"
+            text=""
+            translation="[80, 360]"
+            width="1600"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="channelList"
+            translation="[40, 430]"
+            itemSize="[1840, 140]"
+            rowItemSize="[[420, 120]]"
+            numRows="3"
+            itemSpacing="[20, 20]"
+            rowItemSpacing="[[20, 0]]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+        />
+    </children>
+</component>

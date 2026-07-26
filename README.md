@@ -3,17 +3,18 @@
 AGPL-3.0 client for **Roku** (BrightScript / SceneGraph) that talks to Prairie over
 native `/api/v1` (not Jellyfin-primary).
 
-**Version 1.0.0 (in progress)** — Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`.
+**Version 1.0.0** — Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the small-PR plan toward 1.0.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the 1.0 feature checklist and
+[docs/STORE.md](docs/STORE.md) for sideload / Channel Store notes.
 
-## What’s included (foundation)
+## Features
 
-- Channel shell with Prairie Dusk splash / poster
-- Strict BrighterScript typecheck (`diagnosticLevel: error`) + bslint + Prettier
-- Headless Rooibos tests via `brs-cli` (no device required for CI)
-- **75%** line-coverage gate on `src/source/lib/**` logic modules
-- Sideload zip packaging (`out/prairie-roku.zip`)
+- Connect + profile picker (PIN) with registry session persistence
+- Home rails, libraries, collections, and catalog search
+- Item detail (seasons/episodes) → `Video` playback with progress and session teardown
+- Live TV channel list with now/next guide (empty when unavailable)
+- Playback settings (force direct / transcode, preferred subtitle language)
 
 ## Requirements
 

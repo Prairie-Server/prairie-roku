@@ -101,6 +101,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
     else if key = "replay"
         m.top.openSearch = true
         return true
+    else if key = "info"
+        m.top.openLiveTv = true
+        return true
     else if key = "back"
         m.top.signOutRequested = true
         return true

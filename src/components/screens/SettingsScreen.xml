@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="SettingsScreen" extends="Group">
+    <interface>
+        <field id="forceDirectPlay" type="bool" value="false" />
+        <field id="forceTranscode" type="bool" value="false" />
+        <field id="preferredSubtitleLanguage" type="string" value="" />
+        <field id="saveRequested" type="assocarray" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="SettingsScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="eyebrow"
+            text="PREFERENCES"
+            translation="[80, 60]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text="Playback settings"
+            translation="[80, 110]"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="lede"
+            text="Stored in the Roku registry across channel updates."
+            translation="[80, 200]"
+            width="1200"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+
+        <Label id="methodLabel" text="Play method" translation="[80, 300]" color="0xE0A84AFF" font="font:SmallBoldSystemFont" />
+        <Rectangle id="autoBg" translation="[80, 350]" width="220" height="64" color="0x222B38FF" focusable="true">
+            <Label id="autoLabel" text="Auto" width="220" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+        </Rectangle>
+        <Rectangle id="directBg" translation="[320, 350]" width="280" height="64" color="0x222B38FF" focusable="true">
+            <Label id="directLabel" text="Force direct" width="280" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+        </Rectangle>
+        <Rectangle id="transcodeBg" translation="[620, 350]" width="320" height="64" color="0x222B38FF" focusable="true">
+            <Label id="transcodeLabel" text="Force transcode" width="320" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+        </Rectangle>
+
+        <Label id="subLabel" text="Preferred subtitle language (ISO code, blank = off)" translation="[80, 460]" color="0xE0A84AFF" font="font:SmallBoldSystemFont" />
+        <TextEditBox
+            id="subtitleInput"
+            translation="[80, 510]"
+            width="400"
+            hintText="eng"
+            maxTextLength="12"
+            showKeyboardOnFocus="true"
+        />
+
+        <Rectangle id="saveBg" translation="[80, 620]" width="220" height="64" color="0xE0A84AFF" focusable="true">
+            <Label id="saveLabel" text="Save" width="220" height="64" horizAlign="center" vertAlign="center" color="0x141820FF" font="font:MediumBoldSystemFont" />
+        </Rectangle>
+        <Label id="savedLabel" text="" translation="[320, 635]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+    </children>
+</component>
