@@ -23,20 +23,39 @@ namespace Prairie.LiveTv
         return "/api/v1/livetv/recordings"
     end function
 
-    function buildScheduleRecordingBody(program as object) as string
+    ' Returns JSON with only program_id, or invalid when the id is missing.
+    ' Server fills channel/window/title — clients must not over-post those fields.
+    function buildScheduleRecordingBody(program as object) as dynamic
+        if program = invalid
+            return invalid
+        end if
         programId = ""
         if program.id <> invalid
-            programId = program.id as string
+            programId = (program.id as string).trim()
         else if program.program_id <> invalid
-            programId = program.program_id as string
+            programId = (program.program_id as string).trim()
+        end if
+        if programId.len() = 0
+            return invalid
         end if
         return FormatJson({
-            program_id: programId,
-            channel_id: program.channel_id as string,
-            start: program.start as string,
-            stop: program.stop as string,
-            title: program.title as string
+            program_id: programId
         })
+    end function
+
+    ' True when programId exists in the loaded guide for the given channel.
+    function programBelongsToChannel(programs as object, programId as string, channelId as string) as boolean
+        if programId.len() = 0 or channelId.len() = 0 or programs = invalid
+            return false
+        end if
+        for each program in programs
+            if type(program) = "roAssociativeArray" and program.id <> invalid and program.channel_id <> invalid
+                if (program.id as string) = programId and (program.channel_id as string) = channelId
+                    return true
+                end if
+            end if
+        end for
+        return false
     end function
 
     function channelsFromResponse(data as dynamic) as object

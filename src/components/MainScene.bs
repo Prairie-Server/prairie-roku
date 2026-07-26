@@ -99,6 +99,8 @@ sub clearScreen()
         m.httpTask.control = "STOP"
     end if
     m.pending = ""
+    ' Drop any cached login POST (password body) when leaving the connect flow.
+    m.pendingLoginRequest = invalid
     m.pinProfile = invalid
     while m.screenHost.getChildCount() > 0
         m.screenHost.removeChildIndex(0)
@@ -907,9 +909,25 @@ sub onLiveRecordRequested()
     if program = invalid or m.session = invalid
         return
     end if
+    programId = ""
+    channelId = ""
+    if program.id <> invalid
+        programId = (program.id as string).trim()
+    end if
+    if program.channel_id <> invalid
+        channelId = (program.channel_id as string).trim()
+    end if
+    if programId.len() = 0 or not Prairie.LiveTv.programBelongsToChannel(m.livePrograms, programId, channelId)
+        m.screen.errorText = "Could not schedule recording"
+        return
+    end if
+    body = Prairie.LiveTv.buildScheduleRecordingBody(program)
+    if body = invalid
+        m.screen.errorText = "Could not schedule recording"
+        return
+    end if
     m.pending = "liveRecord"
     m.screen.errorText = ""
-    body = Prairie.LiveTv.buildScheduleRecordingBody(program)
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.recordingsPath(), "POST", body)
     m.httpTask.control = "RUN"
 end sub
@@ -1201,6 +1219,16 @@ sub onHttpResponse()
             if m.screen <> invalid and m.screen.hasField("busy")
                 m.screen.busy = false
             end if
+            if m.screen <> invalid and m.screen.hasField("errorText")
+                m.screen.errorText = "Could not verify server setup status"
+            end if
+            return
+        end if
+        if pending = "liveRecord"
+            if m.screen <> invalid and m.screen.hasField("errorText")
+                m.screen.errorText = "Could not schedule recording"
+            end if
+            return
         end if
         if m.screen <> invalid and m.screen.hasField("errorText")
             m.screen.errorText = message
@@ -1226,10 +1254,19 @@ sub onHttpResponse()
         Prairie.Persist.saveLastServerUrl(m.loginServerUrl, m.store)
         showProfiles()
     else if pending = "authSetup"
-        if Prairie.Auth.needsSetupFromResponse(response.data)
+        setup = Prairie.Auth.parseSetupStatus(response.data)
+        if setup.ok <> true
             if m.screen <> invalid
                 m.screen.busy = false
-                m.screen.errorText = "Open " + m.loginServerUrl + " in a browser to create the first account, then try again."
+                m.screen.errorText = "Could not verify server setup status"
+            end if
+            m.pendingLoginRequest = invalid
+            return
+        end if
+        if setup.needsSetup = true
+            if m.screen <> invalid
+                m.screen.busy = false
+                m.screen.errorText = "This server needs setup in a browser on another device. Create the first account there, then try again."
             end if
             m.pendingLoginRequest = invalid
             return
