@@ -26,6 +26,8 @@ sub init()
     m.top.observeField("busy", "onBusy")
     m.channelList.observeField("rowItemFocused", "onChannelFocused")
     m.channelList.observeField("rowItemSelected", "onChannelSelected")
+    m.focusedChannel = invalid
+    m.baseStatusText = ""
 end sub
 
 sub onErrorText()
@@ -33,7 +35,8 @@ sub onErrorText()
 end sub
 
 sub onStatusText()
-    m.statusLabel.text = m.top.statusText
+    m.baseStatusText = m.top.statusText
+    refreshStatusHint()
 end sub
 
 sub onBusy()
@@ -71,6 +74,7 @@ sub onChannels()
     end if
     m.channelList.content = content
     if channels <> invalid and channels.count() > 0
+        m.focusedChannel = channels[0]
         updateGuideLabels(channels[0])
     else
         m.nowLabel.text = ""
@@ -79,9 +83,13 @@ sub onChannels()
 end sub
 
 sub onPrograms()
-    channels = m.top.channels
-    if channels <> invalid and channels.count() > 0
-        updateGuideLabels(channels[0])
+    if m.focusedChannel <> invalid
+        updateGuideLabels(m.focusedChannel)
+    else
+        channels = m.top.channels
+        if channels <> invalid and channels.count() > 0
+            updateGuideLabels(channels[0])
+        end if
     end if
 end sub
 
@@ -89,6 +97,7 @@ sub updateGuideLabels(channel as object)
     if channel = invalid or channel.id = invalid
         m.nowLabel.text = ""
         m.nextLabel.text = ""
+        refreshStatusHint(false)
         return
     end if
     channelId = channel.id as string
@@ -103,6 +112,24 @@ sub updateGuideLabels(channel as object)
         m.nextLabel.text = "Next · " + (nextProgram.title as string)
     else
         m.nextLabel.text = ""
+    end if
+    refreshStatusHint(current <> invalid)
+end sub
+
+sub refreshStatusHint(hasCurrentProgram = invalid as dynamic)
+    showHint = false
+    if hasCurrentProgram <> invalid
+        showHint = hasCurrentProgram = true
+    else if m.focusedChannel <> invalid and m.focusedChannel.id <> invalid
+        channelId = m.focusedChannel.id as string
+        showHint = Prairie.LiveTv.currentProgramForChannel(m.top.programs, channelId) <> invalid
+    end if
+    if showHint and m.baseStatusText.len() > 0
+        m.statusLabel.text = m.baseStatusText + " · Replay to record Now"
+    else if showHint
+        m.statusLabel.text = "Replay to record Now"
+    else
+        m.statusLabel.text = m.baseStatusText
     end if
 end sub
 
@@ -123,6 +150,7 @@ sub onChannelFocused()
     if item = invalid or item.channel = invalid
         return
     end if
+    m.focusedChannel = item.channel
     updateGuideLabels(item.channel)
 end sub
 
@@ -151,6 +179,18 @@ function onKeyEvent(key as string, press as boolean) as boolean
         return true
     else if key = "options"
         m.top.openSettings = true
+        return true
+    else if key = "replay"
+        channel = m.focusedChannel
+        if channel = invalid or channel.id = invalid
+            return false
+        end if
+        current = Prairie.LiveTv.currentProgramForChannel(m.top.programs, channel.id as string)
+        if current = invalid
+            return false
+        end if
+        m.top.recordProgram = current
+        m.top.recordRequested = true
         return true
     end if
     return false
