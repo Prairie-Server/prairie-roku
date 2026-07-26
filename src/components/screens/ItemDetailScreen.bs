@@ -1,9 +1,12 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
     m.top.findNode("backdrop").color = colors.bg
     m.heroArt = m.top.findNode("heroArt")
+    m.heroCanonical = ""
+    m.heroArt.observeField("loadStatus", "onHeroLoadStatus")
     m.eyebrow = m.top.findNode("eyebrow")
     m.title = m.top.findNode("title")
     m.meta = m.top.findNode("meta")
@@ -50,6 +53,25 @@ function isSeriesType(itemType as string) as boolean
     return lower = "series" or lower = "show" or lower = "tv"
 end function
 
+' WebP → PNG fallback when preferred WebP fails to decode on the Poster.
+sub onHeroLoadStatus()
+    status = LCase(m.heroArt.loadStatus)
+    if status <> "failed" and status <> "error"
+        return
+    end if
+    current = m.heroArt.uri
+    if current = invalid or (current as string).len() = 0
+        return
+    end if
+    png = Prairie.Artwork.pngSibling(current as string)
+    if png.len() = 0 and m.heroCanonical.len() > 0
+        png = Prairie.Artwork.pngSibling(m.heroCanonical)
+    end if
+    if png.len() > 0 and png <> current
+        m.heroArt.uri = png
+    end if
+end sub
+
 sub onDetail()
     detail = m.top.detail
     if detail = invalid
@@ -84,7 +106,8 @@ sub onDetail()
     else if detail.poster_url <> invalid
         art = detail.poster_url as string
     end if
-    m.heroArt.uri = art
+    m.heroCanonical = art
+    m.heroArt.uri = Prairie.Artwork.preferred(art)
 
     series = isSeriesType(itemType)
     m.playBg.visible = not series

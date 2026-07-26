@@ -1,0 +1,107 @@
+namespace Prairie.Artwork
+
+    ' Preferred artwork URL for SceneGraph Poster / hdPosterUrl.
+    '
+    ' Other Prairie clients prefer AVIF siblings of canonical .webp keys, but
+    ' Roku Poster only documents JPEG/PNG/WebP — AVIF does not decode. Keep
+    ' the server's WebP URL (rewrite accidental .avif siblings back to .webp).
+    ' On Roku OS older than 9.4 (no WebP decode), prefer the PNG sibling.
+    function preferred(url as string) as string
+        trimmed = url.trim()
+        if trimmed.len() = 0
+            return ""
+        end if
+        webp = toWebP(trimmed)
+        if supportsWebP()
+            return webp
+        end if
+        png = pngSibling(webp)
+        if png.len() > 0
+            return png
+        end if
+        return webp
+    end function
+
+    ' PNG sibling of a canonical .webp (or accidental .avif) path/URL.
+    ' Query/fragment are preserved. Non-WebP/AVIF inputs return "".
+    function pngSibling(url as string) as string
+        trimmed = url.trim()
+        if trimmed.len() = 0
+            return ""
+        end if
+        parts = splitPathSuffix(trimmed)
+        path = parts.path
+        suffix = parts.suffix
+        lower = LCase(path)
+        if lower.len() >= 5 and lower.right(5) = ".webp"
+            return path.left(path.len() - 5) + ".png" + suffix
+        end if
+        if lower.len() >= 5 and lower.right(5) = ".avif"
+            return path.left(path.len() - 5) + ".png" + suffix
+        end if
+        return ""
+    end function
+
+    ' Normalize to the WebP sibling (rewrite .avif → .webp; leave others).
+    function toWebP(url as string) as string
+        trimmed = url.trim()
+        if trimmed.len() = 0
+            return ""
+        end if
+        parts = splitPathSuffix(trimmed)
+        path = parts.path
+        suffix = parts.suffix
+        lower = LCase(path)
+        if lower.len() >= 5 and lower.right(5) = ".avif"
+            return path.left(path.len() - 5) + ".webp" + suffix
+        end if
+        return trimmed
+    end function
+
+    ' True when the device OS is new enough for SceneGraph WebP decode (9.4+).
+    function supportsWebP() as boolean
+        di = CreateObject("roDeviceInfo")
+        if di = invalid
+            return true
+        end if
+        ver = di.GetOSVersion()
+        if ver = invalid
+            return true
+        end if
+        major = 0
+        minor = 0
+        if ver.major <> invalid
+            major = (ver.major as string).toInt()
+        end if
+        if ver.minor <> invalid
+            minor = (ver.minor as string).toInt()
+        end if
+        if major > 9
+            return true
+        end if
+        if major < 9
+            return false
+        end if
+        return minor >= 4
+    end function
+
+    ' Split URL/path into path (no query/fragment) and suffix (query/fragment).
+    function splitPathSuffix(url as string) as object
+        trimmed = url.trim()
+        q = Instr(1, trimmed, "?")
+        hash = Instr(1, trimmed, "#")
+        pathEnd = trimmed.len()
+        if q > 0 and (hash = 0 or q < hash)
+            pathEnd = q - 1
+        else if hash > 0
+            pathEnd = hash - 1
+        end if
+        path = Left(trimmed, pathEnd)
+        suffix = ""
+        if pathEnd < trimmed.len()
+            suffix = Mid(trimmed, pathEnd + 1)
+        end if
+        return { path: path, suffix: suffix }
+    end function
+
+end namespace

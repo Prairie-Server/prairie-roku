@@ -1,4 +1,5 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -33,7 +34,7 @@ sub onLibraries()
             node.title = library.name
             node.description = library.type
             if library.poster_url <> invalid and (library.poster_url as string).len() > 0
-                node.hdPosterUrl = library.poster_url as string
+                node.hdPosterUrl = Prairie.Artwork.preferred(library.poster_url as string)
             end if
             node.addFields({ library: library })
         end for
