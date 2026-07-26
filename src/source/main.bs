@@ -1,4 +1,7 @@
 sub main(_args as dynamic)
+    store = Prairie.Store.createRegistryStore("prairie")
+    Prairie.Persist.ensureStorageSchema(store)
+
     screen = CreateObject("roSGScreen")
     port = CreateObject("roMessagePort")
     screen.setMessagePort(port)
@@ -15,3 +18,4 @@ sub main(_args as dynamic)
         end if
     end while
 end sub
+

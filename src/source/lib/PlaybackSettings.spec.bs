@@ -1,0 +1,62 @@
+namespace tests
+    @suite("Prairie.PlaybackSettings")
+    class PlaybackSettingsSuite extends rooibos.BaseTestSuite
+
+        private store as object
+
+        protected override sub beforeEach()
+            m.store = Prairie.Store.createMemoryStore()
+        end sub
+
+        @describe("normalize")
+        @it("applies defaults and clears conflicting force flags")
+        sub _()
+            settings = Prairie.PlaybackSettings.normalize({
+                forceDirectPlay: true,
+                forceTranscode: true,
+                preferredSubtitleLanguage: " ENG "
+            })
+            m.assertTrue(settings.forceDirectPlay)
+            m.assertFalse(settings.forceTranscode)
+            m.assertEqual(settings.preferredSubtitleLanguage, "eng")
+        end sub
+
+        @it("resolves forced play method")
+        sub _()
+            m.assertEqual(Prairie.PlaybackSettings.resolveForcedPlayMethod({
+                forceDirectPlay: true,
+                forceTranscode: false
+            }), "direct")
+            m.assertEqual(Prairie.PlaybackSettings.resolveForcedPlayMethod({
+                forceDirectPlay: false,
+                forceTranscode: true
+            }), "transcode")
+            m.assertInvalid(Prairie.PlaybackSettings.resolveForcedPlayMethod({
+                forceDirectPlay: false,
+                forceTranscode: false
+            }))
+        end sub
+
+        @describe("persistence")
+        @it("round-trips settings through the store")
+        sub _()
+            saved = Prairie.PlaybackSettings.save({
+                forceTranscode: true,
+                preferredSubtitleLanguage: "spa"
+            }, m.store)
+            m.assertTrue(saved.forceTranscode)
+            loaded = Prairie.PlaybackSettings.load(m.store)
+            m.assertTrue(loaded.forceTranscode)
+            m.assertEqual(loaded.preferredSubtitleLanguage, "spa")
+        end sub
+
+        @it("returns defaults when unset")
+        sub _()
+            loaded = Prairie.PlaybackSettings.load(m.store)
+            m.assertFalse(loaded.forceDirectPlay)
+            m.assertFalse(loaded.forceTranscode)
+            m.assertEqual(loaded.preferredSubtitleLanguage, "")
+        end sub
+
+    end class
+end namespace

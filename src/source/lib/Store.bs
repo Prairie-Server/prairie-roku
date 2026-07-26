@@ -1,0 +1,48 @@
+namespace Prairie.Store
+
+    ' In-memory store for unit tests (and any non-registry callers).
+    function createMemoryStore() as object
+        return {
+            values: {},
+            getItem: function(key as string) as dynamic
+                if m.values.doesExist(key)
+                    return m.values[key]
+                end if
+                return invalid
+            end function,
+            setItem: sub(key as string, value as string)
+                m.values[key] = value
+            end sub,
+            removeItem: sub(key as string)
+                if m.values.doesExist(key)
+                    m.values.delete(key)
+                end if
+            end sub
+        }
+    end function
+
+    ' Registry-backed store. Section name stays stable across upgrades.
+    function createRegistryStore(sectionName = "prairie" as string) as object
+        section = CreateObject("roRegistrySection", sectionName)
+        return {
+            section: section,
+            getItem: function(key as string) as dynamic
+                if m.section.exists(key)
+                    return m.section.read(key)
+                end if
+                return invalid
+            end function,
+            setItem: sub(key as string, value as string)
+                m.section.write(key, value)
+                m.section.flush()
+            end sub,
+            removeItem: sub(key as string)
+                if m.section.exists(key)
+                    m.section.delete(key)
+                    m.section.flush()
+                end if
+            end sub
+        }
+    end function
+
+end namespace

@@ -1,0 +1,61 @@
+namespace Prairie.PlaybackSettings
+
+    function defaults() as object
+        return {
+            forceDirectPlay: false,
+            forceTranscode: false,
+            preferredSubtitleLanguage: ""
+        }
+    end function
+
+    function normalize(input as dynamic) as object
+        nextSettings = defaults()
+        if input = invalid
+            return nextSettings
+        end if
+
+        if input.forceDirectPlay = true
+            nextSettings.forceDirectPlay = true
+        end if
+        if input.forceTranscode = true
+            nextSettings.forceTranscode = true
+        end if
+        if input.preferredSubtitleLanguage <> invalid
+            lang = input.preferredSubtitleLanguage as string
+            nextSettings.preferredSubtitleLanguage = LCase(lang.trim())
+        end if
+
+        ' Direct wins when both are somehow set (UI should prevent this).
+        if nextSettings.forceDirectPlay and nextSettings.forceTranscode
+            nextSettings.forceTranscode = false
+        end if
+        return nextSettings
+    end function
+
+    function load(store as object) as object
+        raw = store.getItem(Prairie.Persist.playbackSettingsKey())
+        if raw = invalid
+            return defaults()
+        end if
+        parsed = ParseJson(raw as string)
+        return normalize(parsed)
+    end function
+
+    function save(settings as object, store as object) as object
+        normalized = normalize(settings)
+        store.setItem(Prairie.Persist.playbackSettingsKey(), FormatJson(normalized))
+        return normalized
+    end function
+
+    ' Resolve play_method for POST /api/v1/playback/start. invalid = omit (auto).
+    function resolveForcedPlayMethod(settings as object) as dynamic
+        if settings.forceDirectPlay = true
+            return "direct"
+        end if
+        if settings.forceTranscode = true
+            return "transcode"
+        end if
+        return invalid
+    end function
+
+end namespace

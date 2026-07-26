@@ -1,0 +1,58 @@
+namespace Prairie.Session
+
+    ' Fully authenticated browse session with an active profile.
+    ' refreshToken is intentionally never persisted until refresh ships.
+
+    function loadSession(store as object) as dynamic
+        raw = store.getItem(Prairie.Persist.sessionKey())
+        if raw = invalid
+            return invalid
+        end if
+        parsed = ParseJson(raw as string)
+        if parsed = invalid
+            return invalid
+        end if
+        if parsed.serverUrl = invalid or parsed.accessToken = invalid or parsed.username = invalid or parsed.profileId = invalid
+            return invalid
+        end if
+
+        session = {
+            serverUrl: Prairie.Url.normalizeServerUrl(parsed.serverUrl as string),
+            accessToken: parsed.accessToken as string,
+            username: parsed.username as string,
+            profileId: parsed.profileId as string
+        }
+        if parsed.profileName <> invalid
+            session.profileName = parsed.profileName as string
+        end if
+        if parsed.profileToken <> invalid
+            session.profileToken = parsed.profileToken as string
+        end if
+        return session
+    end function
+
+    function saveSession(session as object, store as object) as object
+        normalized = {
+            serverUrl: Prairie.Url.normalizeServerUrl(session.serverUrl as string),
+            accessToken: session.accessToken as string,
+            username: session.username as string,
+            profileId: session.profileId as string
+        }
+        if session.profileName <> invalid
+            normalized.profileName = session.profileName as string
+        end if
+        if session.profileToken <> invalid
+            normalized.profileToken = session.profileToken as string
+        end if
+
+        store.setItem(Prairie.Persist.sessionKey(), FormatJson(normalized))
+        Prairie.Persist.saveLastServerUrl(normalized.serverUrl, store)
+        return normalized
+    end function
+
+    ' Clears active session tokens. Does NOT remove lastServerUrl or playback settings.
+    sub clearSession(store as object)
+        store.removeItem(Prairie.Persist.sessionKey())
+    end sub
+
+end namespace

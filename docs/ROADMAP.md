@@ -35,7 +35,7 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 - [ ] Item detail → seasons/episodes → play via watch + `/playback/start` with resume
 - [ ] Player chrome: play/pause, ±15s, progress, audio switch, session teardown
 - [ ] Live TV list + now/next (hidden when no channels)
-- [ ] Upgrade-safe registry persistence (session + settings + last server URL)
+- [x] Upgrade-safe registry persistence (session + settings + last server URL)
 - [ ] Sideload `.zip` package script + Channel Store notes
 
 ## API surface (native `/api/v1`)

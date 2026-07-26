@@ -1,0 +1,81 @@
+namespace Prairie.Persist
+
+    ' Cross-upgrade persistence helpers.
+    ' Identity rules (do not break without a migration):
+    ' - registry keys stay on the prairie.* prefix
+    ' - schema bumps must be additive; never wipe session/settings on upgrade
+
+    function storageSchemaKey() as string
+        return "prairie.storageSchemaVersion"
+    end function
+
+    function lastServerUrlKey() as string
+        return "prairie.lastServerUrl"
+    end function
+
+    function sessionKey() as string
+        return "prairie.session"
+    end function
+
+    function playbackSettingsKey() as string
+        return "prairie.playbackSettings"
+    end function
+
+    function storageSchemaVersion() as integer
+        return 1
+    end function
+
+    function loadLastServerUrl(store as object) as string
+        direct = store.getItem(lastServerUrlKey())
+        if direct <> invalid and (direct as string).trim().len() > 0
+            return Prairie.Url.normalizeServerUrl(direct as string)
+        end if
+
+        sessionRaw = store.getItem(sessionKey())
+        if sessionRaw = invalid
+            return ""
+        end if
+        parsed = ParseJson(sessionRaw as string)
+        if parsed = invalid or parsed.serverUrl = invalid
+            return ""
+        end if
+        return Prairie.Url.normalizeServerUrl(parsed.serverUrl as string)
+    end function
+
+    sub saveLastServerUrl(url as string, store as object)
+        normalized = Prairie.Url.normalizeServerUrl(url)
+        if normalized.len() > 0
+            store.setItem(lastServerUrlKey(), normalized)
+        end if
+    end sub
+
+    ' Ensure schema version is recorded. Migrations may copy/rename keys but must
+    ' not remove preserved keys. Safe to call on every boot.
+    function ensureStorageSchema(store as object) as integer
+        current = 0
+        raw = store.getItem(storageSchemaKey())
+        if raw <> invalid
+            current = (raw as string).toInt()
+        end if
+
+        ' v0 → v1: promote server URL out of the session blob so Connect still
+        ' pre-fills after a partial/corrupt session without wiping tokens.
+        if current < 1
+            existing = store.getItem(lastServerUrlKey())
+            if existing = invalid or (existing as string).trim().len() = 0
+                sessionRaw = store.getItem(sessionKey())
+                if sessionRaw <> invalid
+                    parsed = ParseJson(sessionRaw as string)
+                    if parsed <> invalid and parsed.serverUrl <> invalid
+                        store.setItem(lastServerUrlKey(), Prairie.Url.normalizeServerUrl(parsed.serverUrl as string))
+                    end if
+                end if
+            end if
+            store.setItem(storageSchemaKey(), storageSchemaVersion().toStr())
+            return storageSchemaVersion()
+        end if
+
+        return current
+    end function
+
+end namespace

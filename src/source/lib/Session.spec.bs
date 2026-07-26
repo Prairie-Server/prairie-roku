@@ -1,0 +1,60 @@
+namespace tests
+    @suite("Prairie.Session")
+    class SessionSuite extends rooibos.BaseTestSuite
+
+        private store as object
+
+        protected override sub beforeEach()
+            m.store = Prairie.Store.createMemoryStore()
+        end sub
+
+        @describe("save and load")
+        @it("round-trips a browse session and updates last server URL")
+        sub _()
+            saved = Prairie.Session.saveSession({
+                serverUrl: "https://prairie.example.com/",
+                accessToken: "access",
+                username: "ada",
+                profileId: "profile-1",
+                profileName: "Ada",
+                profileToken: "pin-token",
+                refreshToken: "must-not-persist"
+            }, m.store)
+
+            m.assertEqual(saved.serverUrl, "https://prairie.example.com")
+            m.assertFalse(saved.doesExist("refreshToken"))
+
+            loaded = Prairie.Session.loadSession(m.store)
+            m.assertEqual(loaded.accessToken, "access")
+            m.assertEqual(loaded.username, "ada")
+            m.assertEqual(loaded.profileId, "profile-1")
+            m.assertEqual(loaded.profileName, "Ada")
+            m.assertEqual(loaded.profileToken, "pin-token")
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://prairie.example.com")
+        end sub
+
+        @it("returns invalid for incomplete session blobs")
+        sub _()
+            m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
+                serverUrl: "https://prairie.example.com",
+                accessToken: "access"
+            }))
+            m.assertInvalid(Prairie.Session.loadSession(m.store))
+        end sub
+
+        @describe("clearSession")
+        @it("removes session but keeps last server URL")
+        sub _()
+            Prairie.Session.saveSession({
+                serverUrl: "https://prairie.example.com",
+                accessToken: "access",
+                username: "ada",
+                profileId: "profile-1"
+            }, m.store)
+            Prairie.Session.clearSession(m.store)
+            m.assertInvalid(Prairie.Session.loadSession(m.store))
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://prairie.example.com")
+        end sub
+
+    end class
+end namespace
