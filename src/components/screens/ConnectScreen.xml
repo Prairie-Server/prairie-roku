@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="ConnectScreen" extends="Group">
+    <interface>
+        <field id="initialServerUrl" type="string" value="" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="submitRequest" type="assocarray" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="ConnectScreen.bs" />
+    <children>
+        <Rectangle
+            id="backdrop"
+            width="1920"
+            height="1080"
+            color="0x141820FF"
+        />
+        <Label
+            id="eyebrow"
+            text="ROKU"
+            translation="[120, 160]"
+            width="800"
+            font="font:SmallBoldSystemFont"
+            color="0xE0A84AFF"
+        />
+        <Label
+            id="brand"
+            text="Prairie"
+            translation="[120, 200]"
+            width="1200"
+            height="140"
+            font="font:LargeBoldSystemFont"
+            color="0xF3EFE6FF"
+        />
+        <Label
+            id="lede"
+            text="Connect to your Prairie server. Use the remote to move between fields."
+            translation="[120, 360]"
+            width="1000"
+            height="80"
+            wrap="true"
+            font="font:MediumSystemFont"
+            color="0x9AA3B2FF"
+        />
+
+        <Label text="Server URL" translation="[120, 470]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+        <TextEditBox
+            id="serverUrl"
+            translation="[120, 510]"
+            width="700"
+            hintText="https://prairie.example.com"
+            maxTextLength="200"
+            showKeyboardOnFocus="true"
+        />
+
+        <Label text="Username" translation="[120, 600]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+        <TextEditBox
+            id="username"
+            translation="[120, 640]"
+            width="700"
+            hintText="Username"
+            maxTextLength="120"
+            showKeyboardOnFocus="true"
+        />
+
+        <Label text="Password" translation="[120, 730]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+        <TextEditBox
+            id="password"
+            translation="[120, 770]"
+            width="700"
+            hintText="Password"
+            maxTextLength="120"
+            secureMode="true"
+            showKeyboardOnFocus="true"
+        />
+
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[120, 860]"
+            width="900"
+            height="60"
+            wrap="true"
+            font="font:SmallSystemFont"
+            color="0xE07070FF"
+        />
+
+        <Rectangle
+            id="connectFocus"
+            translation="[114, 934]"
+            width="292"
+            height="76"
+            color="0xF0C574FF"
+            visible="false"
+            opacity="0.9"
+        />
+        <Rectangle
+            id="connectBg"
+            translation="[120, 940]"
+            width="280"
+            height="64"
+            color="0xE0A84AFF"
+            focusable="true"
+        >
+            <Label
+                id="connectLabel"
+                text="Connect"
+                width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                font="font:MediumBoldSystemFont"
+                color="0x141820FF"
+            />
+        </Rectangle>
+    </children>
+</component>

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="HomeBrowseScreen" extends="Group">
+    <interface>
+        <field id="sections" type="array" />
+        <field id="profileName" type="string" value="" />
+        <field id="errorText" type="string" value="" />
+        <field id="selectedContentId" type="string" value="" alwaysNotify="true" />
+        <field id="openLibraries" type="boolean" value="false" alwaysNotify="true" />
+        <field id="openSearch" type="boolean" value="false" alwaysNotify="true" />
+        <field id="signOutRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="HomeBrowseScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="brand"
+            text="Prairie"
+            translation="[80, 40]"
+            font="font:MediumBoldSystemFont"
+            color="0xE0A84AFF"
+        />
+        <Label
+            id="profileLabel"
+            text=""
+            translation="[80, 90]"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 140]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="rails"
+            translation="[40, 200]"
+            itemSize="[1840, 320]"
+            rowItemSize="[[220, 300]]"
+            numRows="4"
+            itemSpacing="[24, 28]"
+            rowItemSpacing="[[24, 0]]"
+            showRowLabel="[true]"
+            rowLabelOffset="[[20, 10]]"
+            drawFocusFeedback="true"
+        />
+        <Label
+            id="hint"
+            text="OK opens an item · ★ Options: Libraries · Replay: Search · Back: Sign out"
+            translation="[80, 1000]"
+            width="1600"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+    </children>
+</component>

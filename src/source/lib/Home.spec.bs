@@ -1,0 +1,22 @@
+namespace tests
+    @suite("Prairie.Home")
+    class HomeSuite extends rooibos.BaseTestSuite
+
+        @describe("sectionsFromResponse")
+        @it("normalizes sections and tolerates missing items")
+        sub _()
+            sections = Prairie.Home.sectionsFromResponse({
+                sections: [
+                    { id: "continue", section_type: "continue", title: "Continue", items: [{ content_id: "1" }, "bad"] },
+                    { id: "recent", title: "Recent" }
+                ]
+            })
+            m.assertEqual(sections.count(), 2)
+            m.assertEqual(sections[0].items.count(), 1)
+            m.assertEqual(sections[1].items.count(), 0)
+            m.assertEqual(Prairie.Home.sectionsFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.Home.sectionsPath(), "/api/v1/home/sections")
+        end sub
+
+    end class
+end namespace

@@ -1,0 +1,47 @@
+namespace Prairie.Home
+
+    function sectionsPath() as string
+        return "/api/v1/home/sections"
+    end function
+
+    function sectionsFromResponse(data as dynamic) as object
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return []
+        end if
+        if type(data.sections) <> "roArray"
+            return []
+        end if
+        sections = []
+        for each section in data.sections
+            if type(section) = "roAssociativeArray"
+                item = {
+                    id: "",
+                    section_type: "",
+                    title: "",
+                    items: []
+                }
+                if section.id <> invalid
+                    item.id = section.id as string
+                end if
+                if section.section_type <> invalid
+                    item.section_type = section.section_type as string
+                end if
+                if section.title <> invalid
+                    item.title = section.title as string
+                end if
+                if type(section.items) = "roArray"
+                    filtered = []
+                    for each entry in section.items
+                        if type(entry) = "roAssociativeArray"
+                            filtered.push(entry)
+                        end if
+                    end for
+                    item.items = filtered
+                end if
+                sections.push(item)
+            end if
+        end for
+        return sections
+    end function
+
+end namespace

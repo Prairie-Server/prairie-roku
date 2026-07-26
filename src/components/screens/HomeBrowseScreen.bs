@@ -1,0 +1,109 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.brand = m.top.findNode("brand")
+    m.profileLabel = m.top.findNode("profileLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.rails = m.top.findNode("rails")
+    m.hint = m.top.findNode("hint")
+
+    m.brand.text = Prairie.Theme.brandName()
+    m.brand.color = colors.amber
+    m.profileLabel.color = colors.muted
+    m.errorLabel.color = colors.danger
+    m.hint.color = colors.muted
+
+    m.top.observeField("sections", "onSections")
+    m.top.observeField("profileName", "onProfileName")
+    m.top.observeField("errorText", "onErrorText")
+    m.rails.observeField("rowItemSelected", "onItemSelected")
+end sub
+
+sub onProfileName()
+    name = m.top.profileName
+    if name.len() > 0
+        m.profileLabel.text = "Watching as " + name
+    else
+        m.profileLabel.text = ""
+    end if
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onSections()
+    sections = m.top.sections
+    content = CreateObject("roSGNode", "ContentNode")
+    if sections <> invalid
+        for each section in sections
+            row = content.createChild("ContentNode")
+            title = "Section"
+            if section.title <> invalid and (section.title as string).len() > 0
+                title = section.title as string
+            end if
+            row.title = title
+            items = []
+            if section.items <> invalid
+                items = section.items
+            end if
+            for each entry in items
+                node = row.createChild("ContentNode")
+                itemTitle = "Title"
+                if entry.title <> invalid
+                    itemTitle = entry.title as string
+                end if
+                node.title = itemTitle
+                if entry.poster_url <> invalid
+                    node.hdPosterUrl = entry.poster_url as string
+                end if
+                contentId = ""
+                if entry.content_id <> invalid
+                    contentId = entry.content_id as string
+                end if
+                node.id = contentId
+                node.addFields({ contentId: contentId })
+            end for
+        end for
+    end if
+    m.rails.content = content
+end sub
+
+sub focusDefault()
+    m.rails.setFocus(true)
+end sub
+
+sub onItemSelected()
+    selection = m.rails.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.rails.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.contentId = invalid or (item.contentId as string).len() = 0
+        return
+    end if
+    m.top.selectedContentId = item.contentId
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "options"
+        m.top.openLibraries = true
+        return true
+    else if key = "replay"
+        m.top.openSearch = true
+        return true
+    else if key = "back"
+        m.top.signOutRequested = true
+        return true
+    end if
+    return false
+end function

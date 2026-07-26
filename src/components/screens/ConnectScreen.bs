@@ -1,0 +1,132 @@
+import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ServerUrl.bs"
+import "pkg:/source/lib/Auth.bs"
+import "pkg:/source/lib/ApiClient.bs"
+
+sub init()
+    m.top.observeField("focusedChild", "onFocusChange")
+    m.serverUrl = m.top.findNode("serverUrl")
+    m.username = m.top.findNode("username")
+    m.password = m.top.findNode("password")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.connectBg = m.top.findNode("connectBg")
+    m.connectLabel = m.top.findNode("connectLabel")
+    m.connectFocus = m.top.findNode("connectFocus")
+    m.brand = m.top.findNode("brand")
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.lede = m.top.findNode("lede")
+
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.brand.text = Prairie.Theme.brandName()
+    m.brand.color = colors.ink
+    m.eyebrow.color = colors.amber
+    m.lede.color = colors.muted
+    m.errorLabel.color = colors.danger
+    m.connectBg.color = colors.amber
+    m.connectLabel.color = colors.bg
+    m.connectFocus.color = colors.ring
+
+    m.top.observeField("initialServerUrl", "onInitialServerUrl")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("busy", "onBusy")
+end sub
+
+sub onInitialServerUrl()
+    if m.serverUrl <> invalid
+        m.serverUrl.text = m.top.initialServerUrl
+    end if
+end sub
+
+sub onErrorText()
+    if m.errorLabel <> invalid
+        m.errorLabel.text = m.top.errorText
+    end if
+end sub
+
+sub onBusy()
+    if m.connectLabel = invalid
+        return
+    end if
+    if m.top.busy
+        m.connectLabel.text = "Connecting…"
+    else
+        m.connectLabel.text = "Connect"
+    end if
+end sub
+
+sub focusDefault()
+    if m.serverUrl <> invalid
+        m.serverUrl.setFocus(true)
+    end if
+end sub
+
+sub onFocusChange()
+    if m.connectFocus = invalid or m.connectBg = invalid
+        return
+    end if
+    isConnectFocused = m.connectBg.isInFocusChain()
+    m.connectFocus.visible = isConnectFocused
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+
+    if key = "OK" or key = "play"
+        if m.connectBg.isInFocusChain() or m.connectLabel.isInFocusChain()
+            submitConnect()
+            return true
+        end if
+    end if
+
+    if key = "down"
+        if m.serverUrl.isInFocusChain()
+            m.username.setFocus(true)
+            return true
+        else if m.username.isInFocusChain()
+            m.password.setFocus(true)
+            return true
+        else if m.password.isInFocusChain()
+            m.connectBg.setFocus(true)
+            return true
+        end if
+    else if key = "up"
+        if m.connectBg.isInFocusChain()
+            m.password.setFocus(true)
+            return true
+        else if m.password.isInFocusChain()
+            m.username.setFocus(true)
+            return true
+        else if m.username.isInFocusChain()
+            m.serverUrl.setFocus(true)
+            return true
+        end if
+    end if
+
+    return false
+end function
+
+sub submitConnect()
+    if m.top.busy
+        return
+    end if
+    m.top.errorText = ""
+    validated = Prairie.ServerUrl.validate(m.serverUrl.text)
+    if validated.ok <> true
+        m.top.errorText = validated.message
+        return
+    end if
+    username = m.username.text.trim()
+    password = m.password.text
+    if username.len() = 0 or password.len() = 0
+        m.top.errorText = "Enter username and password"
+        return
+    end if
+
+    m.top.busy = true
+    m.top.submitRequest = Prairie.Api.buildRequest({
+        serverUrl: validated.url
+    }, Prairie.Auth.loginPath(), "POST", Prairie.Auth.buildLoginBody(username, password))
+end sub
