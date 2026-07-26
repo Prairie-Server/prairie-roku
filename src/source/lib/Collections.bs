@@ -1,0 +1,94 @@
+namespace Prairie.Collections
+
+    function libraryCollectionsPath(libraryId as integer) as string
+        return "/api/v1/library/" + libraryId.toStr() + "/collections"
+    end function
+
+    function personalCollectionsPath() as string
+        return "/api/v1/collections"
+    end function
+
+    function flattenLibraryCollections(libraryId as integer, data as dynamic) as object
+        out = []
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return out
+        end if
+
+        if type(data.groups) = "roArray"
+            for each group in data.groups
+                if type(group) = "roAssociativeArray" and type(group.collections) = "roArray"
+                    for each card in group.collections
+                        out.push(normalizeCard(card, libraryId))
+                    end for
+                end if
+            end for
+        end if
+
+        if type(data.ungrouped) = "roAssociativeArray" and type(data.ungrouped.collections) = "roArray"
+            for each card in data.ungrouped.collections
+                out.push(normalizeCard(card, libraryId))
+            end for
+        end if
+
+        return out
+    end function
+
+    function flattenPersonalCollections(data as dynamic) as object
+        out = []
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return out
+        end if
+
+        if type(data.collections) = "roArray"
+            for each card in data.collections
+                out.push(normalizeCard(card, invalid))
+            end for
+        end if
+
+        if type(data.groups) = "roArray"
+            for each group in data.groups
+                if type(group) = "roAssociativeArray" and type(group.collections) = "roArray"
+                    for each card in group.collections
+                        out.push(normalizeCard(card, invalid))
+                    end for
+                end if
+            end for
+        end if
+
+        return out
+    end function
+
+    function normalizeCard(card as dynamic, libraryId as dynamic) as object
+        item = {
+            id: "",
+            title: "Collection",
+            poster_url: "",
+            item_count: 0,
+            library_id: invalid
+        }
+        if type(card) <> "roAssociativeArray"
+            return item
+        end if
+        if card.id <> invalid
+            item.id = card.id as string
+        end if
+        if card.title <> invalid and (card.title as string).len() > 0
+            item.title = card.title as string
+        else if card.name <> invalid and (card.name as string).len() > 0
+            item.title = card.name as string
+        end if
+        if card.poster_url <> invalid
+            item.poster_url = card.poster_url as string
+        end if
+        if card.item_count <> invalid
+            item.item_count = card.item_count as integer
+        end if
+        if libraryId <> invalid
+            item.library_id = libraryId as integer
+        else if card.library_id <> invalid
+            item.library_id = card.library_id as integer
+        end if
+        return item
+    end function
+
+end namespace

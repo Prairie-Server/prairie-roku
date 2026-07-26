@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="LibrariesScreen" extends="Group">
+    <interface>
+        <field id="libraries" type="array" />
+        <field id="errorText" type="string" value="" />
+        <field id="busy" type="bool" value="false" />
+        <field id="selectedLibrary" type="assocarray" />
+        <field id="openCollections" type="boolean" value="false" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="LibrariesScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="eyebrow"
+            text="LIBRARIES"
+            translation="[80, 60]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text="Browse by library"
+            translation="[80, 110]"
+            width="1200"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 200]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="libraryList"
+            translation="[40, 260]"
+            itemSize="[1840, 320]"
+            rowItemSize="[[280, 280]]"
+            numRows="2"
+            itemSpacing="[24, 24]"
+            rowItemSpacing="[[24, 0]]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+        />
+        <Label
+            id="hint"
+            text="OK opens a library · ★ Options: Collections · Back returns home"
+            translation="[80, 1000]"
+            width="1600"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+    </children>
+</component>

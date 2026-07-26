@@ -29,9 +29,9 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 - [x] Connect (username / password) to Prairie server _(implemented; device validation pending)_
 - [x] Profile picker (+ PIN when required) _(implemented; device validation pending)_
 - [x] Home sections from `/api/v1/home/sections` _(implemented; device validation pending)_
-- [ ] Libraries + catalog pagination
-- [ ] Collections (library + personal)
-- [ ] Search
+- [x] Libraries + catalog pagination _(implemented; device validation pending)_
+- [x] Collections (library + personal) _(implemented; device validation pending)_
+- [x] Search _(implemented; device validation pending)_
 - [ ] Item detail → seasons/episodes → play via watch + `/playback/start` with resume
 - [ ] Player chrome: play/pause, ±15s, progress, audio switch, session teardown
 - [ ] Live TV list + now/next (hidden when no channels)

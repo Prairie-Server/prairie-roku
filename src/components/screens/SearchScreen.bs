@@ -1,0 +1,136 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.title = m.top.findNode("title")
+    m.lede = m.top.findNode("lede")
+    m.queryInput = m.top.findNode("queryInput")
+    m.searchBg = m.top.findNode("searchBg")
+    m.searchLabel = m.top.findNode("searchLabel")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.results = m.top.findNode("results")
+
+    m.title.color = colors.ink
+    m.lede.color = colors.muted
+    m.searchBg.color = colors.amber
+    m.searchLabel.color = colors.bg
+    m.errorLabel.color = colors.danger
+    m.statusLabel.color = colors.muted
+
+    m.top.observeField("items", "onItems")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("statusText", "onStatusText")
+    m.top.observeField("busy", "onBusy")
+    m.results.observeField("rowItemSelected", "onItemSelected")
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onStatusText()
+    m.statusLabel.text = m.top.statusText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.searchLabel.text = "Searching…"
+    else
+        m.searchLabel.text = "Search"
+    end if
+end sub
+
+sub onItems()
+    items = m.top.items
+    content = CreateObject("roSGNode", "ContentNode")
+    columns = 8
+    row = invalid
+    index = 0
+    if items <> invalid
+        for each entry in items
+            if index mod columns = 0
+                row = content.createChild("ContentNode")
+            end if
+            node = row.createChild("ContentNode")
+            title = "Title"
+            if entry.title <> invalid
+                title = entry.title as string
+            end if
+            node.title = title
+            if entry.poster_url <> invalid
+                node.hdPosterUrl = entry.poster_url as string
+            end if
+            contentId = ""
+            if entry.content_id <> invalid
+                contentId = entry.content_id as string
+            end if
+            node.id = contentId
+            node.addFields({ contentId: contentId })
+            index = index + 1
+        end for
+    end if
+    m.results.content = content
+end sub
+
+sub focusDefault()
+    m.queryInput.setFocus(true)
+end sub
+
+sub submitSearch()
+    if m.top.busy
+        return
+    end if
+    query = m.queryInput.text.trim()
+    m.top.errorText = ""
+    m.top.submitQuery = query
+end sub
+
+sub onItemSelected()
+    selection = m.results.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.results.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.contentId = invalid or (item.contentId as string).len() = 0
+        return
+    end if
+    m.top.selectedContentId = item.contentId
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    end if
+    if key = "OK" or key = "play"
+        if m.searchBg.isInFocusChain() or m.queryInput.isInFocusChain()
+            submitSearch()
+            return true
+        end if
+    end if
+    if key = "right" and m.queryInput.isInFocusChain()
+        m.searchBg.setFocus(true)
+        return true
+    else if key = "left" and m.searchBg.isInFocusChain()
+        m.queryInput.setFocus(true)
+        return true
+    else if key = "down"
+        if m.queryInput.isInFocusChain() or m.searchBg.isInFocusChain()
+            m.results.setFocus(true)
+            return true
+        end if
+    else if key = "up" and m.results.isInFocusChain()
+        m.queryInput.setFocus(true)
+        return true
+    end if
+    return false
+end function

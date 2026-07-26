@@ -1,0 +1,76 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.title = m.top.findNode("title")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.libraryList = m.top.findNode("libraryList")
+    m.hint = m.top.findNode("hint")
+
+    m.eyebrow.color = colors.amber
+    m.title.color = colors.ink
+    m.errorLabel.color = colors.danger
+    m.hint.color = colors.muted
+
+    m.top.observeField("libraries", "onLibraries")
+    m.top.observeField("errorText", "onErrorText")
+    m.libraryList.observeField("rowItemSelected", "onLibrarySelected")
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onLibraries()
+    libraries = m.top.libraries
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    if libraries <> invalid
+        for each library in libraries
+            node = row.createChild("ContentNode")
+            node.title = library.name
+            node.description = library.type
+            if library.poster_url <> invalid and (library.poster_url as string).len() > 0
+                node.hdPosterUrl = library.poster_url as string
+            end if
+            node.addFields({ library: library })
+        end for
+    end if
+    m.libraryList.content = content
+end sub
+
+sub focusDefault()
+    m.libraryList.setFocus(true)
+end sub
+
+sub onLibrarySelected()
+    selection = m.libraryList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.libraryList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.library = invalid
+        return
+    end if
+    m.top.selectedLibrary = item.library
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    else if key = "options"
+        m.top.openCollections = true
+        return true
+    end if
+    return false
+end function

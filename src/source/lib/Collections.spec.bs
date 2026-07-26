@@ -1,0 +1,47 @@
+namespace tests
+    @suite("Prairie.Collections")
+    class CollectionsSuite extends rooibos.BaseTestSuite
+
+        @describe("paths")
+        @it("builds library and personal collection paths")
+        sub _()
+            m.assertEqual(Prairie.Collections.libraryCollectionsPath(9), "/api/v1/library/9/collections")
+            m.assertEqual(Prairie.Collections.personalCollectionsPath(), "/api/v1/collections")
+        end sub
+
+        @describe("flattenLibraryCollections")
+        @it("flattens groups and ungrouped cards")
+        sub _()
+            cards = Prairie.Collections.flattenLibraryCollections(3, {
+                groups: [{
+                    collections: [{ id: "a", name: "Alpha" }]
+                }],
+                ungrouped: {
+                    collections: [{ id: "b", title: "Beta", item_count: 4 }]
+                }
+            })
+            m.assertEqual(cards.count(), 2)
+            m.assertEqual(cards[0].title, "Alpha")
+            m.assertEqual(cards[0].library_id, 3)
+            m.assertEqual(cards[1].title, "Beta")
+            m.assertEqual(cards[1].item_count, 4)
+            m.assertEqual(Prairie.Collections.flattenLibraryCollections(1, invalid).count(), 0)
+        end sub
+
+        @describe("flattenPersonalCollections")
+        @it("reads top-level and grouped personal cards")
+        sub _()
+            cards = Prairie.Collections.flattenPersonalCollections({
+                collections: [{ id: "p1", title: "Mine" }],
+                groups: [{
+                    collections: [{ id: "p2", name: "Grouped" }]
+                }]
+            })
+            m.assertEqual(cards.count(), 2)
+            m.assertEqual(cards[0].title, "Mine")
+            m.assertEqual(cards[1].title, "Grouped")
+            m.assertEqual(Prairie.Collections.flattenPersonalCollections({}).count(), 0)
+        end sub
+
+    end class
+end namespace

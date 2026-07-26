@@ -5,6 +5,9 @@ import "pkg:/source/lib/Session.bs"
 import "pkg:/source/lib/ApiClient.bs"
 import "pkg:/source/lib/Auth.bs"
 import "pkg:/source/lib/Home.bs"
+import "pkg:/source/lib/Libraries.bs"
+import "pkg:/source/lib/Catalog.bs"
+import "pkg:/source/lib/Collections.bs"
 import "pkg:/source/lib/UrlUtils.bs"
 
 sub init()
@@ -21,6 +24,14 @@ sub init()
     m.auth = invalid
     m.session = Prairie.Session.loadSession(m.store)
     m.pinProfile = invalid
+    m.catalogItems = []
+    m.catalogSnapshot = ""
+    m.catalogHasMore = false
+    m.browseLibrary = invalid
+    m.browseCollection = invalid
+    m.collectionLibraryQueue = []
+    m.libraryCollectionCards = []
+    m.personalCollectionCards = []
 
     if m.session <> invalid
         showHome()
@@ -88,8 +99,84 @@ sub showHome()
     loadHomeSections()
 end sub
 
+sub showLibraries()
+    clearScreen()
+    m.route = "libraries"
+    screen = CreateObject("roSGNode", "LibrariesScreen")
+    screen.observeField("selectedLibrary", "onLibraryChosen")
+    screen.observeField("openCollections", "onOpenCollections")
+    screen.observeField("backRequested", "onBrowseBackHome")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadLibraries()
+end sub
+
+sub showLibraryBrowse(library as object)
+    clearScreen()
+    m.route = "library"
+    m.browseLibrary = library
+    m.browseCollection = invalid
+    m.catalogItems = []
+    m.catalogSnapshot = ""
+    m.catalogHasMore = false
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Library"
+    screen.titleText = library.name
+    screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("loadMoreRequested", "onCatalogLoadMore")
+    screen.observeField("backRequested", "onLibraryBrowseBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadCatalogPage(false)
+end sub
+
+sub showSearch()
+    clearScreen()
+    m.route = "search"
+    screen = CreateObject("roSGNode", "SearchScreen")
+    screen.observeField("submitQuery", "onSearchSubmit")
+    screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("backRequested", "onBrowseBackHome")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
+end sub
+
+sub showCollections()
+    clearScreen()
+    m.route = "collections"
+    m.libraryCollectionCards = []
+    m.personalCollectionCards = []
+    m.collectionLibraryQueue = []
+    screen = CreateObject("roSGNode", "CollectionsScreen")
+    screen.busy = true
+    screen.observeField("selectedCollection", "onCollectionChosen")
+    screen.observeField("backRequested", "onCollectionsBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    startCollectionsLoad()
+end sub
+
+sub showCollectionBrowse(collection as object)
+    clearScreen()
+    m.route = "collection"
+    m.browseCollection = collection
+    m.browseLibrary = invalid
+    m.catalogItems = []
+    m.catalogSnapshot = ""
+    m.catalogHasMore = false
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Collection"
+    screen.titleText = collection.title
+    screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("loadMoreRequested", "onCatalogLoadMore")
+    screen.observeField("backRequested", "onCollectionBrowseBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadCatalogPage(false)
+end sub
+
 sub showMessage(title as string, message as string)
-    ' Lightweight placeholder for screens not yet built (libraries/search/detail).
     dialog = CreateObject("roSGNode", "Dialog")
     dialog.title = title
     dialog.message = message
@@ -118,7 +205,6 @@ sub onConnectSubmit()
 end sub
 
 function serverBaseFromRequestUrl(url as string) as string
-    ' Strip /api/v1/auth/login suffix when present.
     marker = "/api/v1/auth/login"
     idx = LCase(url).instr(marker)
     if idx >= 0
@@ -147,6 +233,98 @@ sub loadHomeSections()
     m.pending = "home"
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Home.sectionsPath(), "GET")
     m.httpTask.control = "RUN"
+end sub
+
+sub loadLibraries()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "libraries"
+    m.screen.busy = true
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Libraries.librariesPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+function buildCatalogQuery(append as boolean) as object
+    query = {
+        limit: 48
+    }
+    if append
+        query.offset = m.catalogItems.count()
+        if m.catalogSnapshot.len() > 0
+            query.snapshot = m.catalogSnapshot
+        end if
+    else
+        query.offset = 0
+    end if
+
+    if m.route = "library" and m.browseLibrary <> invalid
+        query.libraryId = m.browseLibrary.id
+    else if m.route = "collection" and m.browseCollection <> invalid
+        query.collectionId = m.browseCollection.id
+        if m.browseCollection.library_id <> invalid
+            query.source = "library_collection"
+            query.libraryId = m.browseCollection.library_id
+        else
+            query.source = "user_collection"
+        end if
+    end if
+    return query
+end function
+
+sub loadCatalogPage(append as boolean)
+    if m.session = invalid
+        return
+    end if
+    if append
+        m.pending = "catalogMore"
+    else
+        m.pending = "catalog"
+    end if
+    if m.screen <> invalid and m.screen.hasField("busy")
+        m.screen.busy = true
+    end if
+    path = Prairie.Catalog.buildCatalogPath(buildCatalogQuery(append))
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub startCollectionsLoad()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "collectionsLibraries"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Libraries.librariesPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub loadNextLibraryCollections()
+    if m.collectionLibraryQueue.count() = 0
+        loadPersonalCollections()
+        return
+    end if
+    library = m.collectionLibraryQueue.shift()
+    m.pendingLibraryId = library.id
+    m.pending = "libraryCollections"
+    path = Prairie.Collections.libraryCollectionsPath(library.id)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub loadPersonalCollections()
+    m.pending = "personalCollections"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Collections.personalCollectionsPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub finishCollectionsScreen()
+    if m.screen = invalid or m.route <> "collections"
+        return
+    end if
+    m.screen.busy = false
+    m.screen.libraryCollections = m.libraryCollectionCards
+    m.screen.personalCollections = m.personalCollectionCards
+    m.screen.callFunc("focusDefault")
 end sub
 
 sub onProfileChosen()
@@ -218,11 +396,112 @@ sub onHomeItemSelected()
 end sub
 
 sub onOpenLibraries()
-    showMessage("Libraries", "Library browse lands in the next slice.")
+    showLibraries()
 end sub
 
 sub onOpenSearch()
-    showMessage("Search", "Catalog search lands in the next slice.")
+    showSearch()
+end sub
+
+sub onOpenCollections()
+    showCollections()
+end sub
+
+sub onBrowseBackHome()
+    showHome()
+end sub
+
+sub onLibraryBrowseBack()
+    showLibraries()
+end sub
+
+sub onCollectionsBack()
+    showLibraries()
+end sub
+
+sub onCollectionBrowseBack()
+    showCollections()
+end sub
+
+sub onLibraryChosen()
+    library = m.screen.selectedLibrary
+    if library = invalid
+        return
+    end if
+    showLibraryBrowse(library)
+end sub
+
+sub onCollectionChosen()
+    collection = m.screen.selectedCollection
+    if collection = invalid
+        return
+    end if
+    showCollectionBrowse(collection)
+end sub
+
+sub onCatalogItemSelected()
+    contentId = m.screen.selectedContentId
+    if contentId = invalid or contentId.len() = 0
+        return
+    end if
+    showMessage("Item", "Detail and playback land next. Content ID: " + contentId)
+end sub
+
+sub onCatalogLoadMore()
+    if m.catalogHasMore <> true or m.pending <> ""
+        return
+    end if
+    loadCatalogPage(true)
+end sub
+
+sub onSearchSubmit()
+    query = m.screen.submitQuery
+    if query = invalid
+        return
+    end if
+    trimmed = query.trim()
+    if trimmed.len() = 0
+        m.screen.items = []
+        m.screen.statusText = ""
+        m.screen.errorText = ""
+        return
+    end if
+    if m.session = invalid
+        return
+    end if
+    m.pending = "search"
+    m.screen.busy = true
+    m.screen.statusText = ""
+    path = Prairie.Catalog.buildCatalogPath({
+        q: trimmed,
+        offset: 0,
+        limit: 48
+    })
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub applyCatalogPage(page as object, append as boolean)
+    if append
+        for each item in page.items
+            m.catalogItems.push(item)
+        end for
+    else
+        m.catalogItems = page.items
+    end if
+    m.catalogHasMore = false
+    if page.has_more = true
+        m.catalogHasMore = true
+    end if
+    if page.snapshot.len() > 0
+        m.catalogSnapshot = page.snapshot
+    end if
+    if m.screen <> invalid
+        m.screen.items = m.catalogItems
+        m.screen.hasMore = m.catalogHasMore
+        m.screen.busy = false
+        m.screen.callFunc("focusDefault")
+    end if
 end sub
 
 sub onHttpResponse()
@@ -230,10 +509,9 @@ sub onHttpResponse()
     pending = m.pending
     m.pending = ""
 
-    if m.screen <> invalid
-        if m.screen.hasField("busy")
-            m.screen.busy = false
-        end if
+    chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
+    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections
+        m.screen.busy = false
     end if
 
     if response = invalid
@@ -244,6 +522,22 @@ sub onHttpResponse()
         message = "Request failed"
         if response.error <> invalid and response.error.message <> invalid
             message = response.error.message
+        end if
+        ' Personal collections are optional on some servers.
+        if pending = "personalCollections"
+            m.personalCollectionCards = []
+            finishCollectionsScreen()
+            return
+        end if
+        if chainingCollections
+            ' Skip a failed library collections fetch and continue the chain.
+            if pending = "libraryCollections"
+                loadNextLibraryCollections()
+                return
+            end if
+            if m.screen <> invalid and m.screen.hasField("busy")
+                m.screen.busy = false
+            end if
         end if
         if m.screen <> invalid and m.screen.hasField("errorText")
             m.screen.errorText = message
@@ -289,5 +583,41 @@ sub onHttpResponse()
         if sections.count() = 0
             m.screen.errorText = "No home sections yet"
         end if
+    else if pending = "libraries"
+        libraries = Prairie.Libraries.librariesFromResponse(response.data)
+        m.screen.libraries = libraries
+        m.screen.callFunc("focusDefault")
+        if libraries.count() = 0
+            m.screen.errorText = "No libraries yet"
+        end if
+    else if pending = "catalog" or pending = "catalogMore"
+        page = Prairie.Catalog.pageFromResponse(response.data)
+        applyCatalogPage(page, pending = "catalogMore")
+    else if pending = "search"
+        page = Prairie.Catalog.pageFromResponse(response.data)
+        m.screen.items = page.items
+        if page.items.count() = 0
+            m.screen.statusText = "No matches"
+        else
+            m.screen.statusText = ""
+        end if
+        m.screen.callFunc("focusDefault")
+    else if pending = "collectionsLibraries"
+        libraries = Prairie.Libraries.librariesFromResponse(response.data)
+        m.collectionLibraryQueue = []
+        for each library in libraries
+            m.collectionLibraryQueue.push(library)
+        end for
+        m.libraryCollectionCards = []
+        loadNextLibraryCollections()
+    else if pending = "libraryCollections"
+        cards = Prairie.Collections.flattenLibraryCollections(m.pendingLibraryId, response.data)
+        for each card in cards
+            m.libraryCollectionCards.push(card)
+        end for
+        loadNextLibraryCollections()
+    else if pending = "personalCollections"
+        m.personalCollectionCards = Prairie.Collections.flattenPersonalCollections(response.data)
+        finishCollectionsScreen()
     end if
 end sub

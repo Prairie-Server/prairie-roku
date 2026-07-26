@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="SearchScreen" extends="Group">
+    <interface>
+        <field id="items" type="array" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="statusText" type="string" value="" />
+        <field id="submitQuery" type="string" value="" alwaysNotify="true" />
+        <field id="selectedContentId" type="string" value="" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="SearchScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="title"
+            text="Search"
+            translation="[80, 60]"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="lede"
+            text="Find movies, shows, and episodes across your libraries."
+            translation="[80, 140]"
+            width="1200"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+        <TextEditBox
+            id="queryInput"
+            translation="[80, 220]"
+            width="700"
+            hintText="Title…"
+            maxTextLength="120"
+            showKeyboardOnFocus="true"
+        />
+        <Rectangle id="searchBg" translation="[820, 220]" width="220" height="60" color="0xE0A84AFF" focusable="true">
+            <Label
+                id="searchLabel"
+                text="Search"
+                width="220"
+                height="60"
+                horizAlign="center"
+                vertAlign="center"
+                color="0x141820FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Rectangle>
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 300]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="statusLabel"
+            text=""
+            translation="[80, 340]"
+            width="1400"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="results"
+            translation="[40, 390]"
+            itemSize="[1840, 300]"
+            rowItemSize="[[200, 280]]"
+            numRows="2"
+            itemSpacing="[20, 20]"
+            rowItemSpacing="[[20, 0]]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+        />
+    </children>
+</component>

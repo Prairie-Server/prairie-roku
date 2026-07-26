@@ -5,16 +5,48 @@ namespace Prairie.Libraries
     end function
 
     function librariesFromResponse(data as dynamic) as object
+        raw = []
         if data = invalid
             return []
         end if
         if GetInterface(data, "ifArray") <> invalid
-            return data
+            raw = data
+        else if type(data) = "roAssociativeArray" and type(data.libraries) = "roArray"
+            raw = data.libraries
+        else
+            return []
         end if
-        if type(data) = "roAssociativeArray" and type(data.libraries) = "roArray"
-            return data.libraries
+
+        libraries = []
+        for each entry in raw
+            if type(entry) = "roAssociativeArray"
+                libraries.push(normalizeLibrary(entry))
+            end if
+        end for
+        return libraries
+    end function
+
+    function normalizeLibrary(entry as object) as object
+        library = {
+            id: 0,
+            name: "Library",
+            type: "",
+            poster_url: ""
+        }
+        if entry.id <> invalid
+            library.id = entry.id as integer
         end if
-        return []
+        if entry.name <> invalid and (entry.name as string).len() > 0
+            library.name = entry.name as string
+        end if
+        if entry.type <> invalid
+            library.type = entry.type as string
+        end if
+        if entry.poster_url <> invalid
+            library.poster_url = entry.poster_url as string
+        end if
+        return library
     end function
 
 end namespace
+
