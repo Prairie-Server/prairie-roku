@@ -56,7 +56,12 @@ function main() {
     perFile.push({ file, lines: lines.length, covered: fileCovered, pct });
   }
 
-  const percent = total === 0 ? 100 : (covered / total) * 100;
+  if (total === 0) {
+    console.error("Coverage inventory contains no executable lines.");
+    process.exit(1);
+  }
+
+  const percent = (covered / total) * 100;
   const summary = {
     total,
     covered,
