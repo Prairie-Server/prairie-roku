@@ -17,6 +17,7 @@ sub init()
     m.subtitleInput = m.top.findNode("subtitleInput")
     m.saveBg = m.top.findNode("saveBg")
     m.saveLabel = m.top.findNode("saveLabel")
+    m.serversBg = m.top.findNode("serversBg")
     m.savedLabel = m.top.findNode("savedLabel")
 
     m.colors = colors
@@ -27,6 +28,7 @@ sub init()
     m.subLabel.color = colors.amber
     m.saveBg.color = colors.amber
     m.saveLabel.color = colors.bg
+    m.serversBg.color = colors.bgSoft
     m.savedLabel.color = colors.muted
 
     m.top.observeField("forceDirectPlay", "refreshMethodChrome")
@@ -94,6 +96,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.saveBg.isInFocusChain()
             saveSettings()
             return true
+        else if m.serversBg.isInFocusChain()
+            m.top.switchServerRequested = true
+            return true
         end if
     end if
     if key = "right"
@@ -103,6 +108,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.directBg.isInFocusChain()
             m.transcodeBg.setFocus(true)
             return true
+        else if m.saveBg.isInFocusChain()
+            m.serversBg.setFocus(true)
+            return true
         end if
     else if key = "left"
         if m.transcodeBg.isInFocusChain()
@@ -110,6 +118,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         else if m.directBg.isInFocusChain()
             m.autoBg.setFocus(true)
+            return true
+        else if m.serversBg.isInFocusChain()
+            m.saveBg.setFocus(true)
             return true
         end if
     else if key = "down"
@@ -121,7 +132,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     else if key = "up"
-        if m.saveBg.isInFocusChain()
+        if m.saveBg.isInFocusChain() or m.serversBg.isInFocusChain()
             m.subtitleInput.setFocus(true)
             return true
         else if m.subtitleInput.isInFocusChain()

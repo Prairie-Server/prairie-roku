@@ -1,0 +1,370 @@
+import "pkg:/source/lib/Persist.bs"
+import "pkg:/source/lib/UrlUtils.bs"
+import "pkg:/source/lib/Session.bs"
+
+namespace Prairie.ServerRegistry
+
+    function registryKey() as string
+        return "prairie.serverRegistry"
+    end function
+
+    function emptyRegistry() as object
+        return {
+            activeServerId: "",
+            entries: [],
+            scanCidrs: []
+        }
+    end function
+
+    function entryIdFromUrl(url as string) as string
+        normalized = Prairie.Url.normalizeServerUrl(url)
+        if normalized.len() = 0
+            return ""
+        end if
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(normalized)
+        encoded = bytes.ToBase64String()
+        encoded = encoded.Replace("+", "-")
+        encoded = encoded.Replace("/", "_")
+        encoded = encoded.Replace("=", "")
+        return encoded
+    end function
+
+    function normalizeEntry(entry as dynamic) as dynamic
+        if entry = invalid or type(entry) <> "roAssociativeArray"
+            return invalid
+        end if
+        url = ""
+        if entry.url <> invalid
+            url = Prairie.Url.normalizeServerUrl(entry.url as string)
+        end if
+        if url.len() = 0
+            return invalid
+        end if
+        id = entryIdFromUrl(url)
+        if entry.id <> invalid and (entry.id as string).len() > 0
+            id = entry.id as string
+        end if
+        normalized = {
+            id: id,
+            url: url,
+            fetchedName: "",
+            username: "",
+            profileId: "",
+            profileName: "",
+            accessToken: "",
+            profileToken: "",
+            lastUsedAt: 0
+        }
+        if entry.fetchedName <> invalid
+            normalized.fetchedName = entry.fetchedName as string
+        end if
+        if entry.username <> invalid
+            normalized.username = entry.username as string
+        end if
+        if entry.profileId <> invalid
+            normalized.profileId = entry.profileId as string
+        end if
+        if entry.profileName <> invalid
+            normalized.profileName = entry.profileName as string
+        end if
+        if entry.accessToken <> invalid
+            normalized.accessToken = entry.accessToken as string
+        end if
+        if entry.profileToken <> invalid
+            normalized.profileToken = entry.profileToken as string
+        end if
+        if entry.lastUsedAt <> invalid
+            normalized.lastUsedAt = entry.lastUsedAt as integer
+        end if
+        return normalized
+    end function
+
+    function displayName(entry as object) as string
+        if entry.fetchedName <> invalid and (entry.fetchedName as string).trim().len() > 0
+            return (entry.fetchedName as string).trim()
+        end if
+        return entry.url
+    end function
+
+    function load(store as object) as object
+        registry = emptyRegistry()
+        raw = store.getItem(registryKey())
+        if raw = invalid or (raw as string).trim().len() = 0
+            return registry
+        end if
+        parsed = ParseJson(raw as string)
+        if parsed = invalid or type(parsed) <> "roAssociativeArray"
+            return registry
+        end if
+        if parsed.activeServerId <> invalid
+            registry.activeServerId = parsed.activeServerId as string
+        end if
+        if type(parsed.entries) = "roArray"
+            for each entry in parsed.entries
+                normalized = normalizeEntry(entry)
+                if normalized <> invalid
+                    registry.entries.push(normalized)
+                end if
+            end for
+        end if
+        if type(parsed.scanCidrs) = "roArray"
+            for each cidr in parsed.scanCidrs
+                if cidr <> invalid and (cidr as string).trim().len() > 0
+                    registry.scanCidrs.push((cidr as string).trim())
+                end if
+            end for
+        end if
+        return registry
+    end function
+
+    sub save(registry as object, store as object)
+        payload = {
+            activeServerId: "",
+            entries: [],
+            scanCidrs: []
+        }
+        if registry.activeServerId <> invalid
+            payload.activeServerId = registry.activeServerId as string
+        end if
+        if type(registry.entries) = "roArray"
+            for each entry in registry.entries
+                normalized = normalizeEntry(entry)
+                if normalized <> invalid
+                    payload.entries.push(normalized)
+                end if
+            end for
+        end if
+        if type(registry.scanCidrs) = "roArray"
+            payload.scanCidrs = registry.scanCidrs
+        end if
+        store.setItem(registryKey(), FormatJson(payload))
+    end sub
+
+    function findIndex(registry as object, serverId as string) as integer
+        if registry = invalid or type(registry.entries) <> "roArray"
+            return -1
+        end if
+        index = 0
+        for each entry in registry.entries
+            if entry.id = serverId
+                return index
+            end if
+            index = index + 1
+        end for
+        return -1
+    end function
+
+    function findByUrl(registry as object, url as string) as dynamic
+        id = entryIdFromUrl(url)
+        idx = findIndex(registry, id)
+        if idx < 0
+            return invalid
+        end if
+        return registry.entries[idx]
+    end function
+
+    function sortedEntries(registry as object) as object
+        if registry = invalid or type(registry.entries) <> "roArray"
+            return []
+        end if
+        activeId = ""
+        if registry.activeServerId <> invalid
+            activeId = registry.activeServerId as string
+        end if
+        ' Selection sort into a new array: active first, then MRU.
+        remaining = []
+        for each entry in registry.entries
+            remaining.push(entry)
+        end for
+        sorted = []
+        while remaining.count() > 0
+            bestIndex = 0
+            best = remaining[0]
+            for i = 1 to remaining.count() - 1
+                candidate = remaining[i]
+                candidateActive = candidate.id = activeId
+                bestActive = best.id = activeId
+                if candidateActive and not bestActive
+                    best = candidate
+                    bestIndex = i
+                else if candidateActive = bestActive and candidate.lastUsedAt > best.lastUsedAt
+                    best = candidate
+                    bestIndex = i
+                end if
+            end for
+            sorted.push(best)
+            remaining.delete(bestIndex)
+        end while
+        return sorted
+    end function
+
+    function nowSeconds() as integer
+        dt = CreateObject("roDateTime")
+        dt.Mark()
+        return dt.AsSeconds()
+    end function
+
+    function addOrUpdate(registry as object, entry as object) as object
+        normalized = normalizeEntry(entry)
+        if normalized = invalid
+            return registry
+        end if
+        idx = findIndex(registry, normalized.id)
+        if idx >= 0
+            existing = registry.entries[idx]
+            if normalized.profileId.len() = 0 and existing.profileId.len() > 0
+                normalized.profileId = existing.profileId
+            end if
+            if normalized.profileName.len() = 0 and existing.profileName.len() > 0
+                normalized.profileName = existing.profileName
+            end if
+            if normalized.accessToken.len() = 0 and existing.accessToken.len() > 0
+                normalized.accessToken = existing.accessToken
+            end if
+            if normalized.profileToken.len() = 0 and existing.profileToken.len() > 0
+                normalized.profileToken = existing.profileToken
+            end if
+            if normalized.fetchedName.len() = 0 and existing.fetchedName.len() > 0
+                normalized.fetchedName = existing.fetchedName
+            end if
+            if normalized.username.len() = 0 and existing.username.len() > 0
+                normalized.username = existing.username
+            end if
+            if normalized.lastUsedAt = 0
+                normalized.lastUsedAt = existing.lastUsedAt
+            end if
+            registry.entries[idx] = normalized
+        else
+            if normalized.lastUsedAt = 0
+                normalized.lastUsedAt = nowSeconds()
+            end if
+            registry.entries.push(normalized)
+        end if
+        return registry
+    end function
+
+    function remove(registry as object, serverId as string) as object
+        idx = findIndex(registry, serverId)
+        if idx < 0
+            return registry
+        end if
+        registry.entries.delete(idx)
+        if registry.activeServerId = serverId
+            registry.activeServerId = ""
+            if registry.entries.count() > 0
+                nextEntries = sortedEntries(registry)
+                registry.activeServerId = nextEntries[0].id
+            end if
+        end if
+        return registry
+    end function
+
+    function switchTo(registry as object, serverId as string) as object
+        idx = findIndex(registry, serverId)
+        if idx < 0
+            return registry
+        end if
+        registry.activeServerId = serverId
+        registry.entries[idx].lastUsedAt = nowSeconds()
+        return registry
+    end function
+
+    function rememberSession(registry as object, session as object, fetchedName = "" as string) as object
+        if session = invalid or session.serverUrl = invalid
+            return registry
+        end if
+        entry = {
+            url: session.serverUrl,
+            username: "",
+            profileId: "",
+            profileName: "",
+            accessToken: "",
+            profileToken: "",
+            fetchedName: fetchedName,
+            lastUsedAt: nowSeconds()
+        }
+        if session.username <> invalid
+            entry.username = session.username as string
+        end if
+        if session.profileId <> invalid
+            entry.profileId = session.profileId as string
+        end if
+        if session.profileName <> invalid
+            entry.profileName = session.profileName as string
+        end if
+        if session.accessToken <> invalid
+            entry.accessToken = session.accessToken as string
+        end if
+        if session.profileToken <> invalid
+            entry.profileToken = session.profileToken as string
+        end if
+        registry = addOrUpdate(registry, entry)
+        registry.activeServerId = entryIdFromUrl(session.serverUrl as string)
+        return registry
+    end function
+
+    function sessionFromEntry(entry as object) as dynamic
+        if entry = invalid
+            return invalid
+        end if
+        if entry.accessToken = invalid or (entry.accessToken as string).len() = 0
+            return invalid
+        end if
+        if entry.profileId = invalid or (entry.profileId as string).len() = 0
+            return invalid
+        end if
+        if entry.username = invalid or (entry.username as string).len() = 0
+            return invalid
+        end if
+        session = {
+            serverUrl: entry.url,
+            accessToken: entry.accessToken,
+            username: entry.username,
+            profileId: entry.profileId
+        }
+        if entry.profileName <> invalid and (entry.profileName as string).len() > 0
+            session.profileName = entry.profileName
+        end if
+        if entry.profileToken <> invalid and (entry.profileToken as string).len() > 0
+            session.profileToken = entry.profileToken
+        end if
+        return session
+    end function
+
+    function clearTokens(registry as object, serverId as string) as object
+        idx = findIndex(registry, serverId)
+        if idx < 0
+            return registry
+        end if
+        registry.entries[idx].accessToken = ""
+        registry.entries[idx].profileToken = ""
+        registry.entries[idx].profileId = ""
+        registry.entries[idx].profileName = ""
+        return registry
+    end function
+
+    ' Promote legacy single lastServerUrl/session into the registry (schema v2).
+    function migrateFromLegacy(store as object) as object
+        registry = load(store)
+        if registry.entries.count() > 0
+            return registry
+        end if
+        session = Prairie.Session.loadSession(store)
+        lastUrl = Prairie.Persist.loadLastServerUrl(store)
+        if session <> invalid
+            registry = rememberSession(registry, session, "")
+        else if lastUrl.len() > 0
+            registry = addOrUpdate(registry, {
+                url: lastUrl,
+                lastUsedAt: nowSeconds()
+            })
+            registry.activeServerId = entryIdFromUrl(lastUrl)
+        end if
+        if registry.entries.count() > 0
+            save(registry, store)
+        end if
+        return registry
+    end function
+
+end namespace

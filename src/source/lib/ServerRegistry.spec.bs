@@ -1,0 +1,154 @@
+namespace tests
+    @suite("Prairie.ServerRegistry")
+    class ServerRegistrySuite extends rooibos.BaseTestSuite
+
+        @describe("ids and persistence")
+        @it("derives stable ids and round-trips the registry")
+        sub _()
+            id = Prairie.ServerRegistry.entryIdFromUrl(" https://prairie.example.com/// ")
+            m.assertTrue(id.len() > 0)
+            m.assertEqual(id, Prairie.ServerRegistry.entryIdFromUrl("https://prairie.example.com"))
+            m.assertEqual(Prairie.ServerRegistry.entryIdFromUrl(""), "")
+            m.assertEqual(Prairie.ServerRegistry.normalizeEntry(invalid), invalid)
+            m.assertEqual(Prairie.ServerRegistry.normalizeEntry({}), invalid)
+
+            store = Prairie.Store.createMemoryStore()
+            registry = Prairie.ServerRegistry.emptyRegistry()
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, {
+                url: "https://prairie.example.com",
+                fetchedName: "Prairie",
+                username: "jonah",
+                profileId: "p1",
+                accessToken: "tok",
+                scanCidrs: ["10.0.0.0/24"]
+            })
+            registry.scanCidrs = ["10.0.0.0/24"]
+            Prairie.ServerRegistry.save(registry, store)
+            loaded = Prairie.ServerRegistry.load(store)
+            m.assertEqual(loaded.entries.count(), 1)
+            m.assertEqual(loaded.entries[0].fetchedName, "Prairie")
+            m.assertEqual(Prairie.ServerRegistry.displayName(loaded.entries[0]), "Prairie")
+            m.assertEqual(Prairie.ServerRegistry.displayName({ url: "https://x.example", fetchedName: "" }), "https://x.example")
+            m.assertEqual(loaded.scanCidrs.count(), 1)
+            m.assertEqual(Prairie.ServerRegistry.load(Prairie.Store.createMemoryStore()).entries.count(), 0)
+        end sub
+
+        @describe("switch and session mapping")
+        @it("switches active server and builds sessions from entries")
+        sub _()
+            registry = Prairie.ServerRegistry.emptyRegistry()
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, {
+                url: "https://a.example.com",
+                username: "u",
+                profileId: "p",
+                profileName: "Primary",
+                accessToken: "t1",
+                profileToken: "pt",
+                lastUsedAt: 10
+            })
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, {
+                url: "https://b.example.com",
+                username: "u",
+                profileId: "p",
+                accessToken: "t2",
+                lastUsedAt: 20
+            })
+            idA = Prairie.ServerRegistry.entryIdFromUrl("https://a.example.com")
+            idB = Prairie.ServerRegistry.entryIdFromUrl("https://b.example.com")
+            registry = Prairie.ServerRegistry.switchTo(registry, idB)
+            m.assertEqual(registry.activeServerId, idB)
+            found = Prairie.ServerRegistry.findByUrl(registry, "https://b.example.com")
+            m.assertEqual(found.accessToken, "t2")
+            session = Prairie.ServerRegistry.sessionFromEntry(registry.entries[Prairie.ServerRegistry.findIndex(registry, idB)])
+            m.assertEqual(session.serverUrl, "https://b.example.com")
+            m.assertEqual(session.accessToken, "t2")
+            sessionA = Prairie.ServerRegistry.sessionFromEntry(registry.entries[Prairie.ServerRegistry.findIndex(registry, idA)])
+            m.assertEqual(sessionA.profileName, "Primary")
+            m.assertEqual(sessionA.profileToken, "pt")
+            m.assertEqual(Prairie.ServerRegistry.sessionFromEntry({ url: "https://x", accessToken: "" }), invalid)
+            m.assertEqual(Prairie.ServerRegistry.sessionFromEntry(invalid), invalid)
+
+            sorted = Prairie.ServerRegistry.sortedEntries(registry)
+            m.assertEqual(sorted[0].id, idB)
+            m.assertEqual(Prairie.ServerRegistry.sortedEntries(invalid).count(), 0)
+            m.assertEqual(Prairie.ServerRegistry.findIndex(invalid, "x"), -1)
+            m.assertEqual(Prairie.ServerRegistry.switchTo(registry, "missing").activeServerId, idB)
+        end sub
+
+        @describe("remember, remove, clearTokens")
+        @it("updates tokens, clears them, and removes entries")
+        sub _()
+            registry = Prairie.ServerRegistry.emptyRegistry()
+            registry = Prairie.ServerRegistry.rememberSession(registry, {
+                serverUrl: "https://mem.example.com",
+                accessToken: "tok",
+                username: "u",
+                profileId: "p1",
+                profileName: "Kid",
+                profileToken: "pt"
+            }, "Named")
+            id = Prairie.ServerRegistry.entryIdFromUrl("https://mem.example.com")
+            m.assertEqual(registry.activeServerId, id)
+            m.assertEqual(registry.entries[0].fetchedName, "Named")
+
+            ' Merge preserves existing fields when blank on update.
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, {
+                url: "https://mem.example.com",
+                username: "u2"
+            })
+            m.assertEqual(registry.entries[0].accessToken, "tok")
+            m.assertEqual(registry.entries[0].username, "u2")
+
+            registry = Prairie.ServerRegistry.clearTokens(registry, id)
+            m.assertEqual(registry.entries[0].accessToken, "")
+            m.assertEqual(registry.entries[0].profileId, "")
+            m.assertEqual(Prairie.ServerRegistry.clearTokens(registry, "missing").entries.count(), 1)
+
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, {
+                url: "https://other.example.com",
+                accessToken: "t",
+                username: "u",
+                profileId: "p"
+            })
+            otherId = Prairie.ServerRegistry.entryIdFromUrl("https://other.example.com")
+            registry.activeServerId = id
+            registry = Prairie.ServerRegistry.remove(registry, id)
+            m.assertEqual(registry.entries.count(), 1)
+            m.assertEqual(registry.activeServerId, otherId)
+            registry = Prairie.ServerRegistry.remove(registry, otherId)
+            m.assertEqual(registry.entries.count(), 0)
+            m.assertEqual(registry.activeServerId, "")
+            m.assertEqual(Prairie.ServerRegistry.remove(registry, "missing").entries.count(), 0)
+            m.assertEqual(Prairie.ServerRegistry.rememberSession(registry, invalid), registry)
+        end sub
+
+        @describe("legacy migration")
+        @it("promotes an existing session into the registry")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            Prairie.Session.saveSession({
+                serverUrl: "https://legacy.example.com",
+                accessToken: "tok",
+                username: "u",
+                profileId: "p1",
+                profileName: "Primary"
+            }, store)
+            registry = Prairie.ServerRegistry.migrateFromLegacy(store)
+            m.assertEqual(registry.entries.count(), 1)
+            m.assertEqual(registry.entries[0].url, "https://legacy.example.com")
+            m.assertEqual(registry.entries[0].profileName, "Primary")
+            m.assertTrue(registry.activeServerId.len() > 0)
+
+            ' Second migrate is a no-op when entries exist.
+            again = Prairie.ServerRegistry.migrateFromLegacy(store)
+            m.assertEqual(again.entries.count(), 1)
+
+            store2 = Prairie.Store.createMemoryStore()
+            Prairie.Persist.saveLastServerUrl("https://url-only.example.com", store2)
+            fromUrl = Prairie.ServerRegistry.migrateFromLegacy(store2)
+            m.assertEqual(fromUrl.entries.count(), 1)
+            m.assertEqual(fromUrl.entries[0].url, "https://url-only.example.com")
+        end sub
+
+    end class
+end namespace

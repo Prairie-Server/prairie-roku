@@ -1,0 +1,296 @@
+import "pkg:/source/lib/UrlUtils.bs"
+import "pkg:/source/lib/ApiClient.bs"
+
+namespace Prairie.Discover
+
+    ' Native Prairie liveness + identity (not Jellyfin /System/Info/Public).
+    function healthPath() as string
+        return "/api/v1/health"
+    end function
+
+    ' Prairie default listen is :8080. Extra ports cover reverse-proxy / TLS setups.
+    function defaultPorts() as object
+        return [8080, 8443, 443, 80]
+    end function
+
+    ' Deep LAN sweeps use a single port so a /24 finishes in reasonable time on Roku
+    ' (Litefin does the same with Jellyfin :8096).
+    function deepScanPorts() as object
+        return [8080]
+    end function
+
+    ' Same fallback prefixes Litefin uses when the NIC /24 is unknown or empty.
+    function commonCidrs() as object
+        return ["192.168.0.0/24", "192.168.1.0/24", "10.0.0.0/24"]
+    end function
+
+    function parseHealth(data as dynamic) as dynamic
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return invalid
+        end if
+        status = ""
+        if data.status <> invalid
+            status = LCase(data.status as string)
+        end if
+        if status <> "ok" and status <> "healthy" and status <> "up"
+            return invalid
+        end if
+        hit = {
+            serverName: "",
+            serverId: ""
+        }
+        if data.server_name <> invalid
+            hit.serverName = data.server_name as string
+        end if
+        if data.server_id <> invalid
+            hit.serverId = data.server_id as string
+        end if
+        return hit
+    end function
+
+    function buildProbeRequest(baseUrl as string, timeoutMs = 400 as integer) as object
+        return Prairie.Api.buildRequest({
+            serverUrl: Prairie.Url.normalizeServerUrl(baseUrl),
+            timeoutMs: timeoutMs
+        }, healthPath(), "GET")
+    end function
+
+    function ipv4Parts(ip as string) as dynamic
+        parts = ip.split(".")
+        if parts.count() <> 4
+            return invalid
+        end if
+        nums = []
+        for each part in parts
+            if part.len() = 0
+                return invalid
+            end if
+            value = part.toInt()
+            if value < 0 or value > 255
+                return invalid
+            end if
+            nums.push(value)
+        end for
+        return nums
+    end function
+
+    function formatIpv4(parts as object) as string
+        return parts[0].toStr() + "." + parts[1].toStr() + "." + parts[2].toStr() + "." + parts[3].toStr()
+    end function
+
+    ' Parse "a.b.c.d/nn". Only /24–/32 are accepted for host sweeps.
+    function parseCidr(cidr as string) as dynamic
+        trimmed = cidr.trim()
+        slash = trimmed.instr("/")
+        if slash < 0
+            return invalid
+        end if
+        ip = trimmed.left(slash)
+        prefixText = trimmed.mid(slash + 1)
+        prefix = prefixText.toInt()
+        if prefix < 24 or prefix > 32
+            return invalid
+        end if
+        parts = ipv4Parts(ip)
+        if parts = invalid
+            return invalid
+        end if
+        return {
+            network: parts,
+            prefix: prefix
+        }
+    end function
+
+    function hostBits(prefix as integer) as integer
+        return 32 - prefix
+    end function
+
+    sub pushUnique(list as object, seen as object, value as string)
+        key = LCase(value)
+        if seen.doesExist(key)
+            return
+        end if
+        seen[key] = true
+        list.push(value)
+    end sub
+
+    sub urlsForHost(host as string, ports as object, seen as object, out as object)
+        for each port in ports
+            if port = 443
+                pushUnique(out, seen, "https://" + host)
+            else if port = 80
+                pushUnique(out, seen, "http://" + host)
+            else
+                pushUnique(out, seen, "http://" + host + ":" + port.toStr())
+                if port = 8443
+                    pushUnique(out, seen, "https://" + host + ":" + port.toStr())
+                end if
+            end if
+        end for
+    end sub
+
+    ' Prefer common LAN hosts first so discovery feels fast before a deeper sweep.
+    function priorityHostsForSubnet(base as object) as object
+        hosts = []
+        for each last in [1, 2, 10, 20, 50, 100, 150, 200, 254]
+            copy = [base[0], base[1], base[2], last]
+            hosts.push(formatIpv4(copy))
+        end for
+        return hosts
+    end function
+
+    function allHostsForCidr(parsed as object, maxHosts = 254 as integer) as object
+        hosts = []
+        bits = hostBits(parsed.prefix)
+        if bits = 0
+            hosts.push(formatIpv4(parsed.network))
+            return hosts
+        end if
+        count = 1
+        for i = 1 to bits
+            count = count * 2
+        end for
+        ' Skip network/broadcast for /24-style ranges.
+        startOffset = 1
+        endOffset = count - 2
+        if endOffset < startOffset
+            startOffset = 0
+            endOffset = count - 1
+        end if
+        added = 0
+        for offset = startOffset to endOffset
+            if added >= maxHosts
+                exit for
+            end if
+            last = parsed.network[3] + offset
+            if last > 255
+                exit for
+            end if
+            if parsed.prefix < 24
+                exit for
+            end if
+            hostParts = [parsed.network[0], parsed.network[1], parsed.network[2], last]
+            hosts.push(formatIpv4(hostParts))
+            added = added + 1
+        end for
+        return hosts
+    end function
+
+    function localIpv4Addresses() as object
+        ips = []
+        device = CreateObject("roDeviceInfo")
+        if device = invalid
+            return ips
+        end if
+        addrs = device.GetIPAddrs()
+        if addrs = invalid
+            return ips
+        end if
+        for each iface in addrs
+            ip = addrs[iface]
+            if ip <> invalid and ipv4Parts(ip as string) <> invalid
+                ips.push(ip as string)
+            end if
+        end for
+        return ips
+    end function
+
+    function subnetCidrForIp(ip as string) as string
+        parts = ipv4Parts(ip)
+        if parts = invalid
+            return ""
+        end if
+        return parts[0].toStr() + "." + parts[1].toStr() + "." + parts[2].toStr() + ".0/24"
+    end function
+
+    function collectScanCidrs(extraCidrs as object) as object
+        cidrs = []
+        cidrSeen = {}
+        localIps = localIpv4Addresses()
+        for each ip in localIps
+            cidr = subnetCidrForIp(ip)
+            if cidr.len() > 0
+                pushUnique(cidrs, cidrSeen, cidr)
+            end if
+        end for
+        for each cidr in commonCidrs()
+            pushUnique(cidrs, cidrSeen, cidr)
+        end for
+        if type(extraCidrs) = "roArray"
+            for each cidr in extraCidrs
+                if cidr <> invalid
+                    pushUnique(cidrs, cidrSeen, (cidr as string).trim())
+                end if
+            end for
+        end if
+        return cidrs
+    end function
+
+    ' Build probe URLs (Litefin-shaped, Prairie-native):
+    '   1) prairie.local / prairie
+    '   2) local NIC /24 + common 192.168.0/1 + 10.0.0 (+ optional extras)
+    '   3) deepScan=false → priority hosts on defaultPorts
+    '      deepScan=true  → full /24 on deepScanPorts (:8080)
+    function buildCandidates(extraCidrs as object, deepScan = false as boolean, maxHostsPerCidr = 254 as integer) as object
+        out = []
+        seen = {}
+
+        hostnamePorts = defaultPorts()
+        for each host in ["prairie.local", "prairie"]
+            urlsForHost(host, hostnamePorts, seen, out)
+        end for
+
+        localIps = localIpv4Addresses()
+        for each ip in localIps
+            urlsForHost(ip, hostnamePorts, seen, out)
+        end for
+
+        cidrs = collectScanCidrs(extraCidrs)
+        hostPorts = defaultPorts()
+        if deepScan
+            hostPorts = deepScanPorts()
+        end if
+
+        for each cidr in cidrs
+            parsed = parseCidr(cidr)
+            if parsed = invalid
+                goto next_cidr
+            end if
+            hosts = priorityHostsForSubnet(parsed.network)
+            if deepScan
+                hosts = allHostsForCidr(parsed, maxHostsPerCidr)
+            end if
+            for each host in hosts
+                urlsForHost(host, hostPorts, seen, out)
+            end for
+            next_cidr:
+        end for
+
+        return out
+    end function
+
+    function mergeHits(hits as object, url as string, health as object) as object
+        if hits = invalid
+            hits = []
+        end if
+        normalized = Prairie.Url.normalizeServerUrl(url)
+        for each hit in hits
+            if hit.url = normalized
+                if health.serverName.len() > 0
+                    hit.serverName = health.serverName
+                end if
+                if health.serverId.len() > 0
+                    hit.serverId = health.serverId
+                end if
+                return hits
+            end if
+        end for
+        hits.push({
+            url: normalized,
+            serverName: health.serverName,
+            serverId: health.serverId
+        })
+        return hits
+    end function
+
+end namespace

@@ -12,6 +12,8 @@ sub init()
     m.connectBg = m.top.findNode("connectBg")
     m.connectLabel = m.top.findNode("connectLabel")
     m.connectFocus = m.top.findNode("connectFocus")
+    m.serversBg = m.top.findNode("serversBg")
+    m.scanBg = m.top.findNode("scanBg")
     m.brand = m.top.findNode("brand")
     m.eyebrow = m.top.findNode("eyebrow")
     m.lede = m.top.findNode("lede")
@@ -26,6 +28,8 @@ sub init()
     m.connectBg.color = colors.amber
     m.connectLabel.color = colors.bg
     m.connectFocus.color = colors.ring
+    m.serversBg.color = colors.bgSoft
+    m.scanBg.color = colors.bgSoft
 
     m.top.observeField("initialServerUrl", "onInitialServerUrl")
     m.top.observeField("errorText", "onErrorText")
@@ -78,6 +82,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if m.connectBg.isInFocusChain() or m.connectLabel.isInFocusChain()
             submitConnect()
             return true
+        else if m.serversBg.isInFocusChain()
+            m.top.openServers = true
+            return true
+        else if m.scanBg.isInFocusChain()
+            m.top.scanRequested = true
+            return true
         end if
     end if
 
@@ -93,7 +103,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     else if key = "up"
-        if m.connectBg.isInFocusChain()
+        if m.connectBg.isInFocusChain() or m.serversBg.isInFocusChain() or m.scanBg.isInFocusChain()
             m.password.setFocus(true)
             return true
         else if m.password.isInFocusChain()
@@ -101,6 +111,22 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         else if m.username.isInFocusChain()
             m.serverUrl.setFocus(true)
+            return true
+        end if
+    else if key = "right"
+        if m.connectBg.isInFocusChain()
+            m.serversBg.setFocus(true)
+            return true
+        else if m.serversBg.isInFocusChain()
+            m.scanBg.setFocus(true)
+            return true
+        end if
+    else if key = "left"
+        if m.scanBg.isInFocusChain()
+            m.serversBg.setFocus(true)
+            return true
+        else if m.serversBg.isInFocusChain()
+            m.connectBg.setFocus(true)
             return true
         end if
     end if

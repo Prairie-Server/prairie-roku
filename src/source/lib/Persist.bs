@@ -21,8 +21,12 @@ namespace Prairie.Persist
         return "prairie.playbackSettings"
     end function
 
+    function serverRegistryKey() as string
+        return "prairie.serverRegistry"
+    end function
+
     function storageSchemaVersion() as integer
-        return 1
+        return 2
     end function
 
     function loadLastServerUrl(store as object) as string
@@ -71,6 +75,14 @@ namespace Prairie.Persist
                     end if
                 end if
             end if
+            store.setItem(storageSchemaKey(), "1")
+            current = 1
+        end if
+
+        ' v1 → v2: registry key introduced. Migration of session/last URL into
+        ' prairie.serverRegistry is performed by Prairie.ServerRegistry.migrateFromLegacy
+        ' on boot (avoids a Persist↔ServerRegistry import cycle).
+        if current < 2
             store.setItem(storageSchemaKey(), storageSchemaVersion().toStr())
             return storageSchemaVersion()
         end if
