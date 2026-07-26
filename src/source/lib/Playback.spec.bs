@@ -28,17 +28,25 @@ namespace tests
         sub _()
             m.assertEqual(Prairie.Playback.detectStreamFormat({ stream_url: "/x.m3u8" }), "hls")
             m.assertEqual(Prairie.Playback.detectStreamFormat({ stream_url: "/x.mp4" }), "mp4")
+            m.assertEqual(Prairie.Playback.detectStreamFormat({
+                playback_info: { stream_type: "dash" }
+            }), "dash")
+            m.assertEqual(Prairie.Playback.detectStreamFormat(invalid), "hls")
             m.assertEqual(Prairie.Playback.resumeSeconds({
                 user_data: { position_seconds: 100, duration_seconds: 1000 }
             }), 100)
             m.assertEqual(Prairie.Playback.resumeSeconds({
                 user_data: { position_seconds: 980, duration_seconds: 1000 }
             }), invalid)
+            m.assertEqual(Prairie.Playback.resumeSeconds(invalid), invalid)
             url = Prairie.Playback.resolveStreamUrl("https://prairie.example.com", {
                 stream_url: "/stream"
             }, "tok")
             m.assertTrue(url.instr("https://prairie.example.com/stream") = 0)
             m.assertTrue(url.instr("token=tok") >= 0)
+            audio = ParseJson(Prairie.Playback.buildAudioBody(2, 15.0))
+            m.assertEqual(audio.audio_track_index, 2)
+            m.assertEqual(Prairie.Playback.audioPath("s/1").instr("s%2F1") >= 0, true)
         end sub
 
     end class
