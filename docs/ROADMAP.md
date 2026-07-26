@@ -26,14 +26,14 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 
 ## 1.0 feature checklist
 
-- [x] Connect (username / password) to Prairie server
-- [x] Profile picker (+ PIN when required)
-- [x] Home sections from `/api/v1/home/sections`
-- [x] Libraries + catalog pagination
-- [x] Collections (library + personal)
-- [x] Search
-- [x] Item detail → seasons/episodes → play via watch + `/playback/start` with resume
-- [x] Player chrome: play/pause, ±15s, progress, audio switch, session teardown
+- [x] Connect (username / password) to Prairie server _(implemented; device validation pending)_
+- [x] Profile picker (+ PIN when required) _(implemented; device validation pending)_
+- [x] Home sections from `/api/v1/home/sections` _(implemented; device validation pending)_
+- [x] Libraries + catalog pagination _(implemented; device validation pending)_
+- [x] Collections (library + personal) _(implemented; device validation pending)_
+- [x] Search _(implemented; device validation pending)_
+- [x] Item detail → seasons/episodes → play via watch + `/playback/start` with resume _(implemented; device validation pending)_
+- [x] Player chrome: play/pause, ±15s, progress, audio switch, session teardown _(implemented; device validation pending)_
 - [ ] Live TV list + now/next (hidden when no channels)
 - [x] Upgrade-safe registry persistence (session + settings + last server URL)
 - [ ] Sideload `.zip` package script + Channel Store notes

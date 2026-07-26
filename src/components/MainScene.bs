@@ -55,6 +55,11 @@ sub clearScreen()
     if m.screenHost = invalid
         return
     end if
+    if m.httpTask <> invalid
+        m.httpTask.control = "STOP"
+    end if
+    m.pending = ""
+    m.pinProfile = invalid
     while m.screenHost.getChildCount() > 0
         m.screenHost.removeChildIndex(0)
     end while
@@ -187,7 +192,16 @@ sub showMessage(title as string, message as string)
     dialog.title = title
     dialog.message = message
     dialog.buttons = ["OK"]
+    dialog.observeField("buttonSelected", "onMessageDialogButton")
+    m.messageDialog = dialog
     m.top.dialog = dialog
+end sub
+
+sub onMessageDialogButton()
+    if m.messageDialog <> invalid
+        m.messageDialog.close = true
+        m.messageDialog = invalid
+    end if
 end sub
 
 sub showItemDetail(contentId as string)
