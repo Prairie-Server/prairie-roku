@@ -4,5 +4,6 @@
     <children>
         <Group id="screenHost" />
         <HttpTask id="httpTask" />
+        <HttpTask id="progressTask" />
     </children>
 </component>

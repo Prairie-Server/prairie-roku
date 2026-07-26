@@ -8,6 +8,8 @@ import "pkg:/source/lib/Home.bs"
 import "pkg:/source/lib/Libraries.bs"
 import "pkg:/source/lib/Catalog.bs"
 import "pkg:/source/lib/Collections.bs"
+import "pkg:/source/lib/Watch.bs"
+import "pkg:/source/lib/Playback.bs"
 import "pkg:/source/lib/UrlUtils.bs"
 
 sub init()
@@ -19,6 +21,8 @@ sub init()
     m.screenHost = m.top.findNode("screenHost")
     m.httpTask = m.top.findNode("httpTask")
     m.httpTask.observeField("response", "onHttpResponse")
+    m.progressTask = m.top.findNode("progressTask")
+    m.progressTask.observeField("response", "onProgressResponse")
 
     m.pending = ""
     m.auth = invalid
@@ -32,6 +36,13 @@ sub init()
     m.collectionLibraryQueue = []
     m.libraryCollectionCards = []
     m.personalCollectionCards = []
+    m.detailContentId = ""
+    m.detailBackRoute = "home"
+    m.detailItem = invalid
+    m.playLaunch = invalid
+    m.playbackSession = invalid
+    m.audioTrackIndex = 0
+    m.exitingPlayer = false
 
     if m.session <> invalid
         showHome()
@@ -44,11 +55,6 @@ sub clearScreen()
     if m.screenHost = invalid
         return
     end if
-    if m.httpTask <> invalid
-        m.httpTask.control = "STOP"
-    end if
-    m.pending = ""
-    m.pinProfile = invalid
     while m.screenHost.getChildCount() > 0
         m.screenHost.removeChildIndex(0)
     end while
@@ -181,17 +187,134 @@ sub showMessage(title as string, message as string)
     dialog.title = title
     dialog.message = message
     dialog.buttons = ["OK"]
-    dialog.observeField("buttonSelected", "onMessageDialogButton")
-    m.messageDialog = dialog
     m.top.dialog = dialog
 end sub
 
-sub onMessageDialogButton()
-    if m.messageDialog <> invalid
-        m.messageDialog.close = true
-        m.messageDialog = invalid
-    end if
+sub showItemDetail(contentId as string)
+    m.detailContentId = contentId
+    m.detailBackRoute = m.route
+    clearScreen()
+    m.route = "detail"
+    m.detailItem = invalid
+    screen = CreateObject("roSGNode", "ItemDetailScreen")
+    screen.observeField("playRequested", "onDetailPlayRequested")
+    screen.observeField("seasonSelected", "onDetailSeasonSelected")
+    screen.observeField("backRequested", "onDetailBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadItemDetail()
 end sub
+
+sub showPlayer(launch as object)
+    clearScreen()
+    m.route = "player"
+    m.playLaunch = launch
+    m.playbackSession = invalid
+    m.exitingPlayer = false
+    m.audioTrackIndex = 0
+    screen = CreateObject("roSGNode", "PlayerScreen")
+    screen.titleText = launch.title
+    screen.busy = true
+    if launch.startPosition <> invalid
+        screen.startPosition = launch.startPosition
+    end if
+    screen.observeField("exitRequested", "onPlayerExit")
+    screen.observeField("progressTick", "onPlayerProgressTick")
+    screen.observeField("seekDelta", "onPlayerSeek")
+    screen.observeField("audioCycleRequested", "onPlayerAudioCycle")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    startPlaybackSession()
+end sub
+
+sub loadItemDetail()
+    if m.session = invalid or m.detailContentId.len() = 0
+        return
+    end if
+    m.pending = "itemDetail"
+    m.screen.busy = true
+    path = Prairie.Catalog.itemDetailPath(m.detailContentId)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub loadSeasons()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "seasons"
+    path = Prairie.Catalog.seasonsPath(m.detailContentId)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub loadEpisodes(seasonNumber as integer)
+    if m.session = invalid
+        return
+    end if
+    m.pending = "episodes"
+    path = Prairie.Catalog.episodesPath(m.detailContentId, seasonNumber)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub startPlaybackSession()
+    if m.session = invalid or m.playLaunch = invalid
+        return
+    end if
+    m.pending = "playbackStart"
+    if m.screen <> invalid
+        m.screen.busy = true
+    end if
+    forced = Prairie.Playback.forcedPlayMethodFromStore(m.store)
+    body = Prairie.Playback.buildStartBody({
+        fileId: m.playLaunch.fileId,
+        profileId: m.session.profileId,
+        forcedPlayMethod: forced,
+        startPosition: m.playLaunch.startPosition
+    })
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.startPath(), "POST", body)
+    m.httpTask.control = "RUN"
+end sub
+
+sub reportPlayerProgress(force as boolean)
+    if m.session = invalid or m.playbackSession = invalid or m.screen = invalid
+        return
+    end if
+    if m.route <> "player"
+        return
+    end if
+    sid = m.playbackSession.session_id
+    if sid = invalid or (sid as string).len() = 0
+        return
+    end if
+    position = m.screen.positionSeconds
+    isPaused = m.screen.isPaused
+    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.progressPath(sid as string), "POST", Prairie.Playback.buildProgressBody(position, isPaused))
+    m.progressTask.request = req
+    m.progressTask.control = "RUN"
+end sub
+
+sub stopPlaybackSessionAsync()
+    if m.session = invalid or m.playbackSession = invalid
+        return
+    end if
+    sid = m.playbackSession.session_id
+    if sid = invalid or (sid as string).len() = 0
+        return
+    end if
+    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(sid as string), "DELETE")
+    m.progressTask.request = req
+    m.progressTask.control = "RUN"
+end sub
+
+function isSeriesDetail(detail as object) as boolean
+    if detail = invalid or detail.type = invalid
+        return false
+    end if
+    lower = LCase(detail.type as string)
+    return lower = "series" or lower = "show" or lower = "tv"
+end function
 
 sub onConnectSubmit()
     req = m.screen.submitRequest
@@ -392,7 +515,7 @@ sub onHomeItemSelected()
     if contentId = invalid or contentId.len() = 0
         return
     end if
-    showMessage("Item", "Detail and playback land next. Content ID: " + contentId)
+    showItemDetail(contentId)
 end sub
 
 sub onOpenLibraries()
@@ -444,7 +567,108 @@ sub onCatalogItemSelected()
     if contentId = invalid or contentId.len() = 0
         return
     end if
-    showMessage("Item", "Detail and playback land next. Content ID: " + contentId)
+    showItemDetail(contentId)
+end sub
+
+sub onDetailBack()
+    back = m.detailBackRoute
+    if back = "library" and m.browseLibrary <> invalid
+        showLibraryBrowse(m.browseLibrary)
+    else if back = "collection" and m.browseCollection <> invalid
+        showCollectionBrowse(m.browseCollection)
+    else if back = "search"
+        showSearch()
+    else if back = "libraries"
+        showLibraries()
+    else
+        showHome()
+    end if
+end sub
+
+sub onDetailSeasonSelected()
+    seasonNumber = m.screen.seasonSelected
+    if seasonNumber < 0
+        return
+    end if
+    loadEpisodes(seasonNumber)
+end sub
+
+sub onDetailPlayRequested()
+    launchReq = m.screen.playRequested
+    if launchReq = invalid or m.session = invalid
+        return
+    end if
+    m.pending = "watchForPlay"
+    m.playLaunch = {
+        contentId: launchReq.contentId,
+        title: launchReq.title
+    }
+    m.screen.busy = true
+    path = Prairie.Watch.watchPath(launchReq.contentId)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub onPlayerExit()
+    if m.exitingPlayer
+        return
+    end if
+    m.exitingPlayer = true
+    if m.screen <> invalid
+        m.screen.callFunc("stopPlayback")
+    end if
+    reportPlayerProgress(true)
+    stopPlaybackSessionAsync()
+    m.playbackSession = invalid
+    savedBack = m.detailBackRoute
+    contentId = m.detailContentId
+    if contentId.len() > 0
+        showItemDetail(contentId)
+        m.detailBackRoute = savedBack
+    else
+        showHome()
+    end if
+end sub
+
+sub onPlayerProgressTick()
+    reportPlayerProgress(false)
+end sub
+
+sub onPlayerSeek()
+    reportPlayerProgress(true)
+end sub
+
+sub onPlayerAudioCycle()
+    if m.session = invalid or m.playbackSession = invalid or m.screen = invalid
+        return
+    end if
+    if m.playLaunch = invalid or m.playLaunch.watch = invalid
+        return
+    end if
+    versions = m.playLaunch.watch.versions
+    if versions = invalid or versions.count() = 0
+        return
+    end if
+    version = versions[0]
+    tracks = version.audio_tracks
+    if tracks = invalid or tracks.count() < 2
+        m.screen.errorText = "No alternate audio tracks"
+        return
+    end if
+    nextIndex = m.audioTrackIndex + 1
+    if nextIndex >= tracks.count()
+        nextIndex = 0
+    end if
+    m.audioTrackIndex = nextIndex
+    m.pending = "audioSwitch"
+    sid = m.playbackSession.session_id as string
+    body = Prairie.Playback.buildAudioBody(nextIndex, m.screen.positionSeconds)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.audioPath(sid), "PATCH", body)
+    m.httpTask.control = "RUN"
+end sub
+
+sub onProgressResponse()
+    ' Best-effort progress / session teardown — ignore failures.
 end sub
 
 sub onCatalogLoadMore()
@@ -619,5 +843,89 @@ sub onHttpResponse()
     else if pending = "personalCollections"
         m.personalCollectionCards = Prairie.Collections.flattenPersonalCollections(response.data)
         finishCollectionsScreen()
+    else if pending = "itemDetail"
+        detail = response.data
+        if detail = invalid or type(detail) <> "roAssociativeArray"
+            m.screen.errorText = "Unexpected item response"
+            return
+        end if
+        m.detailItem = detail
+        m.screen.detail = detail
+        m.screen.callFunc("focusDefault")
+        if isSeriesDetail(detail)
+            loadSeasons()
+        end if
+    else if pending = "seasons"
+        seasons = Prairie.Catalog.seasonsFromResponse(response.data)
+        m.screen.seasons = seasons
+        if seasons.count() > 0 and seasons[0].season_number <> invalid
+            loadEpisodes(seasons[0].season_number as integer)
+        else
+            m.screen.callFunc("focusDefault")
+        end if
+    else if pending = "episodes"
+        episodes = Prairie.Catalog.episodesFromResponse(response.data)
+        m.screen.episodes = episodes
+        m.screen.callFunc("focusDefault")
+    else if pending = "watchForPlay"
+        watch = response.data
+        if watch = invalid
+            m.screen.errorText = "Could not load watch details"
+            return
+        end if
+        if watch.versions = invalid
+            watch.versions = []
+        end if
+        fileId = Prairie.Watch.selectPlaybackFileId(watch)
+        if fileId = invalid
+            m.screen.errorText = "No playable file for this title"
+            return
+        end if
+        title = m.playLaunch.title
+        if watch.title <> invalid and (watch.title as string).len() > 0
+            title = watch.title as string
+        end if
+        showPlayer({
+            fileId: fileId as integer,
+            title: title,
+            contentId: m.playLaunch.contentId,
+            startPosition: Prairie.Playback.resumeSeconds(watch),
+            watch: watch
+        })
+    else if pending = "playbackStart"
+        playback = response.data
+        if playback = invalid or playback.session_id = invalid or playback.stream_url = invalid
+            m.screen.errorText = "Playback failed to start"
+            return
+        end if
+        m.playbackSession = playback
+        if playback.audio_track_index <> invalid
+            m.audioTrackIndex = playback.audio_track_index as integer
+        end if
+        streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, playback, m.session.accessToken)
+        m.screen.streamFormat = Prairie.Playback.detectStreamFormat(playback)
+        m.screen.busy = false
+        m.screen.streamUrl = streamUrl
+        m.screen.callFunc("focusDefault")
+    else if pending = "audioSwitch"
+        updated = response.data
+        if updated = invalid or updated.stream_url = invalid
+            m.screen.errorText = "Could not switch audio"
+            return
+        end if
+        m.playbackSession.stream_url = updated.stream_url
+        m.playbackSession.play_method = updated.play_method
+        m.playbackSession.audio_track_index = updated.audio_track_index
+        if updated.audio_track_index <> invalid
+            m.audioTrackIndex = updated.audio_track_index as integer
+        end if
+        resumeAt = m.screen.positionSeconds
+        if updated.player_start_seconds <> invalid
+            resumeAt = updated.player_start_seconds
+        end if
+        m.screen.startPosition = resumeAt
+        m.screen.streamFormat = Prairie.Playback.detectStreamFormat(m.playbackSession)
+        m.screen.streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, m.playbackSession, m.session.accessToken)
+        m.screen.errorText = "Audio track " + (m.audioTrackIndex + 1).toStr()
     end if
 end sub
