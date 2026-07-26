@@ -39,7 +39,7 @@ namespace Prairie.Url
         if serverParts = invalid or targetParts = invalid
             return false
         end if
-        return serverParts.scheme = targetParts.scheme and serverParts.host = targetParts.host
+        return LCase(serverParts.scheme) = LCase(targetParts.scheme) and LCase(serverParts.host) = LCase(targetParts.host)
     end function
 
     ' Attach a bearer token query only for same-origin Prairie stream URLs.
@@ -65,7 +65,7 @@ namespace Prairie.Url
     end function
 
     function parseOrigin(url as string) as dynamic
-        lower = url
+        lower = LCase(url)
         scheme = ""
         rest = ""
         if lower.left(8) = "https://"
@@ -88,7 +88,7 @@ namespace Prairie.Url
         end if
         return {
             scheme: scheme,
-            host: host
+            host: LCase(host)
         }
     end function
 

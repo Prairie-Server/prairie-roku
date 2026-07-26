@@ -42,6 +42,18 @@ namespace tests
             m.assertInvalid(Prairie.Session.loadSession(m.store))
         end sub
 
+        @it("returns invalid when required fields are blank")
+        sub _()
+            m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
+                serverUrl: "   ",
+                accessToken: "",
+                username: " ",
+                profileId: ""
+            }))
+            m.assertInvalid(Prairie.Session.loadSession(m.store))
+        end sub
+
+
         @describe("clearSession")
         @it("removes session but keeps last server URL")
         sub _()
