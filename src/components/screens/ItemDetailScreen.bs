@@ -1,0 +1,214 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.heroArt = m.top.findNode("heroArt")
+    m.eyebrow = m.top.findNode("eyebrow")
+    m.title = m.top.findNode("title")
+    m.meta = m.top.findNode("meta")
+    m.overview = m.top.findNode("overview")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.playBg = m.top.findNode("playBg")
+    m.playLabel = m.top.findNode("playLabel")
+    m.seasonsTitle = m.top.findNode("seasonsTitle")
+    m.seasonList = m.top.findNode("seasonList")
+    m.episodeList = m.top.findNode("episodeList")
+
+    m.eyebrow.color = colors.amber
+    m.title.color = colors.ink
+    m.meta.color = colors.muted
+    m.overview.color = colors.ink
+    m.errorLabel.color = colors.danger
+    m.playBg.color = colors.amber
+    m.playLabel.color = colors.bg
+    m.seasonsTitle.color = colors.amber
+
+    m.top.observeField("detail", "onDetail")
+    m.top.observeField("seasons", "onSeasons")
+    m.top.observeField("episodes", "onEpisodes")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("busy", "onBusy")
+    m.seasonList.observeField("rowItemSelected", "onSeasonSelected")
+    m.episodeList.observeField("rowItemSelected", "onEpisodeSelected")
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.playLabel.text = "Starting…"
+    else
+        m.playLabel.text = "Play"
+    end if
+end sub
+
+function isSeriesType(itemType as string) as boolean
+    lower = LCase(itemType)
+    return lower = "series" or lower = "show" or lower = "tv"
+end function
+
+sub onDetail()
+    detail = m.top.detail
+    if detail = invalid
+        return
+    end if
+    itemType = ""
+    if detail.type <> invalid
+        itemType = detail.type as string
+    end if
+    m.eyebrow.text = UCase(itemType)
+    title = "Title"
+    if detail.title <> invalid
+        title = detail.title as string
+    end if
+    m.title.text = title
+    metaParts = []
+    if detail.year <> invalid
+        metaParts.push((detail.year as integer).toStr())
+    end if
+    if itemType.len() > 0
+        metaParts.push(itemType)
+    end if
+    m.meta.text = metaParts.join(" · ")
+    overview = ""
+    if detail.overview <> invalid
+        overview = detail.overview as string
+    end if
+    m.overview.text = overview
+    art = ""
+    if detail.backdrop_url <> invalid and (detail.backdrop_url as string).len() > 0
+        art = detail.backdrop_url as string
+    else if detail.poster_url <> invalid
+        art = detail.poster_url as string
+    end if
+    m.heroArt.uri = art
+
+    series = isSeriesType(itemType)
+    m.playBg.visible = not series
+    m.seasonsTitle.visible = series
+    m.seasonList.visible = series
+    m.episodeList.visible = series
+end sub
+
+sub onSeasons()
+    seasons = m.top.seasons
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    if seasons <> invalid
+        for each season in seasons
+            node = row.createChild("ContentNode")
+            number = 0
+            if season.season_number <> invalid
+                number = season.season_number as integer
+            end if
+            node.title = "Season " + number.toStr()
+            node.addFields({ seasonNumber: number })
+        end for
+    end if
+    m.seasonList.content = content
+end sub
+
+sub onEpisodes()
+    episodes = m.top.episodes
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    if episodes <> invalid
+        for each episode in episodes
+            node = row.createChild("ContentNode")
+            title = "Episode"
+            if episode.title <> invalid
+                title = episode.title as string
+            end if
+            if episode.episode_number <> invalid
+                title = "E" + (episode.episode_number as integer).toStr() + " · " + title
+            end if
+            node.title = title
+            contentId = ""
+            if episode.content_id <> invalid
+                contentId = episode.content_id as string
+            end if
+            node.addFields({ contentId: contentId, titleText: title })
+        end for
+    end if
+    m.episodeList.content = content
+end sub
+
+sub focusDefault()
+    if m.playBg.visible
+        m.playBg.setFocus(true)
+    else if m.seasonList.visible
+        m.seasonList.setFocus(true)
+    end if
+end sub
+
+sub requestPlay(contentId as string, title as string)
+    if m.top.busy or contentId.len() = 0
+        return
+    end if
+    m.top.playRequested = {
+        contentId: contentId,
+        title: title
+    }
+end sub
+
+sub onSeasonSelected()
+    selection = m.seasonList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.seasonList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid
+        return
+    end if
+    m.top.seasonSelected = item.seasonNumber
+    m.episodeList.setFocus(true)
+end sub
+
+sub onEpisodeSelected()
+    selection = m.episodeList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.episodeList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.contentId = invalid
+        return
+    end if
+    requestPlay(item.contentId as string, item.titleText as string)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.backRequested = true
+        return true
+    end if
+    if (key = "OK" or key = "play") and m.playBg.visible and m.playBg.isInFocusChain()
+        detail = m.top.detail
+        contentId = ""
+        title = "Title"
+        if detail <> invalid
+            if detail.content_id <> invalid
+                contentId = detail.content_id as string
+            end if
+            if detail.title <> invalid
+                title = detail.title as string
+            end if
+        end if
+        requestPlay(contentId, title)
+        return true
+    end if
+    return false
+end function

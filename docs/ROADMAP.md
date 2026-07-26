@@ -32,8 +32,8 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 - [x] Libraries + catalog pagination _(implemented; device validation pending)_
 - [x] Collections (library + personal) _(implemented; device validation pending)_
 - [x] Search _(implemented; device validation pending)_
-- [ ] Item detail → seasons/episodes → play via watch + `/playback/start` with resume
-- [ ] Player chrome: play/pause, ±15s, progress, audio switch, session teardown
+- [x] Item detail → seasons/episodes → play via watch + `/playback/start` with resume _(implemented; device validation pending)_
+- [x] Player chrome: play/pause, ±15s, progress, audio switch, session teardown _(implemented; device validation pending)_
 - [ ] Live TV list + now/next (hidden when no channels)
 - [x] Upgrade-safe registry persistence (session + settings + last server URL)
 - [ ] Sideload `.zip` package script + Channel Store notes

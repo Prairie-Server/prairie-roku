@@ -1,0 +1,156 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.video = m.top.findNode("video")
+    m.chromeBg = m.top.findNode("chromeBg")
+    m.title = m.top.findNode("title")
+    m.status = m.top.findNode("status")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.progressTimer = m.top.findNode("progressTimer")
+
+    m.chromeBg.color = "0x141820CC"
+    m.title.color = colors.ink
+    m.status.color = colors.muted
+    m.errorLabel.color = colors.danger
+
+    m.started = false
+    m.top.observeField("streamUrl", "onStreamUrl")
+    m.top.observeField("titleText", "onTitleText")
+    m.top.observeField("errorText", "onErrorText")
+    m.top.observeField("busy", "onBusy")
+    m.video.observeField("position", "onPosition")
+    m.video.observeField("duration", "onDuration")
+    m.video.observeField("state", "onVideoState")
+    m.progressTimer.observeField("fire", "onProgressFire")
+end sub
+
+sub onTitleText()
+    m.title.text = m.top.titleText
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onBusy()
+    if m.top.busy
+        m.status.text = "Starting playback…"
+    end if
+end sub
+
+sub onStreamUrl()
+    url = m.top.streamUrl
+    if url.len() = 0
+        return
+    end if
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = url
+    content.streamFormat = m.top.streamFormat
+    if m.top.titleText.len() > 0
+        content.title = m.top.titleText
+    end if
+    m.video.content = content
+    m.video.control = "play"
+    m.started = true
+    m.progressTimer.control = "start"
+    m.top.isPaused = false
+    m.status.text = "Playing · OK pause · ←/→ ±15s · ★ audio · Back exits"
+end sub
+
+sub focusDefault()
+    m.video.setFocus(true)
+end sub
+
+sub stopPlayback()
+    m.progressTimer.control = "stop"
+    if m.video <> invalid
+        m.video.control = "stop"
+    end if
+end sub
+
+sub onPosition()
+    m.top.positionSeconds = m.video.position
+    refreshStatus()
+end sub
+
+sub onDuration()
+    m.top.durationSeconds = m.video.duration
+    refreshStatus()
+end sub
+
+sub onVideoState()
+    state = m.video.state
+    if state = "playing"
+        m.top.isPaused = false
+        if m.top.startPosition > 0 and m.started
+            ' Seek once after start when resume is requested.
+            if m.video.position < 1 and m.top.startPosition > 1
+                m.video.seek = m.top.startPosition
+            end if
+        end if
+    else if state = "paused"
+        m.top.isPaused = true
+    else if state = "finished" or state = "error"
+        m.top.exitRequested = true
+    end if
+    refreshStatus()
+end sub
+
+sub refreshStatus()
+    positionSec = CInt(m.top.positionSeconds)
+    durationSec = CInt(m.top.durationSeconds)
+    pauseLabel = "Playing"
+    if m.top.isPaused
+        pauseLabel = "Paused"
+    end if
+    m.status.text = pauseLabel + " · " + positionSec.toStr() + "s / " + durationSec.toStr() + "s · OK pause · ←/→ ±15s · ★ audio · Back exits"
+end sub
+
+sub onProgressFire()
+    m.top.progressTick = true
+end sub
+
+sub seekBy(delta as integer)
+    nextPos = m.video.position + delta
+    if nextPos < 0
+        nextPos = 0
+    end if
+    m.video.seek = nextPos
+    m.top.seekDelta = delta
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "back"
+        m.top.exitRequested = true
+        return true
+    end if
+    if key = "OK" or key = "play"
+        if m.top.isPaused
+            m.video.control = "resume"
+            m.top.isPaused = false
+        else
+            m.video.control = "pause"
+            m.top.isPaused = true
+        end if
+        refreshStatus()
+        m.top.progressTick = true
+        return true
+    end if
+    if key = "left" or key = "rewind"
+        seekBy(-15)
+        return true
+    end if
+    if key = "right" or key = "fastforward"
+        seekBy(15)
+        return true
+    end if
+    if key = "options"
+        m.top.audioCycleRequested = true
+        return true
+    end if
+    return false
+end function

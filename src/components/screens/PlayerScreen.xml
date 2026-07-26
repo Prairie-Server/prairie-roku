@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="PlayerScreen" extends="Group">
+    <interface>
+        <field id="streamUrl" type="string" value="" />
+        <field id="streamFormat" type="string" value="hls" />
+        <field id="titleText" type="string" value="" />
+        <field id="startPosition" type="float" value="0" />
+        <field id="errorText" type="string" value="" />
+        <field id="busy" type="bool" value="false" />
+        <field id="positionSeconds" type="float" value="0" />
+        <field id="durationSeconds" type="float" value="0" />
+        <field id="isPaused" type="bool" value="false" />
+        <field id="exitRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="progressTick" type="boolean" value="false" alwaysNotify="true" />
+        <field id="seekDelta" type="int" value="0" alwaysNotify="true" />
+        <field id="audioCycleRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+        <function name="stopPlayback" />
+    </interface>
+    <script type="text/brightscript" uri="PlayerScreen.bs" />
+    <children>
+        <Video id="video" width="1920" height="1080" translation="[0,0]" />
+        <Rectangle id="chromeBg" translation="[0,900]" width="1920" height="180" color="0x141820CC" />
+        <Label
+            id="title"
+            text=""
+            translation="[80, 920]"
+            width="1400"
+            color="0xF3EFE6FF"
+            font="font:MediumBoldSystemFont"
+        />
+        <Label
+            id="status"
+            text=""
+            translation="[80, 980]"
+            width="1600"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 1020]"
+            width="1600"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Timer id="progressTimer" repeat="true" duration="10" />
+    </children>
+</component>

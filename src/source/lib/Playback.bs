@@ -1,0 +1,127 @@
+import "pkg:/source/lib/UrlUtils.bs"
+import "pkg:/source/lib/PlaybackSettings.bs"
+
+namespace Prairie.Playback
+
+    function startPath() as string
+        return "/api/v1/playback/start"
+    end function
+
+    function progressPath(sessionId as string) as string
+        return "/api/v1/playback/" + sessionId.encodeUriComponent() + "/progress"
+    end function
+
+    function sessionPath(sessionId as string) as string
+        return "/api/v1/playback/" + sessionId.encodeUriComponent()
+    end function
+
+    function audioPath(sessionId as string) as string
+        return "/api/v1/playback/" + sessionId.encodeUriComponent() + "/audio"
+    end function
+
+    function defaultCapabilities() as object
+        return {
+            codecs_video: ["h264", "hevc"],
+            codecs_audio: ["aac", "ac3", "eac3", "mp3"],
+            containers: ["mp4", "mpegts", "hls", "mkv"],
+            max_resolution: "2160p",
+            hdr: true
+        }
+    end function
+
+    function buildStartBody(input as object) as string
+        caps = defaultCapabilities()
+        body = {
+            file_id: input.fileId as integer,
+            profile_id: input.profileId as string,
+            codecs_video: caps.codecs_video,
+            codecs_audio: caps.codecs_audio,
+            containers: caps.containers,
+            max_resolution: caps.max_resolution,
+            hdr: caps.hdr,
+            supports_bitmap_subtitle_burn_in: false
+        }
+        if input.forcedPlayMethod <> invalid and (input.forcedPlayMethod as string).len() > 0
+            body.play_method = input.forcedPlayMethod as string
+        end if
+        if input.startPosition <> invalid and (input.startPosition as integer) > 0
+            body.start_position = input.startPosition as integer
+        end if
+        return FormatJson(body)
+    end function
+
+    function buildProgressBody(position as float, isPaused as boolean) as string
+        return FormatJson({
+            position: position,
+            is_paused: isPaused
+        })
+    end function
+
+    function buildAudioBody(audioTrackIndex as integer, position as float) as string
+        return FormatJson({
+            audio_track_index: audioTrackIndex,
+            position: position
+        })
+    end function
+
+    function resolveStreamUrl(serverUrl as string, playback as object, accessToken as string) as string
+        stream = ""
+        if playback <> invalid and playback.stream_url <> invalid
+            stream = playback.stream_url as string
+        end if
+        return Prairie.Url.buildStreamUrl(serverUrl, stream, accessToken)
+    end function
+
+    function detectStreamFormat(playback as object) as string
+        if playback = invalid
+            return "hls"
+        end if
+        streamType = ""
+        if playback.playback_info <> invalid and playback.playback_info.stream_type <> invalid
+            streamType = LCase(playback.playback_info.stream_type as string)
+        end if
+        if streamType = "hls" or streamType = "mpegts"
+            return "hls"
+        end if
+        if streamType = "mp4" or streamType = "dash"
+            return streamType
+        end if
+        url = ""
+        if playback.stream_url <> invalid
+            url = LCase(playback.stream_url as string)
+        end if
+        if url.instr(".m3u8") >= 0 or url.instr("hls") >= 0
+            return "hls"
+        end if
+        if url.instr(".mp4") >= 0
+            return "mp4"
+        end if
+        if url.instr(".mpd") >= 0
+            return "dash"
+        end if
+        return "hls"
+    end function
+
+    function resumeSeconds(watch as object) as dynamic
+        if watch = invalid or watch.user_data = invalid
+            return invalid
+        end if
+        position = watch.user_data.position_seconds
+        if position = invalid or (position as float) <= 0
+            return invalid
+        end if
+        duration = watch.user_data.duration_seconds
+        if duration <> invalid and (duration as float) > 0
+            if (position as float) / (duration as float) >= 0.95
+                return invalid
+            end if
+        end if
+        return CInt(position as float)
+    end function
+
+    function forcedPlayMethodFromStore(store as object) as dynamic
+        settings = Prairie.PlaybackSettings.load(store)
+        return Prairie.PlaybackSettings.resolveForcedPlayMethod(settings)
+    end function
+
+end namespace

@@ -1,0 +1,53 @@
+namespace tests
+    @suite("Prairie.Playback")
+    class PlaybackSuite extends rooibos.BaseTestSuite
+
+        @describe("paths and bodies")
+        @it("builds start/progress/audio payloads and paths")
+        sub _()
+            m.assertEqual(Prairie.Playback.startPath(), "/api/v1/playback/start")
+            m.assertTrue(Prairie.Playback.progressPath("ab/c").instr("ab%2Fc") >= 0)
+            m.assertTrue(Prairie.Playback.sessionPath("s1").instr("/api/v1/playback/s1") >= 0)
+            body = ParseJson(Prairie.Playback.buildStartBody({
+                fileId: 9,
+                profileId: "p1",
+                forcedPlayMethod: "direct",
+                startPosition: 30
+            }))
+            m.assertEqual(body.file_id, 9)
+            m.assertEqual(body.profile_id, "p1")
+            m.assertEqual(body.play_method, "direct")
+            m.assertEqual(body.start_position, 30)
+            progress = ParseJson(Prairie.Playback.buildProgressBody(12.5, true))
+            m.assertEqual(progress.position, 12.5)
+            m.assertTrue(progress.is_paused)
+        end sub
+
+        @describe("stream helpers")
+        @it("detects stream format and resume seconds")
+        sub _()
+            m.assertEqual(Prairie.Playback.detectStreamFormat({ stream_url: "/x.m3u8" }), "hls")
+            m.assertEqual(Prairie.Playback.detectStreamFormat({ stream_url: "/x.mp4" }), "mp4")
+            m.assertEqual(Prairie.Playback.detectStreamFormat({
+                playback_info: { stream_type: "dash" }
+            }), "dash")
+            m.assertEqual(Prairie.Playback.detectStreamFormat(invalid), "hls")
+            m.assertEqual(Prairie.Playback.resumeSeconds({
+                user_data: { position_seconds: 100, duration_seconds: 1000 }
+            }), 100)
+            m.assertEqual(Prairie.Playback.resumeSeconds({
+                user_data: { position_seconds: 980, duration_seconds: 1000 }
+            }), invalid)
+            m.assertEqual(Prairie.Playback.resumeSeconds(invalid), invalid)
+            url = Prairie.Playback.resolveStreamUrl("https://prairie.example.com", {
+                stream_url: "/stream"
+            }, "tok")
+            m.assertTrue(url.instr("https://prairie.example.com/stream") = 0)
+            m.assertTrue(url.instr("token=tok") >= 0)
+            audio = ParseJson(Prairie.Playback.buildAudioBody(2, 15.0))
+            m.assertEqual(audio.audio_track_index, 2)
+            m.assertEqual(Prairie.Playback.audioPath("s/1").instr("s%2F1") >= 0, true)
+        end sub
+
+    end class
+end namespace

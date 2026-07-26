@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="ItemDetailScreen" extends="Group">
+    <interface>
+        <field id="detail" type="assocarray" />
+        <field id="seasons" type="array" />
+        <field id="episodes" type="array" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="playRequested" type="assocarray" />
+        <field id="seasonSelected" type="int" value="-1" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="ItemDetailScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Poster id="heroArt" width="1920" height="1080" translation="[0,0]" opacity="0.35" />
+        <Label
+            id="eyebrow"
+            text=""
+            translation="[80, 60]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text=""
+            translation="[80, 110]"
+            width="1400"
+            height="120"
+            wrap="true"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="meta"
+            text=""
+            translation="[80, 250]"
+            width="1200"
+            color="0x9AA3B2FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="overview"
+            text=""
+            translation="[80, 320]"
+            width="1100"
+            height="220"
+            wrap="true"
+            color="0xF3EFE6FF"
+            font="font:MediumSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 560]"
+            width="1400"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Rectangle id="playBg" translation="[80, 620]" width="240" height="64" color="0xE0A84AFF" focusable="true" visible="false">
+            <Label
+                id="playLabel"
+                text="Play"
+                width="240"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                color="0x141820FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Rectangle>
+        <Label
+            id="seasonsTitle"
+            text="Seasons"
+            translation="[80, 720]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+            visible="false"
+        />
+        <RowList
+            id="seasonList"
+            translation="[40, 760]"
+            itemSize="[1840, 90]"
+            rowItemSize="[[180, 70]]"
+            numRows="1"
+            itemSpacing="[16, 0]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+            visible="false"
+        />
+        <RowList
+            id="episodeList"
+            translation="[40, 870]"
+            itemSize="[1840, 160]"
+            rowItemSize="[[420, 140]]"
+            numRows="1"
+            itemSpacing="[20, 0]"
+            showRowLabel="[false]"
+            drawFocusFeedback="true"
+            visible="false"
+        />
+    </children>
+</component>
