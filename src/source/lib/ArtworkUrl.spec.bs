@@ -1,0 +1,41 @@
+namespace tests
+    @suite("Prairie.Artwork")
+    class ArtworkUrlSuite extends rooibos.BaseTestSuite
+
+        @describe("preferred")
+        @it("keeps WebP URLs unchanged when WebP is supported")
+        sub _()
+            ' On CI / modern firmware, supportsWebP is true — preferred stays WebP.
+            if Prairie.Artwork.supportsWebP()
+                m.assertEqual(Prairie.Artwork.preferred("https://cdn.example.com/art/original.webp"), "https://cdn.example.com/art/original.webp")
+            else
+                m.assertEqual(Prairie.Artwork.preferred("https://cdn.example.com/art/original.webp"), "https://cdn.example.com/art/original.png")
+            end if
+        end sub
+
+        @it("rewrites accidental AVIF siblings back to WebP (or PNG on old OS)")
+        sub _()
+            if Prairie.Artwork.supportsWebP()
+                m.assertEqual(Prairie.Artwork.preferred("https://cdn.example.com/art/original.avif?sig=1"), "https://cdn.example.com/art/original.webp?sig=1")
+                m.assertEqual(Prairie.Artwork.preferred("poster.AVIF"), "poster.webp")
+            else
+                m.assertEqual(Prairie.Artwork.preferred("https://cdn.example.com/art/original.avif?sig=1"), "https://cdn.example.com/art/original.png?sig=1")
+                m.assertEqual(Prairie.Artwork.preferred("poster.AVIF"), "poster.png")
+            end if
+        end sub
+
+        @it("returns empty for blank input")
+        sub _()
+            m.assertEqual(Prairie.Artwork.preferred("   "), "")
+        end sub
+
+        @describe("pngSibling")
+        @it("rewrites WebP and AVIF to PNG and preserves query")
+        sub _()
+            m.assertEqual(Prairie.Artwork.pngSibling("https://cdn.example.com/art/original.webp?sig=1"), "https://cdn.example.com/art/original.png?sig=1")
+            m.assertEqual(Prairie.Artwork.pngSibling("poster.avif"), "poster.png")
+            m.assertEqual(Prairie.Artwork.pngSibling("poster.jpg"), "")
+        end sub
+
+    end class
+end namespace

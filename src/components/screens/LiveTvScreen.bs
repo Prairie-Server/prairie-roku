@@ -1,4 +1,5 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
 import "pkg:/source/lib/LiveTv.bs"
 
 sub init()
@@ -63,7 +64,7 @@ sub onChannels()
             end if
             node.description = number
             if channel.logo_url <> invalid
-                node.hdPosterUrl = channel.logo_url as string
+                node.hdPosterUrl = Prairie.Artwork.preferred(channel.logo_url as string)
             end if
             node.addFields({ channel: channel })
             index = index + 1

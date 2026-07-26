@@ -1,4 +1,5 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -60,7 +61,7 @@ sub onItems()
             end if
             node.title = title
             if entry.poster_url <> invalid
-                node.hdPosterUrl = entry.poster_url as string
+                node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string)
             end if
             contentId = ""
             if entry.content_id <> invalid

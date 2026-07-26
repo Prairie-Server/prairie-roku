@@ -1,4 +1,5 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -46,7 +47,7 @@ sub appendCollectionRow(content as object, title as string, cards as object)
             node.description = (card.item_count as integer).toStr() + " titles"
         end if
         if card.poster_url <> invalid and (card.poster_url as string).len() > 0
-            node.hdPosterUrl = card.poster_url as string
+            node.hdPosterUrl = Prairie.Artwork.preferred(card.poster_url as string)
         end if
         node.addFields({ collection: card })
     end for
