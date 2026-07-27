@@ -8,7 +8,14 @@ namespace Prairie.LiveTv
 
     function guidePath(channelIds as object) as string
         joined = channelIds.join(",")
-        return "/api/v1/livetv/guide?channels=" + joined.encodeUriComponent()
+        path = "/api/v1/livetv/guide?channels=" + joined.encodeUriComponent()
+        nowSec = nowSeconds()
+        startIso = secondsToIso(nowSec)
+        endIso = secondsToIso(nowSec + 6 * 3600)
+        if startIso.len() > 0 and endIso.len() > 0
+            path = path + "&start=" + startIso.encodeUriComponent() + "&end=" + endIso.encodeUriComponent()
+        end if
+        return path
     end function
 
     function channelSessionPath(channelId as string) as string
@@ -208,6 +215,15 @@ namespace Prairie.LiveTv
         return dt.AsSeconds()
     end function
 
+    function secondsToIso(seconds as integer) as string
+        if seconds < 0
+            return ""
+        end if
+        dt = CreateObject("roDateTime")
+        dt.FromSeconds(seconds)
+        return dt.ToISOString()
+    end function
+
     function nowSeconds() as integer
         dt = CreateObject("roDateTime")
         dt.Mark()
@@ -224,6 +240,21 @@ namespace Prairie.LiveTv
                 if (program.channel_id as string) = channelId
                     matched.push(program)
                 end if
+            end if
+        end for
+        return matched
+    end function
+
+    ' Active + upcoming only — omit programmes that have already ended.
+    function activeOrUpcomingProgramsForChannel(programs as object, channelId as string, nowSec = -1 as integer) as object
+        if nowSec < 0
+            nowSec = nowSeconds()
+        end if
+        matched = []
+        for each program in programsForChannel(programs, channelId)
+            stopSec = isoToSeconds(program.stop)
+            if stopSec > nowSec
+                matched.push(program)
             end if
         end for
         return matched

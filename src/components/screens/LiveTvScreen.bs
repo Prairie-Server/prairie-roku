@@ -212,26 +212,23 @@ sub rebuildGuideList(channel as object)
     channelId = channel.id as string
     label = Prairie.LiveTv.channelDisplayLabel(channel)
     m.guideHeader.text = label + " · Upcoming"
-    programs = Prairie.LiveTv.programsForChannel(m.top.programs, channelId)
     nowSec = Prairie.LiveTv.nowSeconds()
+    programs = Prairie.LiveTv.activeOrUpcomingProgramsForChannel(m.top.programs, channelId, nowSec)
     content = CreateObject("roSGNode", "ContentNode")
     row = content.createChild("ContentNode")
     for each program in programs
-        startSec = Prairie.LiveTv.isoToSeconds(program.start)
-        if startSec >= 0 and startSec >= nowSec - 1800
-            node = row.createChild("ContentNode")
-            title = "Program"
-            if program.title <> invalid
-                title = program.title as string
-            end if
-            node.title = title
-            whenText = ""
-            if program.start <> invalid
-                whenText = (program.start as string).left(16).replace("T", " ")
-            end if
-            node.description = whenText
-            node.addFields({ program: program, channel: channel })
+        node = row.createChild("ContentNode")
+        title = "Program"
+        if program.title <> invalid
+            title = program.title as string
         end if
+        node.title = title
+        whenText = ""
+        if program.start <> invalid
+            whenText = (program.start as string).left(16).replace("T", " ")
+        end if
+        node.description = whenText
+        node.addFields({ program: program, channel: channel })
     end for
     m.guideList.content = content
 end sub
