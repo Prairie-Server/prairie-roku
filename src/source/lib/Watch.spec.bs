@@ -15,11 +15,16 @@ namespace tests
                 }
             }
             m.assertEqual(Prairie.Watch.selectPlaybackFileId(watch, 10), 10)
+            m.assertEqual(Prairie.Watch.selectPlaybackFileId(watch, 99), 20)
             m.assertEqual(Prairie.Watch.selectPlaybackFileId(watch, invalid), 20)
             m.assertEqual(Prairie.Watch.selectPlaybackFileId({
                 versions: [{ file_id: 7 }],
                 user_data: {}
             }, invalid), 7)
+            m.assertEqual(Prairie.Watch.selectPlaybackFileId({
+                versions: [{ file_id: 8 }],
+                user_data: { last_file_id: 0 }
+            }, invalid), 8)
             m.assertInvalid(Prairie.Watch.selectPlaybackFileId({ versions: [] }, invalid))
         end sub
 
@@ -32,7 +37,11 @@ namespace tests
                 codec: "aac",
                 channels: 2
             }, 0), "eng · Director · aac · 2ch")
+            m.assertEqual(Prairie.Watch.formatAudioLabel({
+                embedded_title: "Commentary"
+            }, 0), "Commentary")
             m.assertEqual(Prairie.Watch.formatAudioLabel({}, 2), "Audio 3")
+            m.assertEqual(Prairie.Watch.formatSubtitleLabel({ title: "English" }), "English")
             m.assertEqual(Prairie.Watch.formatSubtitleLabel({
                 language: "spa",
                 forced: true,

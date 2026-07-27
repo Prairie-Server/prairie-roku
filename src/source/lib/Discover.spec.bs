@@ -18,6 +18,9 @@ namespace tests
             m.assertEqual(req.timeoutMs, 1200)
             m.assertEqual(Prairie.Discover.healthPath(), "/api/v1/health")
             m.assertEqual(Prairie.Discover.deepScanPorts()[0], 8080)
+            m.assertEqual(Prairie.Discover.parseHealth(invalid), invalid)
+            m.assertEqual(Prairie.Discover.parseHealth("bad"), invalid)
+            m.assertEqual(Prairie.Discover.parseHealth({ status: "up" }).serverName, "")
         end sub
 
         @describe("cidr and candidates")
@@ -26,7 +29,14 @@ namespace tests
             parsed = Prairie.Discover.parseCidr("192.168.1.0/24")
             m.assertEqual(parsed.prefix, 24)
             m.assertEqual(Prairie.Discover.parseCidr("10.0.0.0/16"), invalid)
+            m.assertEqual(Prairie.Discover.parseCidr("10.0.0.0"), invalid)
+            m.assertEqual(Prairie.Discover.parseCidr("10.0.0.999/24"), invalid)
+            m.assertEqual(Prairie.Discover.ipv4Parts("10.0.0"), invalid)
+            m.assertEqual(Prairie.Discover.ipv4Parts("10..0.1"), invalid)
+            m.assertEqual(Prairie.Discover.ipv4Parts("10.0.0.256"), invalid)
+            m.assertEqual(Prairie.Discover.formatIpv4([10, 0, 0, 1]), "10.0.0.1")
             m.assertEqual(Prairie.Discover.subnetCidrForIp("192.168.1.50"), "192.168.1.0/24")
+            m.assertEqual(Prairie.Discover.subnetCidrForIp("bad"), "")
             hosts = Prairie.Discover.priorityHostsForSubnet([192, 168, 1, 0])
             m.assertTrue(hosts.count() >= 5)
             m.assertEqual(hosts[0], "192.168.1.1")
@@ -46,6 +56,9 @@ namespace tests
             m.assertTrue(joined.instr(":8080") >= 0)
             ' Priority scan must not hit Jellyfin-shaped public-info paths.
             m.assertTrue(joined.instr("/System/Info") < 0)
+
+            withBadExtra = Prairie.Discover.buildCandidates(["bad-cidr"], false, 1)
+            m.assertTrue(withBadExtra.count() > 0)
         end sub
 
         @describe("deep scan")
@@ -57,13 +70,19 @@ namespace tests
             m.assertTrue(joined.instr("192.168.9.12:8080") >= 0)
             ' Deep sweep should not dual-probe https on :8080.
             m.assertTrue(joined.instr("https://192.168.9.1:8080") < 0)
+            m.assertEqual(Prairie.Discover.allHostsForCidr({ network: [192, 168, 9, 42], prefix: 32 }, 10)[0], "192.168.9.42")
+            twoHosts = Prairie.Discover.allHostsForCidr({ network: [192, 168, 9, 0], prefix: 31 }, 10)
+            m.assertEqual(twoHosts.count(), 2)
+            clipped = Prairie.Discover.allHostsForCidr({ network: [192, 168, 9, 250], prefix: 24 }, 20)
+            m.assertEqual(clipped[0], "192.168.9.251")
+            m.assertEqual(clipped[clipped.count() - 1], "192.168.9.255")
+            m.assertEqual(Prairie.Discover.allHostsForCidr({ network: [192, 168, 9, 0], prefix: 23 }, 10).count(), 0)
         end sub
 
         @describe("mergeHits")
         @it("dedupes discovered servers by normalized URL")
         sub _()
-            hits = []
-            hits = Prairie.Discover.mergeHits(hits, "https://prairie.example.com/", {
+            hits = Prairie.Discover.mergeHits(invalid, "https://prairie.example.com/", {
                 serverName: "One",
                 serverId: "1"
             })
@@ -72,6 +91,11 @@ namespace tests
                 serverId: "1"
             })
             m.assertEqual(hits.count(), 1)
+            m.assertEqual(hits[0].serverName, "Two")
+            hits = Prairie.Discover.mergeHits(hits, "https://prairie.example.com", {
+                serverName: "",
+                serverId: ""
+            })
             m.assertEqual(hits[0].serverName, "Two")
         end sub
 

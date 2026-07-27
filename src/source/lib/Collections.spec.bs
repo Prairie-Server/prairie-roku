@@ -26,6 +26,7 @@ namespace tests
             m.assertEqual(cards[1].title, "Beta")
             m.assertEqual(cards[1].item_count, 4)
             m.assertEqual(Prairie.Collections.flattenLibraryCollections(1, invalid).count(), 0)
+            m.assertEqual(Prairie.Collections.flattenLibraryCollections(1, { groups: [{ id: "empty" }], ungrouped: {} }).count(), 0)
         end sub
 
         @describe("flattenPersonalCollections")
@@ -41,6 +42,13 @@ namespace tests
             m.assertEqual(cards[0].title, "Mine")
             m.assertEqual(cards[1].title, "Grouped")
             m.assertEqual(Prairie.Collections.flattenPersonalCollections({}).count(), 0)
+            m.assertEqual(Prairie.Collections.flattenPersonalCollections(invalid).count(), 0)
+            fallback = Prairie.Collections.flattenPersonalCollections({
+                collections: ["bad", { id: "p3", library_id: 9, poster_url: "/p.jpg" }]
+            })
+            m.assertEqual(fallback[0].title, "Collection")
+            m.assertEqual(fallback[1].library_id, 9)
+            m.assertEqual(fallback[1].poster_url, "/p.jpg")
         end sub
 
     end class
