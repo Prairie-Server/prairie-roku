@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Copy channel sources into .coverage-src and instrument logic modules so the
- * headless Rooibos run can emit a line-hit map for the 75% coverage gate.
+ * headless Rooibos run can emit a line-hit map for the 90% coverage gate.
  *
  * Include globs (keep in sync with scripts/check-coverage.mjs):
  *   source/lib/ (all .bs files, excluding .spec.bs and CoverageDump.bs)

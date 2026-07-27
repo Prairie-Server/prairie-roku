@@ -35,6 +35,10 @@ namespace tests
             m.assertEqual(Prairie.Artwork.pngSibling("https://cdn.example.com/art/original.webp?sig=1"), "https://cdn.example.com/art/original.png?sig=1")
             m.assertEqual(Prairie.Artwork.pngSibling("poster.avif"), "poster.png")
             m.assertEqual(Prairie.Artwork.pngSibling("poster.jpg"), "")
+            m.assertEqual(Prairie.Artwork.pngSibling("   "), "")
+            m.assertEqual(Prairie.Artwork.toWebP("   "), "")
+            m.assertEqual(Prairie.Artwork.toWebP("poster.jpg#frag"), "poster.jpg#frag")
+            m.assertEqual(Prairie.Artwork.pngSibling("art.webp#frag"), "art.png#frag")
         end sub
 
     end class

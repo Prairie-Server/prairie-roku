@@ -20,12 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out sources
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -42,9 +42,9 @@ jobs:
       - name: Typecheck (BrighterScript, diagnosticLevel=error)
         run: npm run typecheck
 
-      - name: Unit tests with 75% coverage gate
+      - name: Unit tests with 90% coverage gate
         run: |
-          # Rooibos headless via brs-cli. Coverage gate: 75% lines on
+          # Rooibos headless via brs-cli. Coverage gate: 90% lines on
           # source/lib/** (see scripts/check-coverage.mjs).
           npm run test:coverage
 
@@ -55,7 +55,7 @@ jobs:
 
       - name: Upload coverage summary
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: roku-coverage
           path: coverage

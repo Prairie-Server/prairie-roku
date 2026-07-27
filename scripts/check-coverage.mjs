@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Enforce 75% line coverage on logic modules (mirrors prairie-smarttv gate).
+ * Enforce 90% line coverage on logic modules (mirrors prairie-smarttv gate).
  *
  * Scoped files: source/lib/ (all .bs files except specs and CoverageDump.bs)
  */
@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const THRESHOLD = 75;
+const THRESHOLD = 90;
 const inventoryPath = path.join(ROOT, "coverage", "inventory.json");
 const hitsPath = path.join(ROOT, "coverage", "hits.json");
 
