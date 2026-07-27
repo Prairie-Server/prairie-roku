@@ -6,6 +6,7 @@ namespace tests
         @it("builds start/progress/audio payloads and paths")
         sub _()
             m.assertEqual(Prairie.Playback.startPath(), "/api/v1/playback/start")
+            m.assertEqual(Prairie.Playback.transcodeStartPath(), "/api/v1/playback/transcode/start")
             m.assertTrue(Prairie.Playback.progressPath("ab/c").instr("ab%2Fc") >= 0)
             m.assertTrue(Prairie.Playback.sessionPath("s1").instr("/api/v1/playback/s1") >= 0)
             body = ParseJson(Prairie.Playback.buildStartBody({
@@ -21,6 +22,24 @@ namespace tests
             progress = ParseJson(Prairie.Playback.buildProgressBody(12.5, true))
             m.assertEqual(progress.position, 12.5)
             m.assertTrue(progress.is_paused)
+            remux = ParseJson(Prairie.Playback.buildTranscodeStartBody({
+                sessionId: "s1",
+                seekSeconds: 12,
+                playMethod: "remux"
+            }))
+            m.assertEqual(remux.target_codec_video, "copy")
+            m.assertEqual(remux.target_codec_audio, "copy")
+            m.assertEqual(remux.target_bitrate_kbps, 0)
+            full = ParseJson(Prairie.Playback.buildTranscodeStartBody({
+                sessionId: "s1",
+                seekSeconds: 0,
+                playMethod: "transcode"
+            }))
+            m.assertEqual(full.target_codec_video, "h264")
+            m.assertEqual(full.target_resolution, "1080p")
+            m.assertTrue(Prairie.Playback.needsHlsBootstrap("remux"))
+            m.assertTrue(Prairie.Playback.needsHlsBootstrap("transcode"))
+            m.assertFalse(Prairie.Playback.needsHlsBootstrap("direct"))
         end sub
 
         @describe("stream helpers")
@@ -44,9 +63,26 @@ namespace tests
             }, "tok")
             m.assertTrue(url.instr("https://prairie.example.com/stream") = 0)
             m.assertTrue(url.instr("token=tok") >= 0)
+            manifestUrl = Prairie.Playback.resolveStreamUrl("https://prairie.example.com", {
+                stream_url: "/placeholder",
+                manifest_url: "/hls/master.m3u8"
+            }, "tok")
+            m.assertTrue(manifestUrl.instr("master.m3u8") >= 0)
             audio = ParseJson(Prairie.Playback.buildAudioBody(2, 15.0))
             m.assertEqual(audio.audio_track_index, 2)
             m.assertEqual(Prairie.Playback.audioPath("s/1").instr("s%2F1") >= 0, true)
+            applied = Prairie.Playback.applyTranscodeResponse({
+                session_id: "s1",
+                stream_url: "/placeholder",
+                play_method: "remux"
+            }, {
+                session_id: "s1",
+                manifest_url: "/hls/master.m3u8",
+                player_start_seconds: 12,
+                can_seek_anywhere: false
+            })
+            m.assertEqual(applied.stream_url, "/hls/master.m3u8")
+            m.assertEqual(applied.play_method, "remux")
         end sub
 
     end class

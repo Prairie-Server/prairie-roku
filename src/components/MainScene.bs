@@ -680,6 +680,38 @@ sub startPlaybackSession()
     m.httpTask.control = "RUN"
 end sub
 
+sub startPlaybackTranscode(seekSeconds as dynamic)
+    if m.session = invalid or m.playbackSession = invalid
+        return
+    end if
+    sid = m.playbackSession.session_id
+    if sid = invalid or (sid as string).len() = 0
+        return
+    end if
+    m.pending = "playbackTranscodeStart"
+    if m.screen <> invalid
+        m.screen.busy = true
+    end if
+    body = Prairie.Playback.buildTranscodeStartBody({
+        sessionId: sid as string,
+        seekSeconds: seekSeconds,
+        playMethod: m.playbackSession.play_method
+    })
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.transcodeStartPath(), "POST", body)
+    m.httpTask.control = "RUN"
+end sub
+
+sub applyPlayerStream(playback as object)
+    if m.screen = invalid or m.session = invalid or playback = invalid
+        return
+    end if
+    streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, playback, m.session.accessToken)
+    m.screen.streamFormat = Prairie.Playback.detectStreamFormat(playback)
+    m.screen.busy = false
+    m.screen.streamUrl = streamUrl
+    m.screen.callFunc("focusDefault")
+end sub
+
 sub reportPlayerProgress(force as boolean)
     if m.session = invalid or m.playbackSession = invalid or m.screen = invalid
         return
@@ -1677,11 +1709,29 @@ sub onHttpResponse()
         if playback.audio_track_index <> invalid
             m.audioTrackIndex = playback.audio_track_index as integer
         end if
-        streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, playback, m.session.accessToken)
-        m.screen.streamFormat = Prairie.Playback.detectStreamFormat(playback)
-        m.screen.busy = false
-        m.screen.streamUrl = streamUrl
-        m.screen.callFunc("focusDefault")
+        ' Remux/transcode need /playback/transcode/start → manifest_url (web/mobile parity).
+        if Prairie.Playback.needsHlsBootstrap(playback.play_method)
+            seekSeconds = 0
+            if m.playLaunch <> invalid and m.playLaunch.startPosition <> invalid
+                seekSeconds = m.playLaunch.startPosition
+            else if playback.position <> invalid
+                seekSeconds = playback.position
+            end if
+            startPlaybackTranscode(seekSeconds)
+            return
+        end if
+        applyPlayerStream(playback)
+    else if pending = "playbackTranscodeStart"
+        transcode = response.data
+        if transcode = invalid or transcode.manifest_url = invalid
+            m.screen.errorText = "Could not start HLS playback"
+            return
+        end if
+        m.playbackSession = Prairie.Playback.applyTranscodeResponse(m.playbackSession, transcode)
+        if transcode.player_start_seconds <> invalid
+            m.screen.startPosition = transcode.player_start_seconds
+        end if
+        applyPlayerStream(m.playbackSession)
     else if pending = "audioSwitch"
         updated = response.data
         if updated = invalid or updated.stream_url = invalid
@@ -1699,6 +1749,10 @@ sub onHttpResponse()
             resumeAt = updated.player_start_seconds
         end if
         m.screen.startPosition = resumeAt
+        if Prairie.Playback.needsHlsBootstrap(updated.play_method)
+            startPlaybackTranscode(resumeAt)
+            return
+        end if
         m.screen.streamFormat = Prairie.Playback.detectStreamFormat(m.playbackSession)
         m.screen.streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, m.playbackSession, m.session.accessToken)
         m.screen.errorText = "Audio track " + (m.audioTrackIndex + 1).toStr()
