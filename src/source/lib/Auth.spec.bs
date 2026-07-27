@@ -26,6 +26,47 @@ namespace tests
             m.assertEqual(pinBody.pin, "1234")
             m.assertTrue(Prairie.Auth.verifyPinPath("p 1").instr("p%201") >= 0)
             m.assertEqual(Prairie.Auth.profilesPath(), "/api/v1/profiles")
+            m.assertEqual(Prairie.Auth.deviceStartPath(), "/api/v1/auth/device/start")
+            m.assertEqual(Prairie.Auth.devicePollPath(), "/api/v1/auth/device/poll")
+            startBody = ParseJson(Prairie.Auth.buildDeviceStartBody("Prairie Roku", "roku"))
+            m.assertEqual(startBody.device_name, "Prairie Roku")
+            m.assertEqual(startBody.device_platform, "roku")
+            pollBody = ParseJson(Prairie.Auth.buildDevicePollBody("secret-code"))
+            m.assertEqual(pollBody.device_code, "secret-code")
+            badStart = Prairie.Auth.parseDeviceStart({})
+            m.assertFalse(badStart.ok)
+            m.assertFalse(Prairie.Auth.parseDeviceStart(invalid).ok)
+            m.assertFalse(Prairie.Auth.parseDeviceStart({ device_code: "", user_code: "ABCD-EFGH" }).ok)
+            m.assertFalse(Prairie.Auth.parseDeviceStart({ device_code: "dev", user_code: "  " }).ok)
+            goodStart = Prairie.Auth.parseDeviceStart({
+                device_code: "dev",
+                user_code: "ABCD-EFGH",
+                match_code: "amber harbor",
+                interval: 4
+            })
+            m.assertTrue(goodStart.ok)
+            m.assertEqual(goodStart.userCode, "ABCD-EFGH")
+            m.assertEqual(goodStart.matchCode, "amber harbor")
+            m.assertEqual(goodStart.interval, 4)
+            clampedStart = Prairie.Auth.parseDeviceStart({
+                device_code: "dev",
+                user_code: "ABCD-EFGH",
+                interval: 0
+            })
+            m.assertTrue(clampedStart.ok)
+            m.assertEqual(clampedStart.interval, 3)
+            m.assertEqual(clampedStart.matchCode, "")
+            pendingPoll = Prairie.Auth.parseDevicePoll({ status: "pending", poll_after: 2 })
+            m.assertTrue(pendingPoll.ok)
+            m.assertEqual(pendingPoll.status, "pending")
+            m.assertEqual(pendingPoll.pollAfter, 2)
+            m.assertFalse(Prairie.Auth.parseDevicePoll(invalid).ok)
+            m.assertFalse(Prairie.Auth.parseDevicePoll({}).ok)
+            clampedPoll = Prairie.Auth.parseDevicePoll({ status: "Approved", poll_after: 0, access_token: "tok", user: { username: "ada" } })
+            m.assertTrue(clampedPoll.ok)
+            m.assertEqual(clampedPoll.status, "approved")
+            m.assertEqual(clampedPoll.pollAfter, 3)
+            m.assertEqual(clampedPoll.accessToken, "tok")
         end sub
 
         @describe("profiles")

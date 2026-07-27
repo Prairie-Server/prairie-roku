@@ -14,6 +14,9 @@ sub init()
     m.connectFocus = m.top.findNode("connectFocus")
     m.serversBg = m.top.findNode("serversBg")
     m.scanBg = m.top.findNode("scanBg")
+    m.quickConnectBg = m.top.findNode("quickConnectBg")
+    m.quickConnectCode = m.top.findNode("quickConnectCode")
+    m.quickConnectMatch = m.top.findNode("quickConnectMatch")
     m.brand = m.top.findNode("brand")
     m.eyebrow = m.top.findNode("eyebrow")
     m.lede = m.top.findNode("lede")
@@ -30,15 +33,31 @@ sub init()
     m.connectFocus.color = colors.ring
     m.serversBg.color = colors.bgSoft
     m.scanBg.color = colors.bgSoft
+    m.quickConnectBg.color = colors.bgSoft
+    m.top.findNode("quickConnectPanel").color = colors.bgElevated
+    m.top.findNode("quickConnectEyebrow").color = colors.amber
+    m.top.findNode("quickConnectTitle").color = colors.ink
+    m.top.findNode("quickConnectHint").color = colors.muted
+    m.top.findNode("quickConnectCodeLabel").color = colors.muted
+    m.quickConnectCode.color = colors.amber
+    m.top.findNode("quickConnectMatchLabel").color = colors.muted
+    m.quickConnectMatch.color = colors.ink
+    m.top.findNode("quickConnectLabel").color = colors.ink
 
     m.top.observeField("initialServerUrl", "onInitialServerUrl")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("busy", "onBusy")
+    m.top.observeField("quickConnectUserCode", "onQuickConnectUserCode")
+    m.top.observeField("quickConnectMatchCode", "onQuickConnectMatchCode")
+    m.top.observeField("quickConnectStatus", "onQuickConnectStatus")
 end sub
 
 sub onInitialServerUrl()
     if m.serverUrl <> invalid
         m.serverUrl.text = m.top.initialServerUrl
+    end if
+    if m.top.initialServerUrl.trim().len() > 0
+        requestQuickConnectStart()
     end if
 end sub
 
@@ -56,6 +75,28 @@ sub onBusy()
         m.connectLabel.text = "Connecting…"
     else
         m.connectLabel.text = "Connect"
+    end if
+end sub
+
+sub onQuickConnectUserCode()
+    if m.quickConnectCode <> invalid
+        m.quickConnectCode.text = m.top.quickConnectUserCode
+    end if
+end sub
+
+sub onQuickConnectMatchCode()
+    if m.quickConnectMatch <> invalid
+        m.quickConnectMatch.text = m.top.quickConnectMatchCode
+    end if
+end sub
+
+sub onQuickConnectStatus()
+    status = m.top.quickConnectStatus
+    if status.len() = 0
+        return
+    end if
+    if m.top.quickConnectUserCode.len() = 0 and m.quickConnectCode <> invalid
+        m.quickConnectCode.text = status
     end if
 end sub
 
@@ -79,7 +120,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
 
     if key = "OK" or key = "play"
-        if m.connectBg.isInFocusChain() or m.connectLabel.isInFocusChain()
+        if m.connectBg.isInFocusChain()
             submitConnect()
             return true
         else if m.serversBg.isInFocusChain()
@@ -88,10 +129,11 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.scanBg.isInFocusChain()
             m.top.scanRequested = true
             return true
+        else if m.quickConnectBg.isInFocusChain()
+            requestQuickConnectStart()
+            return true
         end if
-    end if
-
-    if key = "down"
+    else if key = "down"
         if m.serverUrl.isInFocusChain()
             m.username.setFocus(true)
             return true
@@ -103,7 +145,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     else if key = "up"
-        if m.connectBg.isInFocusChain() or m.serversBg.isInFocusChain() or m.scanBg.isInFocusChain()
+        if m.connectBg.isInFocusChain() or m.serversBg.isInFocusChain() or m.scanBg.isInFocusChain() or m.quickConnectBg.isInFocusChain()
             m.password.setFocus(true)
             return true
         else if m.password.isInFocusChain()
@@ -120,9 +162,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.serversBg.isInFocusChain()
             m.scanBg.setFocus(true)
             return true
+        else if m.scanBg.isInFocusChain()
+            m.quickConnectBg.setFocus(true)
+            return true
         end if
     else if key = "left"
-        if m.scanBg.isInFocusChain()
+        if m.quickConnectBg.isInFocusChain()
+            m.scanBg.setFocus(true)
+            return true
+        else if m.scanBg.isInFocusChain()
             m.serversBg.setFocus(true)
             return true
         else if m.serversBg.isInFocusChain()
@@ -133,6 +181,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
 
     return false
 end function
+
+sub requestQuickConnectStart()
+    m.top.quickConnectStartRequested = true
+end sub
 
 sub submitConnect()
     if m.top.busy
