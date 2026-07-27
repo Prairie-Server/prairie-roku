@@ -23,6 +23,10 @@ namespace Prairie.LiveTv
         return "/api/v1/livetv/recordings"
     end function
 
+    function recordingPath(recordingId as string) as string
+        return "/api/v1/livetv/recordings/" + recordingId.encodeUriComponent()
+    end function
+
     ' Returns JSON with only program_id, or invalid when the id is missing.
     ' Server fills channel/window/title — clients must not over-post those fields.
     function buildScheduleRecordingBody(program as object) as dynamic
@@ -84,6 +88,22 @@ namespace Prairie.LiveTv
         return []
     end function
 
+    function recordingsFromResponse(data as dynamic) as object
+        recordings = []
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return recordings
+        end if
+        if type(data.recordings) <> "roArray"
+            return recordings
+        end if
+        for each recording in data.recordings
+            if type(recording) = "roAssociativeArray"
+                recordings.push(recording)
+            end if
+        end for
+        return recordings
+    end function
+
     function channelDisplayLabel(channel as object) as string
         if channel.name <> invalid and (channel.name as string).trim().len() > 0
             return (channel.name as string).trim()
@@ -104,16 +124,58 @@ namespace Prairie.LiveTv
         if start = invalid
             return invalid
         end if
+        transport = ""
+        if start.transport <> invalid
+            transport = LCase((start.transport as string).trim())
+        end if
         url = ""
-        if start.hls_url <> invalid and (start.hls_url as string).trim().len() > 0
-            url = (start.hls_url as string).trim()
-        else if start.stream_url <> invalid and (start.stream_url as string).trim().len() > 0
-            url = (start.stream_url as string).trim()
+        if transport = "hls"
+            if start.hls_url <> invalid
+                url = (start.hls_url as string).trim()
+            end if
+        else if transport = "mpegts"
+            if start.stream_url <> invalid
+                url = (start.stream_url as string).trim()
+            end if
+        else
+            if start.hls_url <> invalid and (start.hls_url as string).trim().len() > 0
+                url = (start.hls_url as string).trim()
+            else if start.stream_url <> invalid and (start.stream_url as string).trim().len() > 0
+                url = (start.stream_url as string).trim()
+            end if
         end if
         if url.len() = 0
             return invalid
         end if
         return url
+    end function
+
+    function isHlsSession(start as object) as boolean
+        if start = invalid
+            return false
+        end if
+        if start.transport <> invalid
+            return LCase((start.transport as string).trim()) = "hls"
+        end if
+        url = playableLiveUrl(start)
+        if url = invalid
+            return false
+        end if
+        path = LCase((url as string).trim())
+        if path.instr(".m3u8") >= 0
+            return true
+        end if
+        if path.instr("/live-hls/") >= 0
+            return true
+        end if
+        return false
+    end function
+
+    function liveStreamFormat(start as object) as string
+        if isHlsSession(start)
+            return "hls"
+        end if
+        return "mpegts"
     end function
 
     function resolveLivePlaybackUrl(serverUrl as string, streamPath as string, token as dynamic) as object

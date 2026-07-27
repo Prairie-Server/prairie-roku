@@ -32,9 +32,17 @@ namespace tests
             m.assertEqual(Prairie.LiveTv.channelDisplayLabel({}), "Channel ")
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({ hls_url: "/live.m3u8" }), "/live.m3u8")
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({ stream_url: "/alt" }), "/alt")
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl({ transport: "hls", hls_url: "/hls.m3u8", stream_url: "/ts" }), "/hls.m3u8")
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl({ transport: "mpegts", hls_url: "/hls.m3u8", stream_url: "/ts.ts" }), "/ts.ts")
             m.assertEqual(Prairie.LiveTv.playableLiveUrl(invalid), invalid)
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({ hls_url: "   ", stream_url: " " }), invalid)
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({}), invalid)
+            m.assertTrue(Prairie.LiveTv.isHlsSession({ transport: "hls", hls_url: "/live.m3u8" }))
+            m.assertFalse(Prairie.LiveTv.isHlsSession({ transport: "mpegts", stream_url: "/live.ts" }))
+            m.assertTrue(Prairie.LiveTv.isHlsSession({ hls_url: "/api/v1/livetv/live-hls/s1/index.m3u8" }))
+            m.assertFalse(Prairie.LiveTv.isHlsSession(invalid))
+            m.assertEqual(Prairie.LiveTv.liveStreamFormat({ transport: "hls", hls_url: "/x.m3u8" }), "hls")
+            m.assertEqual(Prairie.LiveTv.liveStreamFormat({ transport: "mpegts", stream_url: "/x.ts" }), "mpegts")
             ok = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "/live.m3u8", "tok")
             m.assertTrue(ok.ok)
             m.assertTrue(ok.url.instr("token=tok") >= 0)
@@ -46,6 +54,13 @@ namespace tests
             m.assertFalse(bad.ok)
             m.assertTrue(Prairie.LiveTv.liveSessionPath("s/1").instr("s%2F1") >= 0)
             m.assertEqual(Prairie.LiveTv.recordingsPath(), "/api/v1/livetv/recordings")
+            m.assertTrue(Prairie.LiveTv.recordingPath("rec/1").instr("rec%2F1") >= 0)
+            recs = Prairie.LiveTv.recordingsFromResponse({
+                recordings: [{ id: "r1", title: "Show" }, { id: "r2" }]
+            })
+            m.assertEqual(recs.count(), 2)
+            m.assertEqual(Prairie.LiveTv.recordingsFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.LiveTv.recordingsFromResponse({}).count(), 0)
             body = ParseJson(Prairie.LiveTv.buildScheduleRecordingBody({
                 id: "p1",
                 channel_id: "c1",
