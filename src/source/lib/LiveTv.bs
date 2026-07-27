@@ -178,12 +178,12 @@ namespace Prairie.LiveTv
         return "mpegts"
     end function
 
-    function resolveLivePlaybackUrl(serverUrl as string, streamPath as string, token as dynamic) as object
+    function resolveLivePlaybackUrl(serverUrl as string, streamPath as string, token as dynamic, profileId as dynamic) as object
         trimmed = streamPath.trim()
         if trimmed.len() = 0
             return {
                 ok: false,
-                message: "Live TV session returned no stream URL"
+                message: "Playback failed to start"
             }
         end if
         isAbsolute = trimmed.left(7) = "http://" or trimmed.left(8) = "https://"
@@ -195,7 +195,7 @@ namespace Prairie.LiveTv
         end if
         return {
             ok: true,
-            url: Prairie.Url.buildStreamUrl(serverUrl, trimmed, token)
+            url: Prairie.Url.buildStreamUrl(serverUrl, trimmed, token, profileId)
         }
     end function
 

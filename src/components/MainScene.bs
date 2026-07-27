@@ -1785,16 +1785,16 @@ sub onHttpResponse()
     else if pending = "liveSession"
         m.screen.busy = false
         start = response.data
-        if not Prairie.LiveTv.isHlsSession(start)
-            m.screen.errorText = "Live TV on Roku requires HLS. Enable server HLS playback for Live TV."
-            return
-        end if
         streamPath = Prairie.LiveTv.playableLiveUrl(start)
         if streamPath = invalid
-            m.screen.errorText = "Live TV session returned no stream URL"
+            m.screen.errorText = "Playback failed to start"
             return
         end if
-        resolved = Prairie.LiveTv.resolveLivePlaybackUrl(m.session.serverUrl, streamPath as string, m.session.accessToken)
+        profileId = invalid
+        if m.session <> invalid and m.session.profileId <> invalid
+            profileId = m.session.profileId
+        end if
+        resolved = Prairie.LiveTv.resolveLivePlaybackUrl(m.session.serverUrl, streamPath as string, m.session.accessToken, profileId)
         if resolved.ok <> true
             m.screen.errorText = resolved.message
             return
