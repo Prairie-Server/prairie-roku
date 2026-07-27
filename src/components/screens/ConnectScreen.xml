@@ -5,6 +5,10 @@
         <field id="busy" type="bool" value="false" />
         <field id="errorText" type="string" value="" />
         <field id="submitRequest" type="assocarray" />
+        <field id="quickConnectStartRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="quickConnectUserCode" type="string" value="" />
+        <field id="quickConnectMatchCode" type="string" value="" />
+        <field id="quickConnectStatus" type="string" value="" />
         <field id="openServers" type="boolean" value="false" alwaysNotify="true" />
         <field id="scanRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
@@ -36,9 +40,9 @@
         />
         <Label
             id="lede"
-            text="Connect to your Prairie server. Use the remote to move between fields."
+            text="Connect with a password, or use Quick Connect from another signed-in device."
             translation="[120, 360]"
-            width="1000"
+            width="700"
             height="80"
             wrap="true"
             font="font:MediumSystemFont"
@@ -80,12 +84,83 @@
             id="errorLabel"
             text=""
             translation="[120, 860]"
-            width="900"
+            width="700"
             height="60"
             wrap="true"
             font="font:SmallSystemFont"
             color="0xE07070FF"
         />
+
+        <Rectangle
+            id="quickConnectPanel"
+            translation="[920, 360]"
+            width="860"
+            height="520"
+            color="0x1C2430FF"
+        >
+            <Label
+                id="quickConnectEyebrow"
+                text="QUICK CONNECT"
+                translation="[40, 36]"
+                width="780"
+                font="font:SmallBoldSystemFont"
+                color="0xE0A84AFF"
+            />
+            <Label
+                id="quickConnectTitle"
+                text="Approve from another device"
+                translation="[40, 80]"
+                width="780"
+                height="70"
+                wrap="true"
+                font="font:MediumBoldSystemFont"
+                color="0xF3EFE6FF"
+            />
+            <Label
+                id="quickConnectHint"
+                text="On a signed-in phone or browser, open Settings → Quick Connect and enter this code."
+                translation="[40, 160]"
+                width="780"
+                height="90"
+                wrap="true"
+                font="font:SmallSystemFont"
+                color="0x9AA3B2FF"
+            />
+            <Label
+                id="quickConnectCodeLabel"
+                text="CODE"
+                translation="[40, 270]"
+                width="780"
+                font="font:SmallBoldSystemFont"
+                color="0x9AA3B2FF"
+            />
+            <Label
+                id="quickConnectCode"
+                text=""
+                translation="[40, 310]"
+                width="780"
+                height="80"
+                font="font:LargeBoldSystemFont"
+                color="0xE0A84AFF"
+            />
+            <Label
+                id="quickConnectMatchLabel"
+                text="MATCH"
+                translation="[40, 400]"
+                width="780"
+                font="font:SmallBoldSystemFont"
+                color="0x9AA3B2FF"
+            />
+            <Label
+                id="quickConnectMatch"
+                text=""
+                translation="[40, 440]"
+                width="780"
+                height="50"
+                font="font:MediumBoldSystemFont"
+                color="0xF3EFE6FF"
+            />
+        </Rectangle>
 
         <Rectangle
             id="connectFocus"
@@ -146,6 +221,25 @@
                 id="scanLabel"
                 text="Scan LAN"
                 width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                font="font:MediumSystemFont"
+                color="0xF3EFE6FF"
+            />
+        </Rectangle>
+        <Rectangle
+            id="quickConnectBg"
+            translation="[1020, 940]"
+            width="320"
+            height="64"
+            color="0x222B38FF"
+            focusable="true"
+        >
+            <Label
+                id="quickConnectLabel"
+                text="Refresh code"
+                width="320"
                 height="64"
                 horizAlign="center"
                 vertAlign="center"

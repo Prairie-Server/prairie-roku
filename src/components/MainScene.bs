@@ -13,6 +13,7 @@ import "pkg:/source/lib/Playback.bs"
 import "pkg:/source/lib/LiveTv.bs"
 import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
+import "pkg:/source/lib/ServerUrl.bs"
 import "pkg:/source/lib/ServerRegistry.bs"
 import "pkg:/source/lib/Discover.bs"
 import "pkg:/source/lib/AppUpdate.bs"
@@ -29,6 +30,8 @@ sub init()
     m.httpTask.observeField("response", "onHttpResponse")
     m.progressTask = m.top.findNode("progressTask")
     m.progressTask.observeField("response", "onProgressResponse")
+    m.quickConnectTimer = m.top.findNode("quickConnectTimer")
+    m.quickConnectTimer.observeField("fire", "onQuickConnectTimerFire")
 
     m.pending = ""
     m.auth = invalid
@@ -62,6 +65,9 @@ sub init()
     m.serverListBackRoute = "connect"
     m.connectPrefillUrl = ""
     m.pendingLoginRequest = invalid
+    m.quickConnectDeviceCode = ""
+    m.quickConnectServerUrl = ""
+    m.quickConnectInterval = 3
 
     if m.session = invalid
         m.session = sessionFromActiveRegistry()
@@ -96,6 +102,7 @@ sub clearScreen()
         return
     end if
     stopDiscovery()
+    stopQuickConnect()
     if m.httpTask <> invalid
         m.httpTask.control = "STOP"
     end if
@@ -107,6 +114,15 @@ sub clearScreen()
         m.screenHost.removeChildIndex(0)
     end while
     m.screen = invalid
+end sub
+
+sub stopQuickConnect()
+    m.quickConnectDeviceCode = ""
+    m.quickConnectServerUrl = ""
+    m.quickConnectInterval = 3
+    if m.quickConnectTimer <> invalid
+        m.quickConnectTimer.control = "stop"
+    end if
 end sub
 
 sub showConnect()
@@ -123,11 +139,93 @@ sub showConnect()
     m.connectPrefillUrl = ""
     screen.initialServerUrl = prefill
     screen.observeField("submitRequest", "onConnectSubmit")
+    screen.observeField("quickConnectStartRequested", "onQuickConnectStartRequested")
     screen.observeField("openServers", "onOpenServers")
     screen.observeField("scanRequested", "onConnectScanRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
     screen.callFunc("focusDefault")
+end sub
+
+sub onQuickConnectStartRequested()
+    if m.route <> "connect" or m.screen = invalid
+        return
+    end if
+    if m.screen.busy = true
+        return
+    end if
+    serverNode = m.screen.findNode("serverUrl")
+    rawUrl = ""
+    if serverNode <> invalid
+        rawUrl = serverNode.text
+    end if
+    if rawUrl.trim().len() = 0
+        rawUrl = m.screen.initialServerUrl
+    end if
+    validated = Prairie.ServerUrl.validate(rawUrl)
+    if validated.ok <> true
+        m.screen.quickConnectStatus = validated.message
+        m.screen.quickConnectUserCode = ""
+        m.screen.quickConnectMatchCode = ""
+        return
+    end if
+    stopQuickConnect()
+    m.quickConnectServerUrl = validated.url
+    m.screen.quickConnectStatus = "Generating code…"
+    m.screen.quickConnectUserCode = ""
+    m.screen.quickConnectMatchCode = ""
+    m.pending = "deviceStart"
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: m.quickConnectServerUrl
+    }, Prairie.Auth.deviceStartPath(), "POST", Prairie.Auth.buildDeviceStartBody(Prairie.Theme.deviceNameHeader(), Prairie.Theme.devicePlatformHeader()))
+    m.httpTask.control = "RUN"
+end sub
+
+sub scheduleQuickConnectPoll(seconds as integer)
+    if m.quickConnectTimer = invalid
+        return
+    end if
+    waitSeconds = seconds
+    if waitSeconds < 1
+        waitSeconds = 3
+    end if
+    m.quickConnectTimer.duration = waitSeconds
+    m.quickConnectTimer.control = "stop"
+    m.quickConnectTimer.control = "start"
+end sub
+
+sub onQuickConnectTimerFire()
+    if m.route <> "connect"
+        return
+    end if
+    if m.quickConnectDeviceCode.len() = 0 or m.quickConnectServerUrl.len() = 0
+        return
+    end if
+    if m.pending <> "" and m.pending <> "devicePoll"
+        ' Another request owns the HTTP task (password login). Retry shortly.
+        scheduleQuickConnectPoll(m.quickConnectInterval)
+        return
+    end if
+    m.pending = "devicePoll"
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: m.quickConnectServerUrl
+    }, Prairie.Auth.devicePollPath(), "POST", Prairie.Auth.buildDevicePollBody(m.quickConnectDeviceCode))
+    m.httpTask.control = "RUN"
+end sub
+
+sub applyQuickConnectLogin(data as object)
+    username = ""
+    if data.user <> invalid and data.user.username <> invalid
+        username = data.user.username as string
+    end if
+    m.auth = {
+        serverUrl: m.quickConnectServerUrl,
+        accessToken: data.accessToken as string,
+        username: username
+    }
+    Prairie.Persist.saveLastServerUrl(m.quickConnectServerUrl, m.store)
+    stopQuickConnect()
+    showProfiles()
 end sub
 
 sub showServerList(backRoute = "connect" as string)
@@ -596,6 +694,7 @@ sub onConnectSubmit()
     if req = invalid
         return
     end if
+    stopQuickConnect()
     m.pendingLoginRequest = req
     m.loginServerUrl = serverBaseFromRequestUrl(req.url)
     m.pending = "authSetup"
@@ -1221,7 +1320,7 @@ sub onHttpResponse()
 
     chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
     chainingDiscover = pending = "discoverProbe"
-    chainingAuth = pending = "authSetup"
+    chainingAuth = pending = "authSetup" or pending = "deviceStart" or pending = "devicePoll"
     if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover and not chainingAuth
         m.screen.busy = false
     end if
@@ -1246,6 +1345,79 @@ sub onHttpResponse()
 
     if pending = "appUpdate"
         applyAppUpdateResponse(response)
+        return
+    end if
+
+    if pending = "deviceStart" or pending = "devicePoll"
+        if response.ok <> true
+            message = "Quick Connect failed"
+            if response.error <> invalid and response.error.message <> invalid
+                message = response.error.message
+            end if
+            status = 0
+            if response.error <> invalid and response.error.status <> invalid
+                status = response.error.status as integer
+            end if
+            if pending = "devicePoll" and status <> 404
+                scheduleQuickConnectPoll(m.quickConnectInterval)
+                return
+            end if
+            if m.screen <> invalid
+                m.screen.quickConnectStatus = message
+                if status = 404
+                    m.screen.quickConnectUserCode = ""
+                    m.screen.quickConnectMatchCode = ""
+                    m.quickConnectDeviceCode = ""
+                end if
+            end if
+            return
+        end if
+        if pending = "deviceStart"
+            started = Prairie.Auth.parseDeviceStart(response.data)
+            if started.ok <> true
+                if m.screen <> invalid
+                    m.screen.quickConnectStatus = "Could not start Quick Connect"
+                end if
+                return
+            end if
+            m.quickConnectDeviceCode = started.deviceCode
+            m.quickConnectInterval = started.interval
+            if m.screen <> invalid
+                m.screen.quickConnectUserCode = started.userCode
+                m.screen.quickConnectMatchCode = started.matchCode
+                m.screen.quickConnectStatus = "Waiting for approval…"
+            end if
+            scheduleQuickConnectPoll(m.quickConnectInterval)
+            return
+        end if
+        polled = Prairie.Auth.parseDevicePoll(response.data)
+        if polled.ok <> true
+            scheduleQuickConnectPoll(m.quickConnectInterval)
+            return
+        end if
+        if polled.status = "approved" and polled.accessToken <> invalid and polled.user <> invalid
+            applyQuickConnectLogin(polled)
+            return
+        end if
+        if polled.status = "denied"
+            if m.screen <> invalid
+                m.screen.quickConnectStatus = "Sign-in was denied"
+                m.screen.quickConnectUserCode = ""
+                m.screen.quickConnectMatchCode = ""
+            end if
+            m.quickConnectDeviceCode = ""
+            return
+        end if
+        if polled.status = "expired" or polled.status = "consumed"
+            if m.screen <> invalid
+                m.screen.quickConnectStatus = "Code expired — press Refresh code"
+                m.screen.quickConnectUserCode = ""
+                m.screen.quickConnectMatchCode = ""
+            end if
+            m.quickConnectDeviceCode = ""
+            return
+        end if
+        scheduleQuickConnectPoll(polled.pollAfter)
         return
     end if
 

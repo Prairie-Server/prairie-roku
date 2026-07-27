@@ -38,6 +38,85 @@ namespace Prairie.Auth
         return "/api/v1/profiles/" + profileId.encodeUriComponent() + "/verify-pin"
     end function
 
+    function deviceStartPath() as string
+        return "/api/v1/auth/device/start"
+    end function
+
+    function devicePollPath() as string
+        return "/api/v1/auth/device/poll"
+    end function
+
+    function buildDeviceStartBody(deviceName as string, devicePlatform as string) as string
+        return FormatJson({
+            device_name: deviceName,
+            device_platform: devicePlatform
+        })
+    end function
+
+    function buildDevicePollBody(deviceCode as string) as string
+        return FormatJson({
+            device_code: deviceCode
+        })
+    end function
+
+    ' Parse POST /auth/device/start. Fail closed when required fields are missing.
+    function parseDeviceStart(data as dynamic) as object
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return { ok: false }
+        end if
+        if data.device_code = invalid or data.user_code = invalid
+            return { ok: false }
+        end if
+        deviceCode = (data.device_code as string).trim()
+        userCode = (data.user_code as string).trim()
+        if deviceCode.len() = 0 or userCode.len() = 0
+            return { ok: false }
+        end if
+        matchCode = ""
+        if data.match_code <> invalid
+            matchCode = (data.match_code as string).trim()
+        end if
+        interval = 3
+        if data.interval <> invalid
+            interval = data.interval as integer
+            if interval < 1
+                interval = 3
+            end if
+        end if
+        return {
+            ok: true,
+            deviceCode: deviceCode,
+            userCode: userCode,
+            matchCode: matchCode,
+            interval: interval
+        }
+    end function
+
+    function parseDevicePoll(data as dynamic) as object
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return { ok: false }
+        end if
+        if data.status = invalid
+            return { ok: false }
+        end if
+        status = LCase((data.status as string).trim())
+        pollAfter = 3
+        if data.poll_after <> invalid
+            pollAfter = data.poll_after as integer
+            if pollAfter < 1
+                pollAfter = 3
+            end if
+        end if
+        return {
+            ok: true,
+            status: status,
+            pollAfter: pollAfter,
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+            user: data.user
+        }
+    end function
+
     function buildLoginBody(username as string, password as string) as string
         return FormatJson({
             username: username,

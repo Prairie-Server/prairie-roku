@@ -27,6 +27,7 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 ## 1.0 feature checklist
 
 - [x] Connect (username / password) to Prairie server _(implemented; device validation pending)_
+- [x] Quick Connect device login on Connect screen _(code + poll; approve from web/mobile Settings)_
 - [x] Profile picker (+ PIN when required) _(implemented; device validation pending)_
 - [x] Home sections from `/api/v1/home/sections` _(implemented; device validation pending)_
 - [x] Libraries + catalog pagination _(implemented; device validation pending)_
