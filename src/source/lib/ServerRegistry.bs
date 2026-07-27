@@ -97,6 +97,7 @@ namespace Prairie.ServerRegistry
         if parsed = invalid or type(parsed) <> "roAssociativeArray"
             return registry
         end if
+        foundSecrets = false
         if parsed.activeServerId <> invalid
             registry.activeServerId = parsed.activeServerId as string
         end if
@@ -104,6 +105,13 @@ namespace Prairie.ServerRegistry
             for each entry in parsed.entries
                 normalized = normalizeEntry(entry)
                 if normalized <> invalid
+                    if normalized.accessToken.len() > 0 or normalized.profileToken.len() > 0
+                        foundSecrets = true
+                    end if
+                    ' Migration hygiene: clear token fields from the in-memory registry
+                    ' too, so we don't treat legacy persisted tokens as valid auth.
+                    normalized.accessToken = ""
+                    normalized.profileToken = ""
                     registry.entries.push(normalized)
                 end if
             end for
@@ -114,6 +122,11 @@ namespace Prairie.ServerRegistry
                     registry.scanCidrs.push((cidr as string).trim())
                 end if
             end for
+        end if
+        ' Migration hygiene: wipe any previously persisted plaintext tokens now.
+        ' Keep any loaded tokens only in memory for the lifetime of this run.
+        if foundSecrets
+            save(registry, store)
         end if
         return registry
     end function
@@ -131,6 +144,9 @@ namespace Prairie.ServerRegistry
             for each entry in registry.entries
                 normalized = normalizeEntry(entry)
                 if normalized <> invalid
+                    ' Never persist tokens in the registry.
+                    normalized.accessToken = ""
+                    normalized.profileToken = ""
                     payload.entries.push(normalized)
                 end if
             end for
@@ -292,12 +308,6 @@ namespace Prairie.ServerRegistry
         end if
         if session.profileName <> invalid
             entry.profileName = session.profileName as string
-        end if
-        if session.accessToken <> invalid
-            entry.accessToken = session.accessToken as string
-        end if
-        if session.profileToken <> invalid
-            entry.profileToken = session.profileToken as string
         end if
         registry = addOrUpdate(registry, entry)
         registry.activeServerId = entryIdFromUrl(session.serverUrl as string)

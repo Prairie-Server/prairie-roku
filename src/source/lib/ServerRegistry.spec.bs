@@ -33,6 +33,48 @@ namespace tests
             m.assertEqual(Prairie.ServerRegistry.load(Prairie.Store.createMemoryStore()).entries.count(), 0)
         end sub
 
+        @it("wipes plaintext token fields from a persisted registry on load")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            id = Prairie.ServerRegistry.entryIdFromUrl("https://secure.example.com")
+            store.setItem(Prairie.Persist.serverRegistryKey(), FormatJson({
+                activeServerId: id,
+                entries: [{
+                    url: "https://secure.example.com",
+                    username: "u",
+                    profileId: "p1",
+                    profileName: "Primary",
+                    fetchedName: "Secure",
+                    accessToken: "tok",
+                    profileToken: "pt",
+                    lastUsedAt: 123
+                }],
+                scanCidrs: ["10.0.0.0/24"]
+            }))
+
+            loaded = Prairie.ServerRegistry.load(store)
+            m.assertEqual(loaded.entries.count(), 1)
+            m.assertEqual(loaded.entries[0].accessToken, "")
+            m.assertEqual(loaded.entries[0].profileToken, "")
+
+            persistedRaw = store.getItem(Prairie.Persist.serverRegistryKey())
+            persisted = ParseJson(persistedRaw as string)
+            m.assertEqual(persisted.entries[0].accessToken, "")
+            m.assertEqual(persisted.entries[0].profileToken, "")
+        end sub
+
+        @it("tolerates missing and malformed persisted registries")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            m.assertEqual(Prairie.ServerRegistry.load(store).entries.count(), 0)
+
+            store.setItem(Prairie.Persist.serverRegistryKey(), "{bad-json")
+            m.assertEqual(Prairie.ServerRegistry.load(store).entries.count(), 0)
+
+            store.setItem(Prairie.Persist.serverRegistryKey(), "[]")
+            m.assertEqual(Prairie.ServerRegistry.load(store).entries.count(), 0)
+        end sub
+
         @describe("switch and session mapping")
         @it("switches active server and builds sessions from entries")
         sub _()
@@ -76,7 +118,7 @@ namespace tests
         end sub
 
         @describe("remember, remove, clearTokens")
-        @it("updates tokens, clears them, and removes entries")
+        @it("does not persist tokens in the registry and supports clearTokens")
         sub _()
             registry = Prairie.ServerRegistry.emptyRegistry()
             registry = Prairie.ServerRegistry.rememberSession(registry, {
@@ -90,13 +132,15 @@ namespace tests
             id = Prairie.ServerRegistry.entryIdFromUrl("https://mem.example.com")
             m.assertEqual(registry.activeServerId, id)
             m.assertEqual(registry.entries[0].fetchedName, "Named")
+            m.assertEqual(registry.entries[0].accessToken, "")
+            m.assertEqual(registry.entries[0].profileToken, "")
 
             ' Merge preserves existing fields when blank on update.
             registry = Prairie.ServerRegistry.addOrUpdate(registry, {
                 url: "https://mem.example.com",
                 username: "u2"
             })
-            m.assertEqual(registry.entries[0].accessToken, "tok")
+            m.assertEqual(registry.entries[0].accessToken, "")
             m.assertEqual(registry.entries[0].username, "u2")
 
             registry = Prairie.ServerRegistry.clearTokens(registry, id)
@@ -120,6 +164,26 @@ namespace tests
             m.assertEqual(registry.activeServerId, "")
             m.assertEqual(Prairie.ServerRegistry.remove(registry, "missing").entries.count(), 0)
             m.assertEqual(Prairie.ServerRegistry.rememberSession(registry, invalid), registry)
+        end sub
+
+        @it("save strips token fields even when present in memory")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            registry = Prairie.ServerRegistry.emptyRegistry()
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, {
+                url: "https://persist.example.com",
+                username: "u",
+                profileId: "p1",
+                accessToken: "tok",
+                profileToken: "pt"
+            })
+
+            Prairie.ServerRegistry.save(registry, store)
+
+            persistedRaw = store.getItem(Prairie.Persist.serverRegistryKey())
+            persisted = ParseJson(persistedRaw as string)
+            m.assertEqual(persisted.entries[0].accessToken, "")
+            m.assertEqual(persisted.entries[0].profileToken, "")
         end sub
 
         @describe("legacy migration")

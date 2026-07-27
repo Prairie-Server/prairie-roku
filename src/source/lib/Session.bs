@@ -12,30 +12,40 @@ namespace Prairie.Session
         if parsed = invalid
             return invalid
         end if
-        if parsed.serverUrl = invalid or parsed.accessToken = invalid or parsed.username = invalid or parsed.profileId = invalid
+        ' Tokens are intentionally not required to exist in the persisted blob.
+        ' If tokens are missing, callers must route the user through login.
+        if parsed.serverUrl = invalid or parsed.username = invalid or parsed.profileId = invalid
             return invalid
         end if
 
         serverUrl = Prairie.Url.normalizeServerUrl(parsed.serverUrl as string)
-        accessToken = (parsed.accessToken as string).trim()
         username = (parsed.username as string).trim()
         profileId = (parsed.profileId as string).trim()
-        if serverUrl.len() = 0 or accessToken.len() = 0 or username.len() = 0 or profileId.len() = 0
+        if serverUrl.len() = 0 or username.len() = 0 or profileId.len() = 0
             return invalid
         end if
 
         session = {
             serverUrl: serverUrl,
-            accessToken: accessToken,
             username: username,
             profileId: profileId
         }
         if parsed.profileName <> invalid
             session.profileName = parsed.profileName as string
         end if
-        if parsed.profileToken <> invalid
-            session.profileToken = parsed.profileToken as string
+
+        ' Migration hygiene: wipe any previously persisted plaintext tokens as soon
+        ' as we load session metadata. Keep tokens only for the lifetime of this run.
+        sanitized = {
+            serverUrl: serverUrl,
+            username: username,
+            profileId: profileId
+        }
+        if parsed.profileName <> invalid and (parsed.profileName as string).trim().len() > 0
+            sanitized.profileName = (parsed.profileName as string).trim()
         end if
+        store.setItem(Prairie.Persist.sessionKey(), FormatJson(sanitized))
+
         return session
     end function
 
@@ -53,9 +63,28 @@ namespace Prairie.Session
             normalized.profileToken = session.profileToken as string
         end if
 
-        store.setItem(Prairie.Persist.sessionKey(), FormatJson(normalized))
+        ' Persist only non-secret session metadata.
+        persisted = {
+            serverUrl: normalized.serverUrl,
+            username: normalized.username,
+            profileId: normalized.profileId
+        }
+        if normalized.profileName <> invalid
+            persisted.profileName = normalized.profileName as string
+        end if
+        store.setItem(Prairie.Persist.sessionKey(), FormatJson(persisted))
         Prairie.Persist.saveLastServerUrl(normalized.serverUrl, store)
         return normalized
+    end function
+
+    function hasAccessToken(session as object) as boolean
+        if session = invalid
+            return false
+        end if
+        if session.accessToken = invalid
+            return false
+        end if
+        return (session.accessToken as string).trim().len() > 0
     end function
 
     ' Clears active session tokens. Does NOT remove lastServerUrl or playback settings.
