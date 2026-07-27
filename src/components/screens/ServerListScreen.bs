@@ -46,9 +46,9 @@ end sub
 
 sub onBusy()
     if m.top.busy
-        m.scanLabel.text = "Scanning…"
+        m.scanLabel.text = "📡 Scanning…"
     else
-        m.scanLabel.text = "Scan LAN"
+        m.scanLabel.text = "📡 Scan LAN"
     end if
 end sub
 

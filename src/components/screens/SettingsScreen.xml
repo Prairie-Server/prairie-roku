@@ -61,10 +61,10 @@
         />
 
         <Rectangle id="saveBg" translation="[80, 500]" width="220" height="64" color="0xE0A84AFF" focusable="true">
-            <Label id="saveLabel" text="Save" width="220" height="64" horizAlign="center" vertAlign="center" color="0x141820FF" font="font:MediumBoldSystemFont" />
+            <Label id="saveLabel" text="✓ Save" width="220" height="64" horizAlign="center" vertAlign="center" color="0x141820FF" font="font:MediumBoldSystemFont" />
         </Rectangle>
         <Rectangle id="serversBg" translation="[320, 500]" width="280" height="64" color="0x222B38FF" focusable="true">
-            <Label id="serversLabel" text="Servers" width="280" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+            <Label id="serversLabel" text="☰ Servers" width="280" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
         </Rectangle>
         <Label id="savedLabel" text="" translation="[620, 515]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
 
@@ -76,7 +76,7 @@
         <Label id="latestKey" text="Latest version" translation="[80, 760]" color="0x9AA3B2FF" font="font:MediumSystemFont" />
         <Label id="latestValue" text="—" translation="[360, 760]" width="900" color="0xF3EFE6FF" font="font:MediumSystemFont" />
         <Rectangle id="changelogBg" translation="[80, 820]" width="280" height="64" color="0x222B38FF" focusable="true">
-            <Label id="changelogLabel" text="Changelog" width="280" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+            <Label id="changelogLabel" text="📄 Changelog" width="280" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
         </Rectangle>
         <Label id="changelogHint" text="" translation="[380, 835]" width="1400" color="0x9AA3B2FF" font="font:SmallSystemFont" />
     </children>

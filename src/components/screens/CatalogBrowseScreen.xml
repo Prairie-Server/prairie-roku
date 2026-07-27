@@ -60,7 +60,7 @@
         <Rectangle id="moreBg" translation="[80, 980]" width="240" height="56" color="0xE0A84AFF" focusable="true" visible="false">
             <Label
                 id="moreLabel"
-                text="Load more"
+                text="⋯ Load more"
                 width="240"
                 height="56"
                 horizAlign="center"

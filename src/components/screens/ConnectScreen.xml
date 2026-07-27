@@ -181,7 +181,7 @@
         >
             <Label
                 id="connectLabel"
-                text="Connect"
+                text="▶ Connect"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -200,7 +200,7 @@
         >
             <Label
                 id="serversLabel"
-                text="Servers"
+                text="☰ Servers"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -219,7 +219,7 @@
         >
             <Label
                 id="scanLabel"
-                text="Scan LAN"
+                text="📡 Scan LAN"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -238,7 +238,7 @@
         >
             <Label
                 id="quickConnectLabel"
-                text="Refresh code"
+                text="↻ Refresh code"
                 width="320"
                 height="64"
                 horizAlign="center"

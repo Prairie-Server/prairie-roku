@@ -72,9 +72,9 @@ sub onBusy()
         return
     end if
     if m.top.busy
-        m.connectLabel.text = "Connecting…"
+        m.connectLabel.text = "▶ Connecting…"
     else
-        m.connectLabel.text = "Connect"
+        m.connectLabel.text = "▶ Connect"
     end if
 end sub
 

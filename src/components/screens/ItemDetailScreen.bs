@@ -42,9 +42,9 @@ end sub
 
 sub onBusy()
     if m.top.busy
-        m.playLabel.text = "Starting…"
+        m.playLabel.text = "▶ Starting…"
     else
-        m.playLabel.text = "Play"
+        m.playLabel.text = "▶ Play"
     end if
 end sub
 
