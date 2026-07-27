@@ -1,5 +1,14 @@
 namespace Prairie.Artwork
 
+    ' Ordered best-first raster preference for X-Prairie-Image-Formats.
+    ' Roku never advertises AVIF (SceneGraph Poster cannot decode it).
+    function imageFormatsHeader() as string
+        if supportsWebP()
+            return "webp,png"
+        end if
+        return "png"
+    end function
+
     ' Preferred artwork URL for SceneGraph Poster / hdPosterUrl.
     '
     ' Other Prairie clients prefer AVIF siblings of canonical .webp keys, but

@@ -40,6 +40,8 @@ namespace tests
             m.assertEqual(headers["X-Profile-Token"], "pt")
             m.assertEqual(headers["Content-Type"], "application/json")
             m.assertEqual(headers["X-Prairie-Device-Platform"], "roku")
+            formats = headers["X-Prairie-Image-Formats"]
+            m.assertTrue(formats = "webp,png" or formats = "png")
         end sub
 
         @describe("parseErrorBody")
