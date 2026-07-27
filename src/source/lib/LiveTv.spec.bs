@@ -16,6 +16,10 @@ namespace tests
             })
             m.assertEqual(channels.count(), 1)
             m.assertEqual(Prairie.LiveTv.programsFromResponse({ programs: [{ id: "p" }] }).count(), 1)
+            m.assertEqual(Prairie.LiveTv.channelsFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.LiveTv.channelsFromResponse({}).count(), 0)
+            m.assertEqual(Prairie.LiveTv.programsFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.LiveTv.programsFromResponse({}).count(), 0)
         end sub
 
         @describe("labels and stream resolution")
@@ -24,12 +28,18 @@ namespace tests
             m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ name: " PBS " }), "PBS")
             m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ callsign: "WXYZ", number: "7.1" }), "WXYZ")
             m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ number: "4.1" }), "Channel 4.1")
+            m.assertEqual(Prairie.LiveTv.channelDisplayLabel({ number_override: "9.1", number: "4.1" }), "Channel 9.1")
+            m.assertEqual(Prairie.LiveTv.channelDisplayLabel({}), "Channel ")
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({ hls_url: "/live.m3u8" }), "/live.m3u8")
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({ stream_url: "/alt" }), "/alt")
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl(invalid), invalid)
+            m.assertEqual(Prairie.LiveTv.playableLiveUrl({ hls_url: "   ", stream_url: " " }), invalid)
             m.assertEqual(Prairie.LiveTv.playableLiveUrl({}), invalid)
             ok = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "/live.m3u8", "tok")
             m.assertTrue(ok.ok)
             m.assertTrue(ok.url.instr("token=tok") >= 0)
+            sameOrigin = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "https://prairie.example.com/live.m3u8", invalid)
+            m.assertTrue(sameOrigin.ok)
             empty = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "  ", "tok")
             m.assertFalse(empty.ok)
             bad = Prairie.LiveTv.resolveLivePlaybackUrl("https://prairie.example.com", "https://tuner.example/x", "tok")
@@ -45,8 +55,14 @@ namespace tests
             }))
             m.assertEqual(body.program_id, "p1")
             m.assertInvalid(body.channel_id)
+            bodyByProgramId = ParseJson(Prairie.LiveTv.buildScheduleRecordingBody({ program_id: " p2 " }))
+            m.assertEqual(bodyByProgramId.program_id, "p2")
+            m.assertInvalid(Prairie.LiveTv.buildScheduleRecordingBody(invalid))
             m.assertInvalid(Prairie.LiveTv.buildScheduleRecordingBody({ id: "" }))
             m.assertInvalid(Prairie.LiveTv.buildScheduleRecordingBody({}))
+            m.assertFalse(Prairie.LiveTv.programBelongsToChannel(invalid, "p1", "c1"))
+            m.assertFalse(Prairie.LiveTv.programBelongsToChannel([], "", "c1"))
+            m.assertFalse(Prairie.LiveTv.programBelongsToChannel([], "p1", ""))
             m.assertTrue(Prairie.LiveTv.programBelongsToChannel([
                 { id: "p1", channel_id: "c1" }
             ], "p1", "c1"))
@@ -69,6 +85,12 @@ namespace tests
             nextProgram = Prairie.LiveTv.nextProgramForChannel(programs, "c1", nowSec)
             m.assertEqual(current.title, "Now")
             m.assertEqual(nextProgram.title, "Next")
+            m.assertEqual(Prairie.LiveTv.isoToSeconds(""), -1)
+            m.assertEqual(Prairie.LiveTv.programsForChannel(invalid, "c1").count(), 0)
+            m.assertEqual(Prairie.LiveTv.currentProgramForChannel([
+                { channel_id: "c1", start: "", stop: "", title: "Bad" }
+            ], "c1", nowSec), invalid)
+            m.assertEqual(Prairie.LiveTv.nextProgramForChannel(programs, "missing", nowSec), invalid)
         end sub
 
     end class

@@ -42,9 +42,9 @@ jobs:
       - name: Typecheck (BrighterScript, diagnosticLevel=error)
         run: npm run typecheck
 
-      - name: Unit tests with 90% coverage gate
+      - name: Unit tests with 95% coverage gate
         run: |
-          # Rooibos headless via brs-cli. Coverage gate: 90% lines on
+          # Rooibos headless via brs-cli. Coverage gate: 95% lines on
           # source/lib/** (see scripts/check-coverage.mjs).
           npm run test:coverage
 
