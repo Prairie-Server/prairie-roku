@@ -14,6 +14,7 @@ import "pkg:/source/lib/LiveTv.bs"
 import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
 import "pkg:/source/lib/ServerRegistry.bs"
+import "pkg:/source/lib/ServerUrl.bs"
 import "pkg:/source/lib/Discover.bs"
 import "pkg:/source/lib/AppUpdate.bs"
 
@@ -181,7 +182,40 @@ sub startDiscovery(deepScan = true as boolean)
     m.registry = Prairie.ServerRegistry.load(m.store)
     m.discoverDeep = deepScan
     m.discoverHits = []
-    m.discoverQueue = Prairie.Discover.buildCandidates(m.registry.scanCidrs, deepScan, 254)
+
+    ' Cross-subnet base hosts come from saved/manual server URLs.
+    ' Admin publishes one A record for that hostname; discovery probes the
+    ' resolved IP by hitting Prairie /api/v1/health on candidate ports.
+    m.baseHosts = []
+    baseSeen = {}
+    for each entry in m.registry.entries
+        if entry <> invalid and entry.url <> invalid
+            origin = Prairie.Url.parseOrigin(entry.url as string)
+            if origin <> invalid and origin.host <> invalid
+                host = Prairie.ServerUrl.stripPort(origin.host as string)
+                key = LCase(host)
+                if host.len() > 0 and not baseSeen.doesExist(key)
+                    baseSeen[key] = true
+                    m.baseHosts.push(host)
+                end if
+            end if
+        end if
+    end for
+
+    lastUrl = Prairie.Persist.loadLastServerUrl(m.store)
+    if lastUrl <> invalid and lastUrl.len() > 0
+        origin = Prairie.Url.parseOrigin(lastUrl)
+        if origin <> invalid and origin.host <> invalid
+            host = Prairie.ServerUrl.stripPort(origin.host as string)
+            key = LCase(host)
+            if host.len() > 0 and not baseSeen.doesExist(key)
+                baseSeen[key] = true
+                m.baseHosts.push(host)
+            end if
+        end if
+    end if
+
+    m.discoverQueue = Prairie.Discover.buildCandidates(m.registry.scanCidrs, deepScan, 254, m.baseHosts)
     m.discoverIndex = 0
     m.discoverCurrentUrl = ""
     if m.screen <> invalid and m.screen.hasField("busy")
