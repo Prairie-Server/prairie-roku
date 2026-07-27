@@ -159,6 +159,9 @@ function copyTree() {
   for (const full of files) {
     const rel = path.relative(SRC, full);
     const relPosix = rel.split(path.sep).join("/");
+    // Vendored BrightScript is MIT third-party; keep it out of the Rooibos
+    // test package so bslint/strict rules do not apply to it.
+    if (relPosix.startsWith("components/vendor/")) continue;
     const dest = path.join(OUT, rel);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
 

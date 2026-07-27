@@ -76,6 +76,14 @@ namespace Prairie.Auth
         if data.match_code <> invalid
             matchCode = (data.match_code as string).trim()
         end if
+        verificationUri = ""
+        if data.verification_uri <> invalid
+            verificationUri = (data.verification_uri as string).trim()
+        end if
+        verificationUriComplete = ""
+        if data.verification_uri_complete <> invalid
+            verificationUriComplete = (data.verification_uri_complete as string).trim()
+        end if
         interval = 3
         if data.interval <> invalid
             interval = data.interval as integer
@@ -88,6 +96,8 @@ namespace Prairie.Auth
             deviceCode: deviceCode,
             userCode: userCode,
             matchCode: matchCode,
+            verificationUri: verificationUri,
+            verificationUriComplete: verificationUriComplete,
             interval: interval
         }
     end function

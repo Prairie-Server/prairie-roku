@@ -3,7 +3,7 @@
   "rootDir": ".coverage-src",
   "outDir": "test-build",
   "outFile": "out/prairie-roku-tests.zip",
-  "files": ["**/*"],
+  "files": ["**/*", "!**/components/vendor/**"],
   "plugins": ["@rokucommunity/bslint", "rooibos-roku"],
   "rooibos": {
     "isRecordingCodeCoverage": false,
