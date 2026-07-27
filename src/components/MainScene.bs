@@ -55,6 +55,7 @@ sub init()
     m.exitingPlayer = false
     m.liveChannels = []
     m.livePrograms = []
+    m.liveRecordings = []
     m.liveSessionId = ""
     m.liveChannel = invalid
     m.settingsBackRoute = "home"
@@ -400,10 +401,12 @@ sub showLiveTv()
     m.route = "livetv"
     m.liveChannels = []
     m.livePrograms = []
+    m.liveRecordings = []
     screen = CreateObject("roSGNode", "LiveTvScreen")
     screen.busy = true
     screen.observeField("selectedChannel", "onLiveChannelChosen")
     screen.observeField("recordRequested", "onLiveRecordRequested")
+    screen.observeField("cancelRecordingRequested", "onLiveCancelRecordingRequested")
     screen.observeField("openSettings", "onOpenSettings")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
@@ -1085,6 +1088,15 @@ sub loadLiveTvGuide(channels as object)
     m.httpTask.control = "RUN"
 end sub
 
+sub loadLiveTvRecordings()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "liveRecordings"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.recordingsPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
 sub onLiveChannelChosen()
     channel = m.screen.selectedChannel
     if channel = invalid or m.session = invalid
@@ -1126,6 +1138,22 @@ sub onLiveRecordRequested()
     m.pending = "liveRecord"
     m.screen.errorText = ""
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.recordingsPath(), "POST", body)
+    m.httpTask.control = "RUN"
+end sub
+
+sub onLiveCancelRecordingRequested()
+    if m.screen.cancelRecordingRequested <> true
+        return
+    end if
+    recording = m.screen.selectedRecording
+    if recording = invalid or recording.id = invalid or m.session = invalid
+        m.screen.errorText = "Could not cancel recording"
+        return
+    end if
+    m.pending = "liveCancelRecording"
+    m.screen.errorText = ""
+    path = Prairie.LiveTv.recordingPath(recording.id as string)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "DELETE")
     m.httpTask.control = "RUN"
 end sub
 
@@ -1481,6 +1509,12 @@ sub onHttpResponse()
         if pending = "liveGuide"
             m.livePrograms = []
             m.screen.programs = []
+            loadLiveTvRecordings()
+            return
+        end if
+        if pending = "liveRecordings"
+            m.liveRecordings = []
+            m.screen.recordings = []
             return
         end if
         if chainingCollections
@@ -1506,6 +1540,21 @@ sub onHttpResponse()
         if pending = "liveRecord"
             if m.screen <> invalid and m.screen.hasField("errorText")
                 m.screen.errorText = "Could not schedule recording"
+            end if
+            return
+        end if
+        if pending = "liveCancelRecording"
+            if m.screen <> invalid and m.screen.hasField("errorText")
+                m.screen.errorText = "Could not cancel recording"
+            end if
+            return
+        end if
+        if pending = "liveSession"
+            if m.screen <> invalid and m.screen.hasField("busy")
+                m.screen.busy = false
+            end if
+            if m.screen <> invalid and m.screen.hasField("errorText")
+                m.screen.errorText = message
             end if
             return
         end if
@@ -1709,6 +1758,7 @@ sub onHttpResponse()
         if channels.count() = 0
             m.screen.statusText = "No enabled channels on this server"
             m.screen.callFunc("focusDefault")
+            loadLiveTvRecordings()
         else
             m.screen.statusText = channels.count().toStr() + " channels"
             m.screen.callFunc("focusDefault")
@@ -1718,17 +1768,33 @@ sub onHttpResponse()
         programs = Prairie.LiveTv.programsFromResponse(response.data)
         m.livePrograms = programs
         m.screen.programs = programs
+        loadLiveTvRecordings()
+    else if pending = "liveRecordings"
+        recordings = Prairie.LiveTv.recordingsFromResponse(response.data)
+        m.liveRecordings = recordings
+        m.screen.recordings = recordings
+        m.screen.busy = false
     else if pending = "liveRecord"
         m.screen.statusText = "Recording scheduled"
         m.screen.errorText = ""
+        loadLiveTvRecordings()
+    else if pending = "liveCancelRecording"
+        m.screen.statusText = "Recording cancelled"
+        m.screen.errorText = ""
+        loadLiveTvRecordings()
     else if pending = "liveSession"
+        m.screen.busy = false
         start = response.data
         streamPath = Prairie.LiveTv.playableLiveUrl(start)
         if streamPath = invalid
-            m.screen.errorText = "Live TV session returned no stream URL"
+            m.screen.errorText = "Playback failed to start"
             return
         end if
-        resolved = Prairie.LiveTv.resolveLivePlaybackUrl(m.session.serverUrl, streamPath as string, m.session.accessToken)
+        profileId = invalid
+        if m.session <> invalid and m.session.profileId <> invalid
+            profileId = m.session.profileId
+        end if
+        resolved = Prairie.LiveTv.resolveLivePlaybackUrl(m.session.serverUrl, streamPath as string, m.session.accessToken, profileId)
         if resolved.ok <> true
             m.screen.errorText = resolved.message
             return
@@ -1743,7 +1809,7 @@ sub onHttpResponse()
         m.playbackSession = invalid
         screen = CreateObject("roSGNode", "PlayerScreen")
         screen.titleText = title
-        screen.streamFormat = "hls"
+        screen.streamFormat = Prairie.LiveTv.liveStreamFormat(start)
         screen.startPosition = 0
         screen.observeField("exitRequested", "onPlayerExit")
         m.screenHost.appendChild(screen)

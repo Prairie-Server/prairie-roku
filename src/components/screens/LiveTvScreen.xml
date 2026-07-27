@@ -3,12 +3,16 @@
     <interface>
         <field id="channels" type="array" />
         <field id="programs" type="array" />
+        <field id="recordings" type="array" />
+        <field id="activeSection" type="string" value="channels" />
         <field id="busy" type="bool" value="false" />
         <field id="errorText" type="string" value="" />
         <field id="statusText" type="string" value="" />
         <field id="selectedChannel" type="assocarray" />
         <field id="recordProgram" type="assocarray" />
+        <field id="selectedRecording" type="assocarray" />
         <field id="recordRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="cancelRecordingRequested" type="boolean" value="false" alwaysNotify="true" />
         <field id="openSettings" type="boolean" value="false" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
@@ -46,32 +50,98 @@
             color="0xE07070FF"
             font="font:SmallSystemFont"
         />
-        <Label
-            id="nowLabel"
-            text=""
-            translation="[80, 310]"
-            width="1600"
-            color="0xF3EFE6FF"
-            font="font:MediumSystemFont"
-        />
-        <Label
-            id="nextLabel"
-            text=""
-            translation="[80, 360]"
-            width="1600"
-            color="0x9AA3B2FF"
-            font="font:SmallSystemFont"
-        />
-        <RowList
-            id="channelList"
-            translation="[40, 430]"
-            itemSize="[1840, 140]"
-            rowItemSize="[[420, 120]]"
-            numRows="3"
-            itemSpacing="[20, 20]"
-            rowItemSpacing="[[20, 0]]"
-            showRowLabel="[false]"
-            drawFocusFeedback="true"
-        />
+        <Group id="sectionBar" translation="[80, 300]">
+            <Label
+                id="sectionChannels"
+                text="Channels"
+                color="0xF3EFE6FF"
+                font="font:MediumBoldSystemFont"
+            />
+            <Label
+                id="sectionGuide"
+                text="Guide"
+                translation="[220, 0]"
+                color="0x9AA3B2FF"
+                font="font:MediumSystemFont"
+            />
+            <Label
+                id="sectionRecordings"
+                text="Recordings"
+                translation="[380, 0]"
+                color="0x9AA3B2FF"
+                font="font:MediumSystemFont"
+            />
+        </Group>
+        <Group id="channelsPanel">
+            <Label
+                id="nowLabel"
+                text=""
+                translation="[80, 360]"
+                width="1600"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+            <Label
+                id="nextLabel"
+                text=""
+                translation="[80, 410]"
+                width="1600"
+                color="0x9AA3B2FF"
+                font="font:SmallSystemFont"
+            />
+            <RowList
+                id="channelList"
+                translation="[40, 480]"
+                itemSize="[1840, 140]"
+                rowItemSize="[[420, 120]]"
+                numRows="3"
+                itemSpacing="[20, 20]"
+                rowItemSpacing="[[20, 0]]"
+                showRowLabel="[false]"
+                drawFocusFeedback="true"
+            />
+        </Group>
+        <Group id="guidePanel" visible="false">
+            <Label
+                id="guideHeader"
+                text=""
+                translation="[80, 360]"
+                width="1600"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+            <RowList
+                id="guideList"
+                translation="[40, 420]"
+                itemSize="[1840, 560]"
+                rowItemSize="[[1760, 72]]"
+                numRows="7"
+                itemSpacing="[0, 8]"
+                rowItemSpacing="[[0, 0]]"
+                showRowLabel="[false]"
+                drawFocusFeedback="true"
+            />
+        </Group>
+        <Group id="recordingsPanel" visible="false">
+            <Label
+                id="recordingsHeader"
+                text="My Recordings"
+                translation="[80, 360]"
+                width="1600"
+                color="0xF3EFE6FF"
+                font="font:MediumSystemFont"
+            />
+            <RowList
+                id="recordingsList"
+                translation="[40, 420]"
+                itemSize="[1840, 560]"
+                rowItemSize="[[1760, 72]]"
+                numRows="7"
+                itemSpacing="[0, 8]"
+                rowItemSpacing="[[0, 0]]"
+                showRowLabel="[false]"
+                drawFocusFeedback="true"
+            />
+        </Group>
     </children>
 </component>

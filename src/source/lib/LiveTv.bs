@@ -8,7 +8,14 @@ namespace Prairie.LiveTv
 
     function guidePath(channelIds as object) as string
         joined = channelIds.join(",")
-        return "/api/v1/livetv/guide?channels=" + joined.encodeUriComponent()
+        path = "/api/v1/livetv/guide?channels=" + joined.encodeUriComponent()
+        nowSec = nowSeconds()
+        startIso = secondsToIso(nowSec)
+        endIso = secondsToIso(nowSec + 6 * 3600)
+        if startIso.len() > 0 and endIso.len() > 0
+            path = path + "&start=" + startIso.encodeUriComponent() + "&end=" + endIso.encodeUriComponent()
+        end if
+        return path
     end function
 
     function channelSessionPath(channelId as string) as string
@@ -21,6 +28,10 @@ namespace Prairie.LiveTv
 
     function recordingsPath() as string
         return "/api/v1/livetv/recordings"
+    end function
+
+    function recordingPath(recordingId as string) as string
+        return "/api/v1/livetv/recordings/" + recordingId.encodeUriComponent()
     end function
 
     ' Returns JSON with only program_id, or invalid when the id is missing.
@@ -84,6 +95,22 @@ namespace Prairie.LiveTv
         return []
     end function
 
+    function recordingsFromResponse(data as dynamic) as object
+        recordings = []
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return recordings
+        end if
+        if type(data.recordings) <> "roArray"
+            return recordings
+        end if
+        for each recording in data.recordings
+            if type(recording) = "roAssociativeArray"
+                recordings.push(recording)
+            end if
+        end for
+        return recordings
+    end function
+
     function channelDisplayLabel(channel as object) as string
         if channel.name <> invalid and (channel.name as string).trim().len() > 0
             return (channel.name as string).trim()
@@ -104,11 +131,25 @@ namespace Prairie.LiveTv
         if start = invalid
             return invalid
         end if
+        transport = ""
+        if start.transport <> invalid
+            transport = LCase((start.transport as string).trim())
+        end if
         url = ""
-        if start.hls_url <> invalid and (start.hls_url as string).trim().len() > 0
-            url = (start.hls_url as string).trim()
-        else if start.stream_url <> invalid and (start.stream_url as string).trim().len() > 0
-            url = (start.stream_url as string).trim()
+        if transport = "hls"
+            if start.hls_url <> invalid
+                url = (start.hls_url as string).trim()
+            end if
+        else if transport = "mpegts"
+            if start.stream_url <> invalid
+                url = (start.stream_url as string).trim()
+            end if
+        else
+            if start.hls_url <> invalid and (start.hls_url as string).trim().len() > 0
+                url = (start.hls_url as string).trim()
+            else if start.stream_url <> invalid and (start.stream_url as string).trim().len() > 0
+                url = (start.stream_url as string).trim()
+            end if
         end if
         if url.len() = 0
             return invalid
@@ -116,12 +157,40 @@ namespace Prairie.LiveTv
         return url
     end function
 
-    function resolveLivePlaybackUrl(serverUrl as string, streamPath as string, token as dynamic) as object
+    function isHlsSession(start as object) as boolean
+        if start = invalid
+            return false
+        end if
+        if start.transport <> invalid
+            return LCase((start.transport as string).trim()) = "hls"
+        end if
+        url = playableLiveUrl(start)
+        if url = invalid
+            return false
+        end if
+        path = LCase((url as string).trim())
+        if path.instr(".m3u8") >= 0
+            return true
+        end if
+        if path.instr("/live-hls/") >= 0
+            return true
+        end if
+        return false
+    end function
+
+    function liveStreamFormat(start as object) as string
+        if isHlsSession(start)
+            return "hls"
+        end if
+        return "mpegts"
+    end function
+
+    function resolveLivePlaybackUrl(serverUrl as string, streamPath as string, token as dynamic, profileId as dynamic) as object
         trimmed = streamPath.trim()
         if trimmed.len() = 0
             return {
                 ok: false,
-                message: "Live TV session returned no stream URL"
+                message: "Playback failed to start"
             }
         end if
         isAbsolute = trimmed.left(7) = "http://" or trimmed.left(8) = "https://"
@@ -133,7 +202,7 @@ namespace Prairie.LiveTv
         end if
         return {
             ok: true,
-            url: Prairie.Url.buildStreamUrl(serverUrl, trimmed, token)
+            url: Prairie.Url.buildStreamUrl(serverUrl, trimmed, token, profileId)
         }
     end function
 
@@ -144,6 +213,15 @@ namespace Prairie.LiveTv
         dt = CreateObject("roDateTime")
         dt.FromISO8601String(iso)
         return dt.AsSeconds()
+    end function
+
+    function secondsToIso(seconds as integer) as string
+        if seconds < 0
+            return ""
+        end if
+        dt = CreateObject("roDateTime")
+        dt.FromSeconds(seconds)
+        return dt.ToISOString()
     end function
 
     function nowSeconds() as integer
@@ -162,6 +240,21 @@ namespace Prairie.LiveTv
                 if (program.channel_id as string) = channelId
                     matched.push(program)
                 end if
+            end if
+        end for
+        return matched
+    end function
+
+    ' Active + upcoming only — omit programmes that have already ended.
+    function activeOrUpcomingProgramsForChannel(programs as object, channelId as string, nowSec = -1 as integer) as object
+        if nowSec < 0
+            nowSec = nowSeconds()
+        end if
+        matched = []
+        for each program in programsForChannel(programs, channelId)
+            stopSec = isoToSeconds(program.stop)
+            if stopSec > nowSec
+                matched.push(program)
             end if
         end for
         return matched

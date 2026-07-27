@@ -9,9 +9,19 @@ sub init()
     m.title = m.top.findNode("title")
     m.statusLabel = m.top.findNode("statusLabel")
     m.errorLabel = m.top.findNode("errorLabel")
+    m.sectionChannels = m.top.findNode("sectionChannels")
+    m.sectionGuide = m.top.findNode("sectionGuide")
+    m.sectionRecordings = m.top.findNode("sectionRecordings")
+    m.channelsPanel = m.top.findNode("channelsPanel")
+    m.guidePanel = m.top.findNode("guidePanel")
+    m.recordingsPanel = m.top.findNode("recordingsPanel")
     m.nowLabel = m.top.findNode("nowLabel")
     m.nextLabel = m.top.findNode("nextLabel")
+    m.guideHeader = m.top.findNode("guideHeader")
+    m.recordingsHeader = m.top.findNode("recordingsHeader")
     m.channelList = m.top.findNode("channelList")
+    m.guideList = m.top.findNode("guideList")
+    m.recordingsList = m.top.findNode("recordingsList")
 
     m.eyebrow.color = colors.amber
     m.title.color = colors.ink
@@ -19,16 +29,26 @@ sub init()
     m.errorLabel.color = colors.danger
     m.nowLabel.color = colors.ink
     m.nextLabel.color = colors.muted
+    m.guideHeader.color = colors.ink
+    m.recordingsHeader.color = colors.ink
 
     m.top.observeField("channels", "onChannels")
     m.top.observeField("programs", "onPrograms")
+    m.top.observeField("recordings", "onRecordings")
+    m.top.observeField("activeSection", "onActiveSection")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("statusText", "onStatusText")
     m.top.observeField("busy", "onBusy")
     m.channelList.observeField("rowItemFocused", "onChannelFocused")
     m.channelList.observeField("rowItemSelected", "onChannelSelected")
+    m.guideList.observeField("rowItemSelected", "onGuideSelected")
+    m.recordingsList.observeField("rowItemFocused", "onRecordingFocused")
+    m.recordingsList.observeField("rowItemSelected", "onRecordingSelected")
+
     m.focusedChannel = invalid
+    m.focusedRecording = invalid
     m.baseStatusText = ""
+    paintSections(m.top.activeSection)
 end sub
 
 sub onErrorText()
@@ -42,8 +62,60 @@ end sub
 
 sub onBusy()
     if m.top.busy
-        m.statusLabel.text = "Loading channels…"
+        m.statusLabel.text = "Loading…"
     end if
+end sub
+
+sub onActiveSection()
+    paintSections(m.top.activeSection)
+    focusSectionDefault()
+end sub
+
+sub paintSections(section as string)
+    colors = Prairie.Theme.colors()
+    active = colors.ink
+    idle = colors.muted
+    m.sectionChannels.color = idle
+    m.sectionGuide.color = idle
+    m.sectionRecordings.color = idle
+    m.channelsPanel.visible = false
+    m.guidePanel.visible = false
+    m.recordingsPanel.visible = false
+    if section = "guide"
+        m.sectionGuide.color = active
+        m.guidePanel.visible = true
+    else if section = "recordings"
+        m.sectionRecordings.color = active
+        m.recordingsPanel.visible = true
+    else
+        m.sectionChannels.color = active
+        m.channelsPanel.visible = true
+    end if
+end sub
+
+sub focusSectionDefault()
+    section = m.top.activeSection
+    if section = "guide"
+        m.guideList.setFocus(true)
+    else if section = "recordings"
+        m.recordingsList.setFocus(true)
+    else
+        m.channelList.setFocus(true)
+    end if
+end sub
+
+sub cycleSection(direction as integer)
+    sections = ["channels", "guide", "recordings"]
+    current = m.top.activeSection
+    index = 0
+    for i = 0 to sections.count() - 1
+        if sections[i] = current
+            index = i
+            exit for
+        end if
+    end for
+    nextIndex = (index + direction + sections.count()) mod sections.count()
+    m.top.activeSection = sections[nextIndex]
 end sub
 
 sub onChannels()
@@ -77,21 +149,88 @@ sub onChannels()
     if channels <> invalid and channels.count() > 0
         m.focusedChannel = channels[0]
         updateGuideLabels(channels[0])
+        rebuildGuideList(channels[0])
     else
         m.nowLabel.text = ""
         m.nextLabel.text = ""
+        m.guideHeader.text = ""
+        m.guideList.content = CreateObject("roSGNode", "ContentNode")
     end if
 end sub
 
 sub onPrograms()
     if m.focusedChannel <> invalid
         updateGuideLabels(m.focusedChannel)
+        rebuildGuideList(m.focusedChannel)
     else
         channels = m.top.channels
         if channels <> invalid and channels.count() > 0
             updateGuideLabels(channels[0])
+            rebuildGuideList(channels[0])
         end if
     end if
+end sub
+
+sub onRecordings()
+    recordings = m.top.recordings
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    m.focusedRecording = invalid
+    if recordings <> invalid
+        for each recording in recordings
+            node = row.createChild("ContentNode")
+            title = "Recording"
+            if recording.title <> invalid and (recording.title as string).len() > 0
+                title = recording.title as string
+            end if
+            status = ""
+            if recording.status <> invalid
+                status = recording.status as string
+            end if
+            node.title = title
+            node.description = status
+            node.addFields({ recording: recording })
+        end for
+        if recordings.count() > 0
+            m.focusedRecording = recordings[0]
+        end if
+    end if
+    m.recordingsList.content = content
+    if recordings = invalid or recordings.count() = 0
+        m.recordingsHeader.text = "My Recordings · None scheduled"
+    else
+        m.recordingsHeader.text = "My Recordings · " + recordings.count().toStr()
+    end if
+end sub
+
+sub rebuildGuideList(channel as object)
+    if channel = invalid or channel.id = invalid
+        m.guideHeader.text = ""
+        m.guideList.content = CreateObject("roSGNode", "ContentNode")
+        return
+    end if
+    channelId = channel.id as string
+    label = Prairie.LiveTv.channelDisplayLabel(channel)
+    m.guideHeader.text = label + " · Upcoming"
+    nowSec = Prairie.LiveTv.nowSeconds()
+    programs = Prairie.LiveTv.activeOrUpcomingProgramsForChannel(m.top.programs, channelId, nowSec)
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    for each program in programs
+        node = row.createChild("ContentNode")
+        title = "Program"
+        if program.title <> invalid
+            title = program.title as string
+        end if
+        node.title = title
+        whenText = ""
+        if program.start <> invalid
+            whenText = (program.start as string).left(16).replace("T", " ")
+        end if
+        node.description = whenText
+        node.addFields({ program: program, channel: channel })
+    end for
+    m.guideList.content = content
 end sub
 
 sub updateGuideLabels(channel as object)
@@ -118,6 +257,10 @@ sub updateGuideLabels(channel as object)
 end sub
 
 sub refreshStatusHint(hasCurrentProgram = invalid as dynamic)
+    if m.top.activeSection <> "channels"
+        m.statusLabel.text = m.baseStatusText
+        return
+    end if
     showHint = false
     if hasCurrentProgram <> invalid
         showHint = hasCurrentProgram = true
@@ -135,7 +278,7 @@ sub refreshStatusHint(hasCurrentProgram = invalid as dynamic)
 end sub
 
 sub focusDefault()
-    m.channelList.setFocus(true)
+    focusSectionDefault()
 end sub
 
 sub onChannelFocused()
@@ -153,6 +296,7 @@ sub onChannelFocused()
     end if
     m.focusedChannel = item.channel
     updateGuideLabels(item.channel)
+    rebuildGuideList(item.channel)
 end sub
 
 sub onChannelSelected()
@@ -171,6 +315,54 @@ sub onChannelSelected()
     m.top.selectedChannel = item.channel
 end sub
 
+sub onGuideSelected()
+    selection = m.guideList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.guideList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.channel = invalid
+        return
+    end if
+    m.top.selectedChannel = item.channel
+end sub
+
+sub onRecordingFocused()
+    selection = m.recordingsList.rowItemFocused
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.recordingsList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.recording = invalid
+        return
+    end if
+    m.focusedRecording = item.recording
+end sub
+
+sub onRecordingSelected()
+    selection = m.recordingsList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.recordingsList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.recording = invalid
+        return
+    end if
+    m.focusedRecording = item.recording
+end sub
+
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press
         return false
@@ -181,7 +373,27 @@ function onKeyEvent(key as string, press as boolean) as boolean
     else if key = "options"
         m.top.openSettings = true
         return true
+    else if key = "info"
+        cycleSection(1)
+        return true
     else if key = "replay"
+        section = m.top.activeSection
+        if section = "recordings"
+            recording = m.focusedRecording
+            if recording = invalid or recording.id = invalid
+                return false
+            end if
+            status = ""
+            if recording.status <> invalid
+                status = LCase((recording.status as string).trim())
+            end if
+            if status = "scheduled" or status = "recording"
+                m.top.selectedRecording = recording
+                m.top.cancelRecordingRequested = true
+                return true
+            end if
+            return false
+        end if
         channel = m.focusedChannel
         if channel = invalid or channel.id = invalid
             return false

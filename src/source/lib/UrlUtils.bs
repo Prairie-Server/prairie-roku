@@ -42,8 +42,9 @@ namespace Prairie.Url
         return LCase(serverParts.scheme) = LCase(targetParts.scheme) and LCase(serverParts.host) = LCase(targetParts.host)
     end function
 
-    ' Attach a bearer token query only for same-origin Prairie stream URLs.
-    function buildStreamUrl(serverUrl as string, streamPath as string, token as dynamic) as string
+    ' Attach auth query params for same-origin Prairie stream URLs. Native Roku
+    ' Video cannot send X-Profile-Id; callers pass profile_id alongside token.
+    function buildStreamUrl(serverUrl as string, streamPath as string, token as dynamic, profileId as dynamic) as string
         base = streamPath.trim()
         if base.left(7) <> "http://" and base.left(8) <> "https://"
             base = joinUrl(serverUrl, base)
@@ -53,7 +54,11 @@ namespace Prairie.Url
         if token <> invalid
             tokenText = (token as string).trim()
         end if
-        if tokenText.len() = 0 or not isSameServerOrigin(serverUrl, base)
+        profileText = ""
+        if profileId <> invalid
+            profileText = (profileId as string).trim()
+        end if
+        if (tokenText.len() = 0 and profileText.len() = 0) or not isSameServerOrigin(serverUrl, base)
             return base
         end if
 
@@ -61,7 +66,17 @@ namespace Prairie.Url
         if base.instr("?") >= 0
             separator = "&"
         end if
-        return base + separator + "token=" + tokenText
+        query = ""
+        if profileText.len() > 0
+            query = "profile_id=" + profileText.encodeUriComponent()
+        end if
+        if tokenText.len() > 0
+            if query.len() > 0
+                query = query + "&"
+            end if
+            query = query + "token=" + tokenText
+        end if
+        return base + separator + query
     end function
 
     function parseOrigin(url as string) as dynamic

@@ -69,7 +69,7 @@ namespace Prairie.Playback
         if playback <> invalid and playback.stream_url <> invalid
             stream = playback.stream_url as string
         end if
-        return Prairie.Url.buildStreamUrl(serverUrl, stream, accessToken)
+        return Prairie.Url.buildStreamUrl(serverUrl, stream, accessToken, invalid)
     end function
 
     function detectStreamFormat(playback as object) as string

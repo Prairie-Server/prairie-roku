@@ -58,29 +58,39 @@ namespace tests
         @describe("buildStreamUrl")
         @it("attaches token for same-origin relative paths")
         sub _()
-            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "tok")
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "tok", invalid)
             m.assertEqual(url, "https://prairie.example.com/stream?token=tok")
         end sub
 
         @it("uses ampersand when query already present")
         sub _()
-            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream?x=1", "tok")
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream?x=1", "tok", invalid)
             m.assertEqual(url, "https://prairie.example.com/stream?x=1&token=tok")
         end sub
 
         @it("does not attach token for cross-origin URLs")
         sub _()
-            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "https://cdn.example.net/a.m3u8", "tok")
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "https://cdn.example.net/a.m3u8", "tok", invalid)
             m.assertEqual(url, "https://cdn.example.net/a.m3u8")
         end sub
 
         @it("skips empty tokens")
         sub _()
-            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "")
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "", invalid)
             m.assertEqual(url, "https://prairie.example.com/stream")
-            m.assertEqual(Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", invalid), "https://prairie.example.com/stream")
+            m.assertEqual(Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", invalid, invalid), "https://prairie.example.com/stream")
             m.assertInvalid(Prairie.Url.parseOrigin("ftp://prairie.example.com"))
             m.assertInvalid(Prairie.Url.parseOrigin("https://"))
+        end sub
+
+        @it("attaches profile_id alongside token for same-origin paths")
+        sub _()
+            url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/live.m3u8", "tok", "p1")
+            m.assertTrue(url.instr("profile_id=p1") >= 0)
+            m.assertTrue(url.instr("token=tok") >= 0)
+            profileOnly = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/live.m3u8", invalid, "p1")
+            m.assertEqual(profileOnly, "https://prairie.example.com/live.m3u8?profile_id=p1")
+            m.assertEqual(Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream?x=1", "tok", "p1"), "https://prairie.example.com/stream?x=1&profile_id=p1&token=tok")
         end sub
 
     end class
