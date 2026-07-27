@@ -72,7 +72,7 @@
         <Rectangle id="scanBg" translation="[120, 700]" width="280" height="64" color="0xE0A84AFF" focusable="true">
             <Label
                 id="scanLabel"
-                text="Scan LAN"
+                text="📡 Scan LAN"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -84,7 +84,7 @@
         <Rectangle id="addBg" translation="[420, 700]" width="280" height="64" color="0x222B38FF" focusable="true">
             <Label
                 id="addLabel"
-                text="Add manually"
+                text="+ Add manually"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -96,7 +96,7 @@
         <Rectangle id="removeBg" translation="[720, 700]" width="280" height="64" color="0x222B38FF" focusable="true">
             <Label
                 id="removeLabel"
-                text="Remove"
+                text="− Remove"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -108,7 +108,7 @@
         <Rectangle id="backBg" translation="[1600, 100]" width="180" height="56" color="0x222B38FF" focusable="true">
             <Label
                 id="backLabel"
-                text="Back"
+                text="← Back"
                 width="180"
                 height="56"
                 horizAlign="center"

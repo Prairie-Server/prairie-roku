@@ -58,11 +58,11 @@
             color="0xE07070FF"
             font="font:SmallSystemFont"
         />
-        <Rectangle id="playBg" translation="[80, 620]" width="240" height="64" color="0xE0A84AFF" focusable="true" visible="false">
+        <Rectangle id="playBg" translation="[80, 620]" width="280" height="64" color="0xE0A84AFF" focusable="true" visible="false">
             <Label
                 id="playLabel"
-                text="Play"
-                width="240"
+                text="▶ Play"
+                width="280"
                 height="64"
                 horizAlign="center"
                 vertAlign="center"

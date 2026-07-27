@@ -36,11 +36,11 @@
             maxTextLength="120"
             showKeyboardOnFocus="true"
         />
-        <Rectangle id="searchBg" translation="[820, 220]" width="220" height="60" color="0xE0A84AFF" focusable="true">
+        <Rectangle id="searchBg" translation="[820, 220]" width="260" height="60" color="0xE0A84AFF" focusable="true">
             <Label
                 id="searchLabel"
-                text="Search"
-                width="220"
+                text="🔍 Search"
+                width="260"
                 height="60"
                 horizAlign="center"
                 vertAlign="center"

@@ -77,7 +77,7 @@
             <Rectangle id="pinContinueBg" translation="[0, 170]" width="240" height="64" color="0xE0A84AFF" focusable="true">
                 <Label
                     id="pinContinueLabel"
-                    text="Continue"
+                    text="→ Continue"
                     width="240"
                     height="64"
                     horizAlign="center"
@@ -89,7 +89,7 @@
             <Rectangle id="pinBackBg" translation="[280, 170]" width="180" height="64" color="0x222B38FF" focusable="true">
                 <Label
                     id="pinBackLabel"
-                    text="Back"
+                    text="← Back"
                     width="180"
                     height="64"
                     horizAlign="center"
@@ -103,7 +103,7 @@
         <Rectangle id="backBg" translation="[1600, 120]" width="180" height="56" color="0x222B38FF" focusable="true">
             <Label
                 id="backLabel"
-                text="Back"
+                text="← Back"
                 width="180"
                 height="56"
                 horizAlign="center"

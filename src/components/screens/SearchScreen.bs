@@ -37,9 +37,9 @@ end sub
 
 sub onBusy()
     if m.top.busy
-        m.searchLabel.text = "Searching…"
+        m.searchLabel.text = "🔍 Searching…"
     else
-        m.searchLabel.text = "Search"
+        m.searchLabel.text = "🔍 Search"
     end if
 end sub
 
