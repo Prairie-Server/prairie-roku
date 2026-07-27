@@ -19,6 +19,16 @@ sub init()
     m.saveLabel = m.top.findNode("saveLabel")
     m.serversBg = m.top.findNode("serversBg")
     m.savedLabel = m.top.findNode("savedLabel")
+    m.aboutLabel = m.top.findNode("aboutLabel")
+    m.versionKey = m.top.findNode("versionKey")
+    m.versionValue = m.top.findNode("versionValue")
+    m.updateKey = m.top.findNode("updateKey")
+    m.updateValue = m.top.findNode("updateValue")
+    m.latestKey = m.top.findNode("latestKey")
+    m.latestValue = m.top.findNode("latestValue")
+    m.changelogBg = m.top.findNode("changelogBg")
+    m.changelogLabel = m.top.findNode("changelogLabel")
+    m.changelogHint = m.top.findNode("changelogHint")
 
     m.colors = colors
     m.eyebrow.color = colors.amber
@@ -30,15 +40,47 @@ sub init()
     m.saveLabel.color = colors.bg
     m.serversBg.color = colors.bgSoft
     m.savedLabel.color = colors.muted
+    m.aboutLabel.color = colors.amber
+    m.versionKey.color = colors.muted
+    m.versionValue.color = colors.ink
+    m.updateKey.color = colors.muted
+    m.updateValue.color = colors.ink
+    m.latestKey.color = colors.muted
+    m.latestValue.color = colors.ink
+    m.changelogBg.color = colors.bgSoft
+    m.changelogLabel.color = colors.ink
+    m.changelogHint.color = colors.muted
 
     m.top.observeField("forceDirectPlay", "refreshMethodChrome")
     m.top.observeField("forceTranscode", "refreshMethodChrome")
     m.top.observeField("preferredSubtitleLanguage", "onPreferredLang")
+    m.top.observeField("appVersion", "onAboutFields")
+    m.top.observeField("updateLabel", "onAboutFields")
+    m.top.observeField("latestVersionLabel", "onAboutFields")
+    m.top.observeField("changelogUrl", "onAboutFields")
     refreshMethodChrome()
+    onAboutFields()
 end sub
 
 sub onPreferredLang()
     m.subtitleInput.text = m.top.preferredSubtitleLanguage
+end sub
+
+sub onAboutFields()
+    m.versionValue.text = m.top.appVersion
+    m.updateValue.text = m.top.updateLabel
+    latest = m.top.latestVersionLabel
+    if latest.len() = 0
+        m.latestValue.text = "—"
+    else
+        m.latestValue.text = latest
+    end if
+    url = m.top.changelogUrl
+    if url.len() = 0
+        m.changelogHint.text = ""
+    else
+        m.changelogHint.text = "OK shows release URL (no browser on Roku)"
+    end if
 end sub
 
 sub paintOption(bg as object, label as object, active as boolean)
@@ -72,6 +114,42 @@ sub saveSettings()
     m.savedLabel.text = "Saved"
 end sub
 
+function tryCopyToClipboard(text as string) as boolean
+    ' roClipboard is firmware-optional and not in the BrighterScript component catalog.
+    componentName = "ro" + "Clipboard"
+    clipboard = CreateObject(componentName)
+    if clipboard = invalid
+        return false
+    end if
+    clipboard.SetClipboardText(text)
+    return true
+end function
+
+sub showChangelogUrl()
+    url = m.top.changelogUrl
+    if url.len() = 0
+        return
+    end if
+    message = url
+    if tryCopyToClipboard(url)
+        message = url + chr(10) + chr(10) + "Copied to clipboard."
+    end if
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = "Changelog"
+    dialog.message = message
+    dialog.buttons = ["OK"]
+    dialog.observeField("buttonSelected", "onChangelogDialogButton")
+    m.changelogDialog = dialog
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onChangelogDialogButton()
+    if m.changelogDialog <> invalid
+        m.changelogDialog.close = true
+        m.changelogDialog = invalid
+    end if
+end sub
+
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press
         return false
@@ -98,6 +176,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         else if m.serversBg.isInFocusChain()
             m.top.switchServerRequested = true
+            return true
+        else if m.changelogBg.isInFocusChain()
+            showChangelogUrl()
             return true
         end if
     end if
@@ -130,9 +211,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.subtitleInput.isInFocusChain()
             m.saveBg.setFocus(true)
             return true
+        else if m.saveBg.isInFocusChain() or m.serversBg.isInFocusChain()
+            m.changelogBg.setFocus(true)
+            return true
         end if
     else if key = "up"
-        if m.saveBg.isInFocusChain() or m.serversBg.isInFocusChain()
+        if m.changelogBg.isInFocusChain()
+            m.saveBg.setFocus(true)
+            return true
+        else if m.saveBg.isInFocusChain() or m.serversBg.isInFocusChain()
             m.subtitleInput.setFocus(true)
             return true
         else if m.subtitleInput.isInFocusChain()

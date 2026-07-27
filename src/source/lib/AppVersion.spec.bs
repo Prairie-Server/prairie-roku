@@ -1,0 +1,63 @@
+namespace tests
+    @suite("Prairie.AppVersion")
+    class AppVersionSuite extends rooibos.BaseTestSuite
+
+        @describe("parse")
+        @it("accepts v prefix and build metadata")
+        sub _()
+            v = Prairie.AppVersion.parse("v1.4.0")
+            m.assertEqual(v.major, 1)
+            m.assertEqual(v.minor, 4)
+            m.assertEqual(v.patch, 0)
+            m.assertFalse(v.prerelease)
+
+            build = Prairie.AppVersion.parse("1.4.0+2")
+            m.assertEqual(build.major, 1)
+            m.assertEqual(build.minor, 4)
+            m.assertEqual(build.patch, 0)
+            m.assertFalse(build.prerelease)
+
+            plain = Prairie.AppVersion.parse("0.3.11")
+            m.assertEqual(plain.major, 0)
+            m.assertEqual(plain.minor, 3)
+            m.assertEqual(plain.patch, 11)
+        end sub
+
+        @it("marks prerelease and defaults missing patch")
+        sub _()
+            version = Prairie.AppVersion.parse("v1.4.0-rc.1")
+            m.assertEqual(version.major, 1)
+            m.assertEqual(version.minor, 4)
+            m.assertEqual(version.patch, 0)
+            m.assertTrue(version.prerelease)
+
+            twoPart = Prairie.AppVersion.parse("2.1")
+            m.assertEqual(twoPart.major, 2)
+            m.assertEqual(twoPart.minor, 1)
+            m.assertEqual(twoPart.patch, 0)
+        end sub
+
+        @it("rejects blank and unparseable input")
+        sub _()
+            m.assertEqual(Prairie.AppVersion.parse(invalid), invalid)
+            m.assertEqual(Prairie.AppVersion.parse(""), invalid)
+            m.assertEqual(Prairie.AppVersion.parse("   "), invalid)
+            m.assertEqual(Prairie.AppVersion.parse("1"), invalid)
+            m.assertEqual(Prairie.AppVersion.parse("not-a-version"), invalid)
+            m.assertEqual(Prairie.AppVersion.parse("a.b.c"), invalid)
+        end sub
+
+        @describe("compare and format")
+        @it("orders core then prerelease")
+        sub _()
+            newer = Prairie.AppVersion.parse("1.4.1")
+            older = Prairie.AppVersion.parse("1.4.0")
+            pre = Prairie.AppVersion.parse("1.4.0-rc.1")
+            m.assertTrue(Prairie.AppVersion.compare(newer, older) > 0)
+            m.assertTrue(Prairie.AppVersion.compare(older, pre) > 0)
+            m.assertEqual(Prairie.AppVersion.compare(older, older), 0)
+            m.assertEqual(Prairie.AppVersion.format(older), "1.4.0")
+        end sub
+
+    end class
+end namespace

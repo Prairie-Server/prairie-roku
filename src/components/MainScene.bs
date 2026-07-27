@@ -15,6 +15,7 @@ import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
 import "pkg:/source/lib/ServerRegistry.bs"
 import "pkg:/source/lib/Discover.bs"
+import "pkg:/source/lib/AppUpdate.bs"
 
 sub init()
     m.top.backgroundURI = ""
@@ -287,16 +288,83 @@ sub showSettings()
     clearScreen()
     m.route = "settings"
     settings = Prairie.PlaybackSettings.load(m.store)
+    appInfo = CreateObject("roAppInfo")
+    appVersion = ""
+    if appInfo <> invalid
+        appVersion = appInfo.GetVersion()
+    end if
+    m.appVersionCurrent = appVersion
     screen = CreateObject("roSGNode", "SettingsScreen")
     screen.forceDirectPlay = settings.forceDirectPlay
     screen.forceTranscode = settings.forceTranscode
     screen.preferredSubtitleLanguage = settings.preferredSubtitleLanguage
+    screen.appVersion = appVersion
+    checking = Prairie.AppUpdate.checkingStatus()
+    paintAppUpdateStatus(screen, checking)
     screen.observeField("saveRequested", "onSettingsSave")
     screen.observeField("switchServerRequested", "onSettingsSwitchServer")
     screen.observeField("backRequested", "onSettingsBack")
     m.screenHost.appendChild(screen)
     m.screen = screen
     screen.callFunc("focusDefault")
+    startAppUpdateCheck()
+end sub
+
+sub startAppUpdateCheck()
+    m.pending = "appUpdate"
+    m.httpTask.request = Prairie.AppUpdate.buildLatestReleaseRequest()
+    m.httpTask.control = "RUN"
+end sub
+
+sub paintAppUpdateStatus(screen as object, status as object)
+    if screen = invalid or not screen.hasField("updateLabel")
+        return
+    end if
+    screen.updateLabel = status.label
+    if status.latestVersion <> invalid
+        screen.latestVersionLabel = status.latestVersion as string
+    else
+        screen.latestVersionLabel = ""
+    end if
+    if status.changelogUrl <> invalid
+        screen.changelogUrl = status.changelogUrl as string
+    else
+        screen.changelogUrl = ""
+    end if
+end sub
+
+sub applyAppUpdateResponse(response as object)
+    if m.route <> "settings" or m.screen = invalid
+        return
+    end if
+    current = ""
+    if m.appVersionCurrent <> invalid
+        current = m.appVersionCurrent as string
+    end if
+    statusCode = 0
+    tag = invalid
+    htmlUrl = invalid
+    if response.ok = true
+        statusCode = 200
+        if response.status <> invalid
+            statusCode = response.status as integer
+        end if
+        data = response.data
+        if data <> invalid and type(data) = "roAssociativeArray"
+            if data.tag_name <> invalid
+                tag = data.tag_name
+            else if data.name <> invalid
+                tag = data.name
+            end if
+            if data.html_url <> invalid
+                htmlUrl = data.html_url
+            end if
+        end if
+    else if response.error <> invalid and response.error.status <> invalid
+        statusCode = response.error.status as integer
+    end if
+    status = Prairie.AppUpdate.resolveStatus(current, tag, htmlUrl, statusCode)
+    paintAppUpdateStatus(m.screen, status)
 end sub
 
 sub onSettingsSwitchServer()
@@ -1173,6 +1241,11 @@ sub onHttpResponse()
             end if
         end if
         probeNextDiscoverCandidate()
+        return
+    end if
+
+    if pending = "appUpdate"
+        applyAppUpdateResponse(response)
         return
     end if
 

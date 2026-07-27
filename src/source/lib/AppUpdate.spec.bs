@@ -1,0 +1,79 @@
+namespace tests
+    @suite("Prairie.AppUpdate")
+    class AppUpdateSuite extends rooibos.BaseTestSuite
+
+        @describe("constants and request")
+        @it("builds an unauthenticated GitHub latest-release request")
+        sub _()
+            m.assertEqual(Prairie.AppUpdate.defaultReleasesLatestUrl(), "https://api.github.com/repos/Prairie-Server/prairie-roku/releases/latest")
+            m.assertEqual(Prairie.AppUpdate.defaultChangelogUrl(), "https://github.com/Prairie-Server/prairie-roku/releases")
+            m.assertEqual(Prairie.AppUpdate.defaultTimeoutMs(), 8000)
+
+            req = Prairie.AppUpdate.buildLatestReleaseRequest()
+            m.assertEqual(req.url, Prairie.AppUpdate.defaultReleasesLatestUrl())
+            m.assertEqual(req.method, "GET")
+            m.assertEqual(req.timeoutMs, 8000)
+            m.assertEqual(req.headers["Accept"], "application/vnd.github+json")
+            m.assertEqual(req.headers["User-Agent"], "Prairie-Roku")
+            m.assertEqual(req.headers["X-GitHub-Api-Version"], "2022-11-28")
+            m.assertFalse(req.headers.doesExist("Authorization"))
+            m.assertFalse(req.headers.doesExist("X-Profile-Id"))
+            m.assertFalse(req.headers.doesExist("X-Profile-Token"))
+        end sub
+
+        @describe("resolveStatus")
+        @it("reports update available when latest is newer")
+        sub _()
+            status = Prairie.AppUpdate.resolveStatus("0.3.11", "v1.4.0", "https://example.com/r", 200)
+            m.assertEqual(status.kind, "updateAvailable")
+            m.assertEqual(status.label, "Update available")
+            m.assertEqual(status.latestVersion, "1.4.0")
+            m.assertEqual(status.changelogUrl, "https://example.com/r")
+        end sub
+
+        @it("treats equal or older latest as up to date")
+        sub _()
+            same = Prairie.AppUpdate.resolveStatus("1.4.0", "v1.4.0", "https://example.com/r", 200)
+            m.assertEqual(same.kind, "upToDate")
+            m.assertEqual(same.label, "Up to date")
+            m.assertEqual(same.latestVersion, "1.4.0")
+            m.assertEqual(same.changelogUrl, "https://example.com/r")
+
+            olderLatest = Prairie.AppUpdate.resolveStatus("1.5.0", "1.4.0", invalid, 200)
+            m.assertEqual(olderLatest.kind, "upToDate")
+            m.assertEqual(olderLatest.latestVersion, "1.4.0")
+            m.assertEqual(olderLatest.changelogUrl, Prairie.AppUpdate.defaultChangelogUrl())
+        end sub
+
+        @it("maps 404 to up to date with changelog fallback")
+        sub _()
+            status = Prairie.AppUpdate.resolveStatus("0.3.11", invalid, invalid, 404)
+            m.assertEqual(status.kind, "upToDate")
+            m.assertEqual(status.label, "Up to date")
+            m.assertEqual(status.latestVersion, "0.3.11")
+            m.assertEqual(status.changelogUrl, Prairie.AppUpdate.defaultChangelogUrl())
+        end sub
+
+        @it("maps non-success and bad tags to unavailable")
+        sub _()
+            fail = Prairie.AppUpdate.resolveStatus("1.0.0", invalid, invalid, 500)
+            m.assertEqual(fail.kind, "unavailable")
+            m.assertEqual(fail.label, "Couldn't check for updates")
+            m.assertEqual(fail.latestVersion, "")
+            m.assertEqual(fail.changelogUrl, Prairie.AppUpdate.defaultChangelogUrl())
+
+            badTag = Prairie.AppUpdate.resolveStatus("1.0.0", "not-a-version", invalid, 200)
+            m.assertEqual(badTag.kind, "unavailable")
+            m.assertEqual(badTag.changelogUrl, Prairie.AppUpdate.defaultChangelogUrl())
+
+            emptyTag = Prairie.AppUpdate.resolveStatus("1.0.0", "", "https://example.com/releases", 200)
+            m.assertEqual(emptyTag.kind, "unavailable")
+            m.assertEqual(emptyTag.changelogUrl, "https://example.com/releases")
+
+            checking = Prairie.AppUpdate.checkingStatus()
+            m.assertEqual(checking.kind, "checking")
+            m.assertEqual(checking.label, "Checking…")
+        end sub
+
+    end class
+end namespace
