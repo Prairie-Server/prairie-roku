@@ -57,6 +57,10 @@ namespace tests
             ' Priority scan must not hit Jellyfin-shaped public-info paths.
             m.assertTrue(joined.instr("/System/Info") < 0)
 
+            custom = Prairie.Discover.buildCandidates(["192.168.2.0/24"], false, 16, ["prairie.lan"])
+            joinedCustom = custom.join(",")
+            m.assertTrue(joinedCustom.instr("prairie.lan") >= 0)
+
             withBadExtra = Prairie.Discover.buildCandidates(["bad-cidr"], false, 1)
             m.assertTrue(withBadExtra.count() > 0)
         end sub

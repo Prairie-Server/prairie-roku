@@ -231,12 +231,21 @@ namespace Prairie.Discover
     '   2) local NIC /24 + common 192.168.0/1 + 10.0.0 (+ optional extras)
     '   3) deepScan=false → priority hosts on defaultPorts
     '      deepScan=true  → full /24 on deepScanPorts (:8080)
-    function buildCandidates(extraCidrs as object, deepScan = false as boolean, maxHostsPerCidr = 254 as integer) as object
+    function buildCandidates(extraCidrs as object, deepScan = false as boolean, maxHostsPerCidr = 254 as integer, baseHosts = invalid as object) as object
         out = []
         seen = {}
 
         hostnamePorts = defaultPorts()
-        for each host in ["prairie.local", "prairie"]
+        hostsToProbe = ["prairie.local", "prairie"]
+        if type(baseHosts) = "roArray"
+            for each host in baseHosts
+                if host <> invalid and (host as string).trim().len() > 0
+                    hostsToProbe.push(host as string)
+                end if
+            end for
+        end if
+
+        for each host in hostsToProbe
             urlsForHost(host, hostnamePorts, seen, out)
         end for
 
