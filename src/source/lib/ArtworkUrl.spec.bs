@@ -41,5 +41,16 @@ namespace tests
             m.assertEqual(Prairie.Artwork.pngSibling("art.webp#frag"), "art.png#frag")
         end sub
 
+        @describe("imageFormatsHeader")
+        @it("advertises webp,png or png without avif")
+        sub _()
+            header = Prairie.Artwork.imageFormatsHeader()
+            if Prairie.Artwork.supportsWebP()
+                m.assertEqual(header, "webp,png")
+            else
+                m.assertEqual(header, "png")
+            end if
+        end sub
+
     end class
 end namespace
