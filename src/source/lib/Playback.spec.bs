@@ -6,6 +6,7 @@ namespace tests
         @it("builds start/progress/audio payloads and paths")
         sub _()
             m.assertEqual(Prairie.Playback.startPath(), "/api/v1/playback/start")
+            m.assertEqual(Prairie.Playback.transcodeStartPath(), "/api/v1/playback/transcode/start")
             m.assertTrue(Prairie.Playback.progressPath("ab/c").instr("ab%2Fc") >= 0)
             m.assertTrue(Prairie.Playback.sessionPath("s1").instr("/api/v1/playback/s1") >= 0)
             body = ParseJson(Prairie.Playback.buildStartBody({
@@ -21,6 +22,24 @@ namespace tests
             progress = ParseJson(Prairie.Playback.buildProgressBody(12.5, true))
             m.assertEqual(progress.position, 12.5)
             m.assertTrue(progress.is_paused)
+            remux = ParseJson(Prairie.Playback.buildTranscodeStartBody({
+                sessionId: "s1",
+                seekSeconds: 12,
+                playMethod: "remux"
+            }))
+            m.assertEqual(remux.target_codec_video, "copy")
+            m.assertEqual(remux.target_codec_audio, "copy")
+            m.assertEqual(remux.target_bitrate_kbps, 0)
+            full = ParseJson(Prairie.Playback.buildTranscodeStartBody({
+                sessionId: "s1",
+                seekSeconds: 0,
+                playMethod: "transcode"
+            }))
+            m.assertEqual(full.target_codec_video, "h264")
+            m.assertEqual(full.target_resolution, "1080p")
+            m.assertTrue(Prairie.Playback.needsHlsBootstrap("remux"))
+            m.assertTrue(Prairie.Playback.needsHlsBootstrap("transcode"))
+            m.assertFalse(Prairie.Playback.needsHlsBootstrap("direct"))
         end sub
 
         @describe("stream helpers")
@@ -44,9 +63,77 @@ namespace tests
             }, "tok")
             m.assertTrue(url.instr("https://prairie.example.com/stream") = 0)
             m.assertTrue(url.instr("token=tok") >= 0)
+            manifestUrl = Prairie.Playback.resolveStreamUrl("https://prairie.example.com", {
+                stream_url: "/placeholder",
+                manifest_url: "/hls/master.m3u8"
+            }, "tok")
+            m.assertTrue(manifestUrl.instr("master.m3u8") >= 0)
             audio = ParseJson(Prairie.Playback.buildAudioBody(2, 15.0))
             m.assertEqual(audio.audio_track_index, 2)
             m.assertEqual(Prairie.Playback.audioPath("s/1").instr("s%2F1") >= 0, true)
+            applied = Prairie.Playback.applyTranscodeResponse({
+                session_id: "s1",
+                stream_url: "/placeholder",
+                play_method: "remux"
+            }, {
+                session_id: "s1",
+                manifest_url: "/hls/master.m3u8",
+                player_start_seconds: 12,
+                can_seek_anywhere: false
+            })
+            m.assertEqual(applied.stream_url, "/hls/master.m3u8")
+            m.assertEqual(applied.play_method, "remux")
+        end sub
+
+        @it("covers HLS bootstrap edges and transcode merge branches")
+        sub _()
+            m.assertFalse(Prairie.Playback.needsHlsBootstrap(invalid))
+            m.assertEqual(Prairie.Playback.applyTranscodeResponse(invalid, {}), invalid)
+            kept = Prairie.Playback.applyTranscodeResponse({ session_id: "keep" }, invalid)
+            m.assertEqual(kept.session_id, "keep")
+
+            seekable = Prairie.Playback.applyTranscodeResponse({
+                session_id: "s1",
+                stream_url: "/placeholder",
+                play_method: "remux",
+                playback_info: { container: "mkv" }
+            }, {
+                session_id: "s2",
+                manifest_url: "/hls/master.m3u8",
+                duration_seconds: 3600,
+                player_start_seconds: 5,
+                can_seek_anywhere: true
+            })
+            m.assertEqual(seekable.session_id, "s2")
+            m.assertEqual(seekable.play_method, "transcode")
+            m.assertEqual(seekable.duration_seconds, 3600)
+            m.assertEqual(seekable.playback_info.stream_type, "hls")
+            m.assertTrue(seekable.playback_info.can_seek_anywhere)
+            m.assertEqual(seekable.playback_info.container, "mkv")
+
+            m.assertEqual(Prairie.Playback.detectStreamFormat({
+                playback_info: { stream_type: "mpegts" }
+            }), "hls")
+            m.assertEqual(Prairie.Playback.detectStreamFormat({
+                manifest_url: "/vod/master.m3u8",
+                stream_url: "/ignored.ts"
+            }), "hls")
+            m.assertEqual(Prairie.Playback.detectStreamFormat({
+                stream_url: "/manifest.mpd"
+            }), "dash")
+            m.assertEqual(Prairie.Playback.detectStreamFormat({
+                stream_url: "/unknown.bin"
+            }), "hls")
+            m.assertEqual(Prairie.Playback.resumeSeconds({
+                user_data: { position_seconds: 0, duration_seconds: 1000 }
+            }), invalid)
+
+            store = Prairie.Store.createMemoryStore()
+            Prairie.PlaybackSettings.save({
+                forceDirectPlay: true,
+                forceTranscode: false
+            }, store)
+            m.assertEqual(Prairie.Playback.forcedPlayMethodFromStore(store), "direct")
         end sub
 
     end class

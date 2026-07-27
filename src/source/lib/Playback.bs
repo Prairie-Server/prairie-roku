@@ -7,6 +7,10 @@ namespace Prairie.Playback
         return "/api/v1/playback/start"
     end function
 
+    function transcodeStartPath() as string
+        return "/api/v1/playback/transcode/start"
+    end function
+
     function progressPath(sessionId as string) as string
         return "/api/v1/playback/" + sessionId.encodeUriComponent() + "/progress"
     end function
@@ -27,6 +31,14 @@ namespace Prairie.Playback
             max_resolution: "2160p",
             hdr: true
         }
+    end function
+
+    function needsHlsBootstrap(playMethod as dynamic) as boolean
+        if playMethod = invalid
+            return false
+        end if
+        method = LCase((playMethod as string).trim())
+        return method = "remux" or method = "transcode"
     end function
 
     function buildStartBody(input as object) as string
@@ -50,6 +62,36 @@ namespace Prairie.Playback
         return FormatJson(body)
     end function
 
+    function buildTranscodeStartBody(input as object) as string
+        playMethod = ""
+        if input.playMethod <> invalid
+            playMethod = LCase((input.playMethod as string).trim())
+        end if
+        isRemux = playMethod = "remux"
+        seekSeconds = 0
+        if input.seekSeconds <> invalid
+            seekSeconds = input.seekSeconds
+        end if
+        body = {
+            session_id: input.sessionId as string,
+            seek_seconds: seekSeconds,
+            target_resolution: "",
+            target_codec_video: "copy",
+            target_codec_audio: "copy",
+            target_bitrate_kbps: 0,
+            segment_duration: 2,
+            subtitle_track_index: -1,
+            subtitle_burn_in: false
+        }
+        if not isRemux
+            body.target_resolution = "1080p"
+            body.target_codec_video = "h264"
+            body.target_codec_audio = "aac"
+            body.target_bitrate_kbps = 6000
+        end if
+        return FormatJson(body)
+    end function
+
     function buildProgressBody(position as float, isPaused as boolean) as string
         return FormatJson({
             position: position,
@@ -66,10 +108,58 @@ namespace Prairie.Playback
 
     function resolveStreamUrl(serverUrl as string, playback as object, accessToken as string) as string
         stream = ""
-        if playback <> invalid and playback.stream_url <> invalid
-            stream = playback.stream_url as string
+        if playback <> invalid
+            ' Prefer HLS manifest from transcode/start when present.
+            if playback.manifest_url <> invalid and (playback.manifest_url as string).len() > 0
+                stream = playback.manifest_url as string
+            else if playback.stream_url <> invalid
+                stream = playback.stream_url as string
+            end if
         end if
         return Prairie.Url.buildStreamUrl(serverUrl, stream, accessToken, invalid)
+    end function
+
+    function applyTranscodeResponse(playback as object, transcode as object) as object
+        if playback = invalid or transcode = invalid
+            return playback
+        end if
+        nextPlayback = {}
+        for each key in playback
+            nextPlayback[key] = playback[key]
+        end for
+        if transcode.session_id <> invalid
+            nextPlayback.session_id = transcode.session_id
+        end if
+        if transcode.manifest_url <> invalid
+            nextPlayback.stream_url = transcode.manifest_url
+            nextPlayback.manifest_url = transcode.manifest_url
+        end if
+        if transcode.duration_seconds <> invalid
+            nextPlayback.duration_seconds = transcode.duration_seconds
+        end if
+        if transcode.player_start_seconds <> invalid
+            nextPlayback.position = transcode.player_start_seconds
+            nextPlayback.player_start_seconds = transcode.player_start_seconds
+        end if
+        canSeek = false
+        if transcode.can_seek_anywhere = true
+            canSeek = true
+        end if
+        if canSeek
+            nextPlayback.play_method = "transcode"
+        else
+            nextPlayback.play_method = "remux"
+        end if
+        info = {}
+        if playback.playback_info <> invalid
+            for each key in playback.playback_info
+                info[key] = playback.playback_info[key]
+            end for
+        end if
+        info.stream_type = "hls"
+        info.can_seek_anywhere = canSeek
+        nextPlayback.playback_info = info
+        return nextPlayback
     end function
 
     function detectStreamFormat(playback as object) as string
@@ -87,7 +177,9 @@ namespace Prairie.Playback
             return streamType
         end if
         url = ""
-        if playback.stream_url <> invalid
+        if playback.manifest_url <> invalid and (playback.manifest_url as string).len() > 0
+            url = LCase(playback.manifest_url as string)
+        else if playback.stream_url <> invalid
             url = LCase(playback.stream_url as string)
         end if
         if url.instr(".m3u8") >= 0 or url.instr("hls") >= 0
