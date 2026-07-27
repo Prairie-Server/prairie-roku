@@ -15,6 +15,7 @@ namespace tests
             m.assertFalse(Prairie.ServerUrl.validate("").ok)
             m.assertFalse(Prairie.ServerUrl.validate("ftp://prairie.example.com").ok)
             m.assertFalse(Prairie.ServerUrl.validate("https://user:pass@prairie.example.com").ok)
+            m.assertTrue(Prairie.ServerUrl.validate("https://prairie.example.com/path/user@name").ok)
             m.assertFalse(Prairie.ServerUrl.validate("https://").ok)
         end sub
 
@@ -38,6 +39,26 @@ namespace tests
             m.assertFalse(Prairie.ServerUrl.validate("http://10.attacker.example").ok)
             m.assertFalse(Prairie.ServerUrl.validate("http://192.168.attacker.example").ok)
             m.assertFalse(Prairie.ServerUrl.validate("http://172.16.attacker.example").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("http://172.32.0.2").ok)
+            m.assertFalse(Prairie.ServerUrl.validate("http://8.8.8.8").ok)
+        end sub
+
+        @describe("helpers")
+        @it("strips ports and recognizes local hosts")
+        sub _()
+            m.assertEqual(Prairie.ServerUrl.stripPort(""), "")
+            m.assertEqual(Prairie.ServerUrl.stripPort("[::1"), "[::1")
+            m.assertEqual(Prairie.ServerUrl.stripPort("[::1]:8096"), "::1")
+            m.assertEqual(Prairie.ServerUrl.stripPort("host:8096"), "host")
+            m.assertEqual(Prairie.ServerUrl.stripPort("fe80::1"), "fe80::1")
+            m.assertFalse(Prairie.ServerUrl.isDigits(""))
+            m.assertFalse(Prairie.ServerUrl.isDigits("12x"))
+            m.assertTrue(Prairie.ServerUrl.isDigits("123"))
+            m.assertFalse(Prairie.ServerUrl.isPrivateOrLocalHost(""))
+            m.assertFalse(Prairie.ServerUrl.isPrivateOrLocalHost("999.1.1.1"))
+            m.assertTrue(Prairie.ServerUrl.isPrivateOrLocalHost("service.local"))
+            m.assertFalse(Prairie.ServerUrl.hasUsableHost("[::1"))
+            m.assertTrue(Prairie.ServerUrl.hasUsableHost("prairie.example.com"))
         end sub
 
     end class

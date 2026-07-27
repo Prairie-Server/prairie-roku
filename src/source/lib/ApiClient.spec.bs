@@ -15,8 +15,14 @@ namespace tests
         @it("notifies on 401 and auth-flavored 403 codes")
         sub _()
             m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(401, invalid))
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "unauthorized"))
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "invalid_token"))
             m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "token_expired"))
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "authentication_required"))
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "auth_required"))
+            m.assertTrue(Prairie.Api.shouldNotifyUnauthorized(403, "session_expired"))
             m.assertFalse(Prairie.Api.shouldNotifyUnauthorized(403, "forbidden"))
+            m.assertFalse(Prairie.Api.shouldNotifyUnauthorized(403, invalid))
             m.assertFalse(Prairie.Api.shouldNotifyUnauthorized(500, "token_expired"))
         end sub
 
@@ -50,6 +56,14 @@ namespace tests
 
         @it("ignores non-object JSON error bodies")
         sub _()
+            noStatus = Prairie.Api.parseErrorBody(503, "", invalid)
+            m.assertEqual(noStatus.message, "HTTP 503")
+
+            errorBody = Prairie.Api.parseErrorBody(400, "", FormatJson({
+                error: "bad_request"
+            }))
+            m.assertEqual(errorBody.message, "bad_request")
+
             asArray = Prairie.Api.parseErrorBody(500, "Error", "[1,2]")
             m.assertEqual(asArray.message, "Error")
             m.assertInvalid(asArray.code)
@@ -76,6 +90,22 @@ namespace tests
             }, "/api/v1/auth/login", "POST", "{}")
             m.assertEqual(posted.headers["Content-Type"], "application/json")
             m.assertEqual(posted.body, "{}")
+            m.assertEqual(posted.timeoutMs, Prairie.Api.defaultTimeoutMs())
+
+            timed = Prairie.Api.buildRequest({
+                serverUrl: "https://prairie.example.com",
+                timeoutMs: 1234
+            }, "api/v1/health")
+            m.assertEqual(timed.timeoutMs, 1234)
+            m.assertEqual(Prairie.Api.sessionOptions({
+                serverUrl: "https://prairie.example.com",
+                accessToken: "tok",
+                profileId: "p1",
+                profileToken: "pt"
+            }).profileToken, "pt")
+            err = Prairie.Api.createError("nope", 500, "code", { raw: true })
+            m.assertEqual(err.name, "ApiError")
+            m.assertEqual(err.code, "code")
         end sub
 
     end class

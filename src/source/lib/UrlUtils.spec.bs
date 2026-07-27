@@ -51,6 +51,8 @@ namespace tests
         sub _()
             m.assertFalse(Prairie.Url.isSameServerOrigin("", "/x"))
             m.assertFalse(Prairie.Url.isSameServerOrigin("https://prairie.example.com", ""))
+            m.assertFalse(Prairie.Url.isSameServerOrigin("not-a-url", "/x"))
+            m.assertFalse(Prairie.Url.isSameServerOrigin("https://prairie.example.com", "https://"))
         end sub
 
         @describe("buildStreamUrl")
@@ -76,6 +78,9 @@ namespace tests
         sub _()
             url = Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", "")
             m.assertEqual(url, "https://prairie.example.com/stream")
+            m.assertEqual(Prairie.Url.buildStreamUrl("https://prairie.example.com", "/stream", invalid), "https://prairie.example.com/stream")
+            m.assertInvalid(Prairie.Url.parseOrigin("ftp://prairie.example.com"))
+            m.assertInvalid(Prairie.Url.parseOrigin("https://"))
         end sub
 
     end class
