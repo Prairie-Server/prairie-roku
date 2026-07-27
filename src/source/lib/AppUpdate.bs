@@ -1,0 +1,122 @@
+import "pkg:/source/lib/AppVersion.bs"
+
+namespace Prairie.AppUpdate
+
+    function defaultReleasesLatestUrl() as string
+        return "https://api.github.com/repos/Prairie-Server/prairie-roku/releases/latest"
+    end function
+
+    function defaultChangelogUrl() as string
+        return "https://github.com/Prairie-Server/prairie-roku/releases"
+    end function
+
+    function defaultTimeoutMs() as integer
+        return 8000
+    end function
+
+    ' Raw HttpTask request AA — must not go through Prairie.Api.buildRequest
+    ' so Prairie auth headers / tokens never leave the channel.
+    function buildLatestReleaseRequest() as object
+        return {
+            url: defaultReleasesLatestUrl(),
+            method: "GET",
+            headers: {
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "Prairie-Roku",
+                "X-GitHub-Api-Version": "2022-11-28"
+            },
+            body: invalid,
+            timeoutMs: defaultTimeoutMs()
+        }
+    end function
+
+    function checkingStatus() as object
+        return {
+            kind: "checking",
+            label: "Checking…",
+            latestVersion: "",
+            changelogUrl: ""
+        }
+    end function
+
+    ' Resolve update status from the installed marketing version and a GitHub
+    ' latest-release response. Pure so unit tests cover the decision table
+    ' without hitting the network. 404 (no published releases) → up to date.
+    function resolveStatus(current as string, tag as dynamic, htmlUrl as dynamic, statusCode as integer) as object
+        changelogFallback = defaultChangelogUrl()
+
+        if statusCode = 404
+            return {
+                kind: "upToDate",
+                label: "Up to date",
+                latestVersion: current,
+                changelogUrl: changelogFallback
+            }
+        end if
+
+        if statusCode < 200 or statusCode >= 300
+            return {
+                kind: "unavailable",
+                label: "Couldn't check for updates",
+                latestVersion: "",
+                changelogUrl: changelogFallback
+            }
+        end if
+
+        notesUrl = changelogFallback
+        if htmlUrl <> invalid and (htmlUrl as string).trim().len() > 0
+            notesUrl = (htmlUrl as string).trim()
+        end if
+
+        parsedCurrent = Prairie.AppVersion.parse(current)
+        if parsedCurrent = invalid
+            return {
+                kind: "unavailable",
+                label: "Couldn't check for updates",
+                latestVersion: "",
+                changelogUrl: notesUrl
+            }
+        end if
+
+        latestRaw = ""
+        if tag <> invalid
+            latestRaw = (tag as string).trim()
+        end if
+        if latestRaw.len() = 0
+            return {
+                kind: "unavailable",
+                label: "Couldn't check for updates",
+                latestVersion: "",
+                changelogUrl: notesUrl
+            }
+        end if
+
+        parsedLatest = Prairie.AppVersion.parse(latestRaw)
+        if parsedLatest = invalid
+            return {
+                kind: "unavailable",
+                label: "Couldn't check for updates",
+                latestVersion: "",
+                changelogUrl: notesUrl
+            }
+        end if
+
+        latestDisplay = Prairie.AppVersion.format(parsedLatest)
+        if Prairie.AppVersion.compare(parsedLatest, parsedCurrent) > 0
+            return {
+                kind: "updateAvailable",
+                label: "Update available",
+                latestVersion: latestDisplay,
+                changelogUrl: notesUrl
+            }
+        end if
+
+        return {
+            kind: "upToDate",
+            label: "Up to date",
+            latestVersion: latestDisplay,
+            changelogUrl: notesUrl
+        }
+    end function
+
+end namespace

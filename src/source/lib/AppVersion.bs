@@ -1,0 +1,101 @@
+namespace Prairie.AppVersion
+
+    ' Marketing semver used for client update checks.
+    ' Tags may look like `v1.4.0`, `1.4.0+2`, or `v1.4.0-rc.1`. Only the
+    ' major.minor.patch core is compared; prerelease tags sort below the
+    ' matching release, and a missing/unparseable version is treated as older.
+
+    function parse(raw as dynamic) as dynamic
+        if raw = invalid
+            return invalid
+        end if
+        text = (raw as string).trim()
+        if text.len() = 0
+            return invalid
+        end if
+        if LCase(text.left(1)) = "v"
+            text = text.mid(1)
+        end if
+        ' Drop build metadata (`+2`) before detecting prerelease.
+        plus = text.instr("+")
+        withoutBuild = text
+        if plus >= 0
+            withoutBuild = text.left(plus)
+        end if
+        dash = withoutBuild.instr("-")
+        prerelease = dash >= 0
+        core = withoutBuild
+        if dash >= 0
+            core = withoutBuild.left(dash)
+        end if
+        parts = core.split(".")
+        if parts.count() < 2
+            return invalid
+        end if
+        if not isDigits(parts[0]) or not isDigits(parts[1])
+            return invalid
+        end if
+        major = parts[0].toInt()
+        minor = parts[1].toInt()
+        patch = 0
+        if parts.count() >= 3
+            if not isDigits(parts[2])
+                return invalid
+            end if
+            patch = parts[2].toInt()
+        end if
+        return {
+            major: major,
+            minor: minor,
+            patch: patch,
+            prerelease: prerelease
+        }
+    end function
+
+    function format(version as object) as string
+        return version.major.toStr() + "." + version.minor.toStr() + "." + version.patch.toStr()
+    end function
+
+    ' Returns -1 when a < b, 0 when equal, 1 when a > b.
+    function compare(a as object, b as object) as integer
+        if a.major < b.major
+            return -1
+        end if
+        if a.major > b.major
+            return 1
+        end if
+        if a.minor < b.minor
+            return -1
+        end if
+        if a.minor > b.minor
+            return 1
+        end if
+        if a.patch < b.patch
+            return -1
+        end if
+        if a.patch > b.patch
+            return 1
+        end if
+        if a.prerelease = b.prerelease
+            return 0
+        end if
+        if a.prerelease = true
+            return -1
+        end if
+        return 1
+    end function
+
+    function isDigits(value as string) as boolean
+        if value.len() = 0
+            return false
+        end if
+        for i = 0 to value.len() - 1
+            ch = Asc(value.mid(i, 1))
+            if ch < 48 or ch > 57
+                return false
+            end if
+        end for
+        return true
+    end function
+
+end namespace
