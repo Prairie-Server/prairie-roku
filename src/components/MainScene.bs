@@ -63,32 +63,26 @@ sub init()
     m.connectPrefillUrl = ""
     m.pendingLoginRequest = invalid
 
+    ' If the persisted session blob exists but tokens are missing, treat the
+    ' user as logged out and route to the login/connect flow.
+    if m.session <> invalid and not Prairie.Session.hasAccessToken(m.session)
+        m.connectPrefillUrl = m.session.serverUrl
+        m.session = invalid
+    end if
+
     if m.session = invalid
         m.session = sessionFromActiveRegistry()
     end if
 
-    if m.session <> invalid
+    if m.session <> invalid and Prairie.Session.hasAccessToken(m.session)
         showHome()
-    else if m.registry.entries.count() > 0
-        showServerList("connect")
     else
         showConnect()
     end if
 end sub
 
 function sessionFromActiveRegistry() as dynamic
-    if m.registry = invalid or m.registry.activeServerId = invalid
-        return invalid
-    end if
-    idx = Prairie.ServerRegistry.findIndex(m.registry, m.registry.activeServerId)
-    if idx < 0
-        return invalid
-    end if
-    session = Prairie.ServerRegistry.sessionFromEntry(m.registry.entries[idx])
-    if session = invalid
-        return invalid
-    end if
-    return Prairie.Session.saveSession(session, m.store)
+    return invalid
 end function
 
 sub clearScreen()

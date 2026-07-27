@@ -9,7 +9,7 @@ namespace tests
         end sub
 
         @describe("save and load")
-        @it("round-trips a browse session and updates last server URL")
+        @it("persists only session metadata (no tokens)")
         sub _()
             saved = Prairie.Session.saveSession({
                 serverUrl: "https://prairie.example.com/",
@@ -23,21 +23,50 @@ namespace tests
 
             m.assertEqual(saved.serverUrl, "https://prairie.example.com")
             m.assertFalse(saved.doesExist("refreshToken"))
+            m.assertEqual(saved.accessToken, "access")
+            m.assertEqual(saved.profileToken, "pin-token")
 
             loaded = Prairie.Session.loadSession(m.store)
-            m.assertEqual(loaded.accessToken, "access")
             m.assertEqual(loaded.username, "ada")
             m.assertEqual(loaded.profileId, "profile-1")
             m.assertEqual(loaded.profileName, "Ada")
-            m.assertEqual(loaded.profileToken, "pin-token")
+            m.assertFalse(loaded.doesExist("accessToken"))
+            m.assertFalse(loaded.doesExist("profileToken"))
+
+            persistedRaw = m.store.getItem(Prairie.Persist.sessionKey())
+            persisted = ParseJson(persistedRaw as string)
+            m.assertFalse(persisted.doesExist("accessToken"))
+            m.assertFalse(persisted.doesExist("profileToken"))
+
             m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://prairie.example.com")
         end sub
 
-        @it("returns invalid for incomplete session blobs")
+        @it("loads session metadata even when tokens are missing")
         sub _()
             m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
                 serverUrl: "https://prairie.example.com",
-                accessToken: "access"
+                username: "ada",
+                profileId: "profile-1",
+                profileName: "Ada"
+            }))
+            loaded = Prairie.Session.loadSession(m.store)
+            m.assertEqual(loaded.serverUrl, "https://prairie.example.com")
+            m.assertEqual(loaded.username, "ada")
+            m.assertEqual(loaded.profileId, "profile-1")
+            m.assertEqual(loaded.profileName, "Ada")
+            m.assertFalse(loaded.doesExist("accessToken"))
+            m.assertFalse(loaded.doesExist("profileToken"))
+        end sub
+
+        @it("returns invalid for missing and malformed blobs")
+        sub _()
+            m.assertInvalid(Prairie.Session.loadSession(m.store))
+
+            m.store.setItem(Prairie.Persist.sessionKey(), "{not-json")
+            m.assertInvalid(Prairie.Session.loadSession(m.store))
+
+            m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
+                serverUrl: "https://prairie.example.com"
             }))
             m.assertInvalid(Prairie.Session.loadSession(m.store))
         end sub
@@ -46,11 +75,31 @@ namespace tests
         sub _()
             m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
                 serverUrl: "   ",
-                accessToken: "",
                 username: " ",
                 profileId: ""
             }))
             m.assertInvalid(Prairie.Session.loadSession(m.store))
+        end sub
+
+        @it("wipes plaintext token fields from a previously saved session")
+        sub _()
+            m.store.setItem(Prairie.Persist.sessionKey(), FormatJson({
+                serverUrl: "https://prairie.example.com/",
+                accessToken: "access",
+                username: "ada",
+                profileId: "profile-1",
+                profileName: "Ada",
+                profileToken: "pin-token"
+            }))
+
+            loaded = Prairie.Session.loadSession(m.store)
+            m.assertFalse(loaded.doesExist("accessToken"))
+            m.assertFalse(loaded.doesExist("profileToken"))
+
+            persistedRaw = m.store.getItem(Prairie.Persist.sessionKey())
+            persisted = ParseJson(persistedRaw as string)
+            m.assertFalse(persisted.doesExist("accessToken"))
+            m.assertFalse(persisted.doesExist("profileToken"))
         end sub
 
 
@@ -66,6 +115,15 @@ namespace tests
             Prairie.Session.clearSession(m.store)
             m.assertInvalid(Prairie.Session.loadSession(m.store))
             m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://prairie.example.com")
+        end sub
+
+        @describe("hasAccessToken")
+        @it("checks for an in-memory access token only")
+        sub _()
+            m.assertFalse(Prairie.Session.hasAccessToken(invalid))
+            m.assertFalse(Prairie.Session.hasAccessToken({}))
+            m.assertFalse(Prairie.Session.hasAccessToken({ accessToken: "   " }))
+            m.assertTrue(Prairie.Session.hasAccessToken({ accessToken: "tok" }))
         end sub
 
     end class
