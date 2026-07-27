@@ -42,11 +42,15 @@ namespace tests
                 device_code: "dev",
                 user_code: "ABCD-EFGH",
                 match_code: "amber harbor",
+                verification_uri: "https://prairie.example/activate",
+                verification_uri_complete: "https://prairie.example/activate?token=tok",
                 interval: 4
             })
             m.assertTrue(goodStart.ok)
             m.assertEqual(goodStart.userCode, "ABCD-EFGH")
             m.assertEqual(goodStart.matchCode, "amber harbor")
+            m.assertEqual(goodStart.verificationUri, "https://prairie.example/activate")
+            m.assertEqual(goodStart.verificationUriComplete, "https://prairie.example/activate?token=tok")
             m.assertEqual(goodStart.interval, 4)
             clampedStart = Prairie.Auth.parseDeviceStart({
                 device_code: "dev",
@@ -56,6 +60,8 @@ namespace tests
             m.assertTrue(clampedStart.ok)
             m.assertEqual(clampedStart.interval, 3)
             m.assertEqual(clampedStart.matchCode, "")
+            m.assertEqual(clampedStart.verificationUri, "")
+            m.assertEqual(clampedStart.verificationUriComplete, "")
             pendingPoll = Prairie.Auth.parseDevicePoll({ status: "pending", poll_after: 2 })
             m.assertTrue(pendingPoll.ok)
             m.assertEqual(pendingPoll.status, "pending")

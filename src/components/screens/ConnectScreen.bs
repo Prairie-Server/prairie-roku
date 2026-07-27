@@ -17,6 +17,9 @@ sub init()
     m.quickConnectBg = m.top.findNode("quickConnectBg")
     m.quickConnectCode = m.top.findNode("quickConnectCode")
     m.quickConnectMatch = m.top.findNode("quickConnectMatch")
+    m.quickConnectQr = m.top.findNode("quickConnectQr")
+    m.quickConnectQrFrame = m.top.findNode("quickConnectQrFrame")
+    m.quickConnectStatusLabel = m.top.findNode("quickConnectStatusLabel")
     m.brand = m.top.findNode("brand")
     m.eyebrow = m.top.findNode("eyebrow")
     m.lede = m.top.findNode("lede")
@@ -43,12 +46,21 @@ sub init()
     m.top.findNode("quickConnectMatchLabel").color = colors.muted
     m.quickConnectMatch.color = colors.ink
     m.top.findNode("quickConnectLabel").color = colors.ink
+    m.quickConnectStatusLabel.color = colors.muted
+    m.quickConnectQrFrame.color = "0xFFFFFFFF"
+    if m.quickConnectQr <> invalid
+        m.quickConnectQr.lightColor = "0xFFFFFFFF"
+        m.quickConnectQr.darkColor = colors.bg
+        m.quickConnectQr.visible = false
+    end if
+    m.quickConnectQrFrame.visible = false
 
     m.top.observeField("initialServerUrl", "onInitialServerUrl")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("busy", "onBusy")
     m.top.observeField("quickConnectUserCode", "onQuickConnectUserCode")
     m.top.observeField("quickConnectMatchCode", "onQuickConnectMatchCode")
+    m.top.observeField("quickConnectVerificationUri", "onQuickConnectVerificationUri")
     m.top.observeField("quickConnectStatus", "onQuickConnectStatus")
 end sub
 
@@ -90,13 +102,30 @@ sub onQuickConnectMatchCode()
     end if
 end sub
 
-sub onQuickConnectStatus()
-    status = m.top.quickConnectStatus
-    if status.len() = 0
+sub onQuickConnectVerificationUri()
+    uri = m.top.quickConnectVerificationUri.trim()
+    if m.quickConnectQr = invalid
         return
     end if
-    if m.top.quickConnectUserCode.len() = 0 and m.quickConnectCode <> invalid
-        m.quickConnectCode.text = status
+    if uri.len() = 0
+        m.quickConnectQr.text = ""
+        m.quickConnectQr.visible = false
+        if m.quickConnectQrFrame <> invalid
+            m.quickConnectQrFrame.visible = false
+        end if
+        return
+    end if
+    m.quickConnectQr.text = uri
+    m.quickConnectQr.visible = true
+    if m.quickConnectQrFrame <> invalid
+        m.quickConnectQrFrame.visible = true
+    end if
+end sub
+
+sub onQuickConnectStatus()
+    status = m.top.quickConnectStatus
+    if m.quickConnectStatusLabel <> invalid
+        m.quickConnectStatusLabel.text = status
     end if
 end sub
 

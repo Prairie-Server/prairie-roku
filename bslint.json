@@ -15,5 +15,14 @@
     "type-annotations": "all"
   },
   "globals": [],
-  "ignores": ["**/roku_modules/**", "dist/**", "test-build/**", "out/**", "coverage/**"]
+  "ignores": [
+    "**/roku_modules/**",
+    "**/vendor/**",
+    "**/components/vendor/**",
+    "dist/**",
+    "test-build/**",
+    "out/**",
+    "coverage/**",
+    ".coverage-src/**"
+  ]
 }

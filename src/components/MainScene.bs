@@ -162,6 +162,7 @@ sub onQuickConnectStartRequested()
         m.screen.quickConnectStatus = validated.message
         m.screen.quickConnectUserCode = ""
         m.screen.quickConnectMatchCode = ""
+        m.screen.quickConnectVerificationUri = ""
         return
     end if
     stopQuickConnect()
@@ -169,6 +170,7 @@ sub onQuickConnectStartRequested()
     m.screen.quickConnectStatus = "Generating code…"
     m.screen.quickConnectUserCode = ""
     m.screen.quickConnectMatchCode = ""
+    m.screen.quickConnectVerificationUri = ""
     m.pending = "deviceStart"
     m.httpTask.request = Prairie.Api.buildRequest({
         serverUrl: m.quickConnectServerUrl
@@ -1395,6 +1397,7 @@ sub onHttpResponse()
                 if status = 404
                     m.screen.quickConnectUserCode = ""
                     m.screen.quickConnectMatchCode = ""
+                    m.screen.quickConnectVerificationUri = ""
                     m.quickConnectDeviceCode = ""
                 end if
             end if
@@ -1413,6 +1416,7 @@ sub onHttpResponse()
             if m.screen <> invalid
                 m.screen.quickConnectUserCode = started.userCode
                 m.screen.quickConnectMatchCode = started.matchCode
+                m.screen.quickConnectVerificationUri = started.verificationUriComplete
                 m.screen.quickConnectStatus = "Waiting for approval…"
             end if
             scheduleQuickConnectPoll(m.quickConnectInterval)
@@ -1432,6 +1436,7 @@ sub onHttpResponse()
                 m.screen.quickConnectStatus = "Sign-in was denied"
                 m.screen.quickConnectUserCode = ""
                 m.screen.quickConnectMatchCode = ""
+                m.screen.quickConnectVerificationUri = ""
             end if
             m.quickConnectDeviceCode = ""
             return
@@ -1441,6 +1446,7 @@ sub onHttpResponse()
                 m.screen.quickConnectStatus = "Code expired — press Refresh code"
                 m.screen.quickConnectUserCode = ""
                 m.screen.quickConnectMatchCode = ""
+                m.screen.quickConnectVerificationUri = ""
             end if
             m.quickConnectDeviceCode = ""
             return
