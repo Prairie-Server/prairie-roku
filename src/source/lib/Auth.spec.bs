@@ -25,6 +25,7 @@ namespace tests
             pinBody = ParseJson(Prairie.Auth.buildVerifyPinBody("1234"))
             m.assertEqual(pinBody.pin, "1234")
             m.assertTrue(Prairie.Auth.verifyPinPath("p 1").instr("p%201") >= 0)
+            m.assertEqual(Prairie.Auth.profilesPath(), "/api/v1/profiles")
         end sub
 
         @describe("profiles")

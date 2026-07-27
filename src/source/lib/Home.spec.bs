@@ -15,6 +15,7 @@ namespace tests
             m.assertEqual(sections[0].items.count(), 1)
             m.assertEqual(sections[1].items.count(), 0)
             m.assertEqual(Prairie.Home.sectionsFromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.Home.sectionsFromResponse({ sections: "nope" }).count(), 0)
             m.assertEqual(Prairie.Home.sectionsPath(), "/api/v1/home/sections")
         end sub
 

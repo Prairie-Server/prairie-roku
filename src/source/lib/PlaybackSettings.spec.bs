@@ -11,6 +11,10 @@ namespace tests
         @describe("normalize")
         @it("applies defaults and clears conflicting force flags")
         sub _()
+            defaults = Prairie.PlaybackSettings.normalize(invalid)
+            m.assertFalse(defaults.forceDirectPlay)
+            m.assertFalse(defaults.forceTranscode)
+            m.assertEqual(defaults.preferredSubtitleLanguage, "")
             settings = Prairie.PlaybackSettings.normalize({
                 forceDirectPlay: true,
                 forceTranscode: true,
