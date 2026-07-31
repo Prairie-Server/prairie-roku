@@ -14,12 +14,75 @@
         <field id="progressTick" type="boolean" value="false" alwaysNotify="true" />
         <field id="seekDelta" type="int" value="0" alwaysNotify="true" />
         <field id="audioCycleRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="qualityOptions" type="array" />
+        <field id="activeQualityId" type="string" value="original" />
+        <field id="qualityChangeRequested" type="string" value="" alwaysNotify="true" />
+        <field id="trickplay" type="assocarray" />
+        <field id="statsSessionId" type="string" value="" />
+        <field id="statsPlayMethod" type="string" value="" />
+        <field id="statsStreamUrl" type="string" value="" />
+        <field id="statsResolution" type="string" value="" />
         <function name="focusDefault" />
         <function name="stopPlayback" />
     </interface>
     <script type="text/brightscript" uri="PlayerScreen.bs" />
     <children>
         <Video id="video" width="1920" height="1080" translation="[0,0]" />
+
+        <!-- Trickplay seek preview (clipped sprite sheet) -->
+        <Group id="seekPreviewGroup" visible="false" translation="[780, 620]">
+            <Rectangle id="seekPreviewBg" width="360" height="240" color="0x000000CC" />
+            <Group id="seekTileClip" translation="[20, 16]" clippingRect="[0, 0, 320, 180]">
+                <Poster id="seekTilePoster" width="320" height="180" loadDisplayMode="scaleToFit" />
+            </Group>
+            <Label
+                id="seekTimeLabel"
+                text=""
+                translation="[20, 200]"
+                width="320"
+                horizAlign="center"
+                color="0xF3EFE6FF"
+                font="font:SmallSystemFont"
+            />
+        </Group>
+
+        <!-- Stats for nerds -->
+        <Rectangle id="statsBg" translation="[40, 40]" width="720" height="280" color="0x000000B8" visible="false" />
+        <Label
+            id="statsLabel"
+            text=""
+            translation="[56, 52]"
+            width="688"
+            height="256"
+            wrap="true"
+            color="0xF3EFE6FF"
+            font="font:SmallestSystemFont"
+            visible="false"
+        />
+
+        <!-- Quality picker -->
+        <Rectangle id="qualityBg" translation="[1280, 120]" width="560" height="720" color="0x141820EE" visible="false" />
+        <Label
+            id="qualityTitle"
+            text="Quality"
+            translation="[1300, 140]"
+            width="520"
+            color="0xE0A84AFF"
+            font="font:MediumBoldSystemFont"
+            visible="false"
+        />
+        <Label
+            id="qualityList"
+            text=""
+            translation="[1300, 200]"
+            width="520"
+            height="600"
+            wrap="true"
+            color="0xF3EFE6FF"
+            font="font:SmallSystemFont"
+            visible="false"
+        />
+
         <Rectangle id="chromeBg" translation="[0,900]" width="1920" height="180" color="0x141820CC" />
         <Label
             id="title"
@@ -33,7 +96,7 @@
             id="status"
             text=""
             translation="[80, 980]"
-            width="1600"
+            width="1760"
             color="0x9AA3B2FF"
             font="font:SmallSystemFont"
         />
@@ -46,5 +109,7 @@
             font="font:SmallSystemFont"
         />
         <Timer id="progressTimer" repeat="true" duration="10" />
+        <Timer id="seekPreviewTimer" repeat="false" duration="1.2" />
+        <Timer id="statsTimer" repeat="true" duration="1" />
     </children>
 </component>

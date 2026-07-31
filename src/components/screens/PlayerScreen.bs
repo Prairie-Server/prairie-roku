@@ -1,4 +1,6 @@
 import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/Trickplay.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -8,21 +10,52 @@ sub init()
     m.status = m.top.findNode("status")
     m.errorLabel = m.top.findNode("errorLabel")
     m.progressTimer = m.top.findNode("progressTimer")
+    m.seekPreviewTimer = m.top.findNode("seekPreviewTimer")
+    m.statsTimer = m.top.findNode("statsTimer")
+
+    m.seekPreviewGroup = m.top.findNode("seekPreviewGroup")
+    m.seekTileClip = m.top.findNode("seekTileClip")
+    m.seekTilePoster = m.top.findNode("seekTilePoster")
+    m.seekTimeLabel = m.top.findNode("seekTimeLabel")
+
+    m.statsBg = m.top.findNode("statsBg")
+    m.statsLabel = m.top.findNode("statsLabel")
+
+    m.qualityBg = m.top.findNode("qualityBg")
+    m.qualityTitle = m.top.findNode("qualityTitle")
+    m.qualityList = m.top.findNode("qualityList")
 
     m.chromeBg.color = "0x141820CC"
     m.title.color = colors.ink
     m.status.color = colors.muted
     m.errorLabel.color = colors.danger
+    m.seekTimeLabel.color = colors.ink
+    m.statsLabel.color = colors.ink
+    m.qualityTitle.color = colors.amber
+    m.qualityList.color = colors.ink
 
     m.started = false
+    m.showStats = false
+    m.qualityMenuOpen = false
+    m.qualityIndex = 0
+    m.previewScale = 1.0
+
     m.top.observeField("streamUrl", "onStreamUrl")
     m.top.observeField("titleText", "onTitleText")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("busy", "onBusy")
+    m.top.observeField("qualityOptions", "onQualityOptions")
+    m.top.observeField("activeQualityId", "onActiveQualityId")
+    m.top.observeField("statsSessionId", "refreshStats")
+    m.top.observeField("statsPlayMethod", "refreshStats")
+    m.top.observeField("statsStreamUrl", "refreshStats")
+    m.top.observeField("statsResolution", "refreshStats")
     m.video.observeField("position", "onPosition")
     m.video.observeField("duration", "onDuration")
     m.video.observeField("state", "onVideoState")
     m.progressTimer.observeField("fire", "onProgressFire")
+    m.seekPreviewTimer.observeField("fire", "onSeekPreviewHide")
+    m.statsTimer.observeField("fire", "refreshStats")
 end sub
 
 sub onTitleText()
@@ -31,6 +64,7 @@ end sub
 
 sub onErrorText()
     m.errorLabel.text = m.top.errorText
+    refreshStats()
 end sub
 
 sub onBusy()
@@ -55,7 +89,42 @@ sub onStreamUrl()
     m.started = true
     m.progressTimer.control = "start"
     m.top.isPaused = false
-    m.status.text = "Playing · OK pause · ←/→ ±15s · ★ audio · Back exits"
+    refreshStatus()
+    refreshStats()
+end sub
+
+sub onQualityOptions()
+    syncQualityIndex()
+    if m.qualityMenuOpen
+        paintQualityMenu()
+    end if
+end sub
+
+sub onActiveQualityId()
+    syncQualityIndex()
+    if m.qualityMenuOpen
+        paintQualityMenu()
+    end if
+    refreshStatus()
+    refreshStats()
+end sub
+
+sub syncQualityIndex()
+    options = m.top.qualityOptions
+    if options = invalid or options.count() = 0
+        m.qualityIndex = 0
+        return
+    end if
+    active = m.top.activeQualityId
+    for i = 0 to options.count() - 1
+        if options[i] <> invalid and (options[i].id as string) = active
+            m.qualityIndex = i
+            return
+        end if
+    end for
+    if m.qualityIndex >= options.count()
+        m.qualityIndex = 0
+    end if
 end sub
 
 sub focusDefault()
@@ -64,6 +133,8 @@ end sub
 
 sub stopPlayback()
     m.progressTimer.control = "stop"
+    m.statsTimer.control = "stop"
+    m.seekPreviewTimer.control = "stop"
     if m.video <> invalid
         m.video.control = "stop"
     end if
@@ -95,16 +166,24 @@ sub onVideoState()
         m.top.exitRequested = true
     end if
     refreshStatus()
+    refreshStats()
 end sub
 
 sub refreshStatus()
+    if m.qualityMenuOpen
+        return
+    end if
     positionSec = CInt(m.top.positionSeconds)
     durationSec = CInt(m.top.durationSeconds)
     pauseLabel = "Playing"
     if m.top.isPaused
         pauseLabel = "Paused"
     end if
-    m.status.text = pauseLabel + " · " + positionSec.toStr() + "s / " + durationSec.toStr() + "s · OK pause · ←/→ ±15s · ★ audio · Back exits"
+    qualityHint = m.top.activeQualityId
+    if qualityHint.len() = 0
+        qualityHint = "—"
+    end if
+    m.status.text = pauseLabel + " · " + positionSec.toStr() + "s / " + durationSec.toStr() + "s · ↑ quality · ★ audio · replay stats · ←/→ ±15s · Back exits · " + qualityHint
 end sub
 
 sub onProgressFire()
@@ -116,16 +195,224 @@ sub seekBy(delta as integer)
     if nextPos < 0
         nextPos = 0
     end if
+    duration = m.video.duration
+    if duration > 0 and nextPos > duration
+        nextPos = duration
+    end if
     m.video.seek = nextPos
     m.top.seekDelta = delta
+    showSeekPreview(nextPos)
+end sub
+
+sub showSeekPreview(seconds as float)
+    m.seekTimeLabel.text = Prairie.Trickplay.formatSeekTime(seconds)
+    tile = Prairie.Trickplay.resolveTile(m.top.trickplay, seconds)
+    previewW = 320
+    previewH = 180
+    if tile = invalid
+        m.seekTilePoster.uri = ""
+        m.seekTilePoster.visible = false
+        m.seekTileClip.clippingRect = [0, 0, previewW, previewH]
+        m.seekPreviewGroup.visible = true
+        m.seekPreviewTimer.control = "stop"
+        m.seekPreviewTimer.control = "start"
+        return
+    end if
+
+    ' Scale sprite sheet so one tile fills the preview box.
+    scaleX = previewW / (tile.tileWidth as float)
+    scaleY = previewH / (tile.tileHeight as float)
+    scale = scaleX
+    if scaleY < scaleX
+        scale = scaleY
+    end if
+    sheetW = CInt((tile.sheetPixelWidth as float) * scale)
+    sheetH = CInt((tile.sheetPixelHeight as float) * scale)
+    offsetX = CInt((tile.offsetX as float) * scale)
+    offsetY = CInt((tile.offsetY as float) * scale)
+    clipW = CInt((tile.tileWidth as float) * scale)
+    clipH = CInt((tile.tileHeight as float) * scale)
+
+    m.seekTileClip.clippingRect = [0, 0, clipW, clipH]
+    m.seekTilePoster.visible = true
+    m.seekTilePoster.width = sheetW
+    m.seekTilePoster.height = sheetH
+    m.seekTilePoster.translation = [-offsetX, -offsetY]
+    m.seekTilePoster.loadDisplayMode = "scaleToFill"
+    if m.seekTilePoster.uri <> (tile.url as string)
+        m.seekTilePoster.uri = tile.url as string
+    end if
+    m.seekPreviewGroup.visible = true
+    m.seekPreviewTimer.control = "stop"
+    m.seekPreviewTimer.control = "start"
+end sub
+
+sub onSeekPreviewHide()
+    m.seekPreviewGroup.visible = false
+end sub
+
+sub toggleStats()
+    m.showStats = not m.showStats
+    m.statsBg.visible = m.showStats
+    m.statsLabel.visible = m.showStats
+    if m.showStats
+        m.statsTimer.control = "start"
+        refreshStats()
+    else
+        m.statsTimer.control = "stop"
+    end if
+end sub
+
+sub refreshStats()
+    if not m.showStats
+        return
+    end if
+    positionSec = Prairie.Trickplay.formatSeekTime(m.top.positionSeconds)
+    durationSec = Prairie.Trickplay.formatSeekTime(m.top.durationSeconds)
+    buffering = "no"
+    state = ""
+    if m.video <> invalid
+        state = m.video.state
+        if state = "buffering"
+            buffering = "yes"
+        end if
+    end if
+    stream = m.top.statsStreamUrl
+    if stream.len() = 0
+        stream = m.top.streamUrl
+    end if
+    if stream.len() > 72
+        stream = stream.left(69) + "…"
+    end if
+    err = m.top.errorText
+    if err.len() = 0
+        err = "—"
+    end if
+    lines = []
+    lines.push("session: " + blankDash(m.top.statsSessionId))
+    lines.push("playMethod: " + blankDash(m.top.statsPlayMethod))
+    lines.push("state: " + blankDash(state))
+    lines.push("buffering: " + buffering)
+    lines.push("position: " + positionSec + " / " + durationSec)
+    lines.push("quality: " + blankDash(m.top.activeQualityId))
+    lines.push("resolution: " + blankDash(m.top.statsResolution))
+    lines.push("stream: " + blankDash(stream))
+    lines.push("error: " + err)
+    m.statsLabel.text = lines.join(Chr(10))
+end sub
+
+function blankDash(value as string) as string
+    if value.len() = 0
+        return "—"
+    end if
+    return value
+end function
+
+sub openQualityMenu()
+    options = m.top.qualityOptions
+    if options = invalid or options.count() = 0
+        m.status.text = "Quality ladder unavailable"
+        return
+    end if
+    m.qualityMenuOpen = true
+    syncQualityIndex()
+    paintQualityMenu()
+    m.qualityBg.visible = true
+    m.qualityTitle.visible = true
+    m.qualityList.visible = true
+end sub
+
+sub closeQualityMenu()
+    m.qualityMenuOpen = false
+    m.qualityBg.visible = false
+    m.qualityTitle.visible = false
+    m.qualityList.visible = false
+    refreshStatus()
+end sub
+
+sub paintQualityMenu()
+    options = m.top.qualityOptions
+    if options = invalid
+        return
+    end if
+    lines = []
+    for i = 0 to options.count() - 1
+        opt = options[i]
+        if opt <> invalid
+            marker = "  "
+            if i = m.qualityIndex
+                marker = "> "
+            end if
+            active = ""
+            if (opt.id as string) = m.top.activeQualityId
+                active = " ●"
+            end if
+            line = marker + (opt.label as string) + active
+            if opt.sublabel <> invalid and (opt.sublabel as string).len() > 0
+                line = line + "  " + (opt.sublabel as string)
+            end if
+            lines.push(line)
+        end if
+    end for
+    m.qualityList.text = lines.join(Chr(10))
+    m.status.text = "Quality · ↑/↓ move · OK select · Back closes"
+end sub
+
+sub selectQualityAtIndex()
+    options = m.top.qualityOptions
+    if options = invalid or m.qualityIndex < 0 or m.qualityIndex >= options.count()
+        return
+    end if
+    opt = options[m.qualityIndex]
+    if opt = invalid or opt.id = invalid
+        return
+    end if
+    m.top.qualityChangeRequested = opt.id as string
+    closeQualityMenu()
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press
         return false
     end if
+
+    if m.qualityMenuOpen
+        if key = "back"
+            closeQualityMenu()
+            return true
+        end if
+        if key = "up"
+            if m.qualityIndex > 0
+                m.qualityIndex = m.qualityIndex - 1
+                paintQualityMenu()
+            end if
+            return true
+        end if
+        if key = "down"
+            options = m.top.qualityOptions
+            if options <> invalid and m.qualityIndex < options.count() - 1
+                m.qualityIndex = m.qualityIndex + 1
+                paintQualityMenu()
+            end if
+            return true
+        end if
+        if key = "OK" or key = "play"
+            selectQualityAtIndex()
+            return true
+        end if
+        return true
+    end if
+
     if key = "back"
         m.top.exitRequested = true
+        return true
+    end if
+    if key = "up"
+        openQualityMenu()
+        return true
+    end if
+    if key = "replay" or key = "info"
+        toggleStats()
         return true
     end if
     if key = "OK" or key = "play"

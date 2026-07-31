@@ -34,7 +34,7 @@ sub onLibraries()
             node.title = library.name
             node.description = library.type
             if library.poster_url <> invalid and (library.poster_url as string).len() > 0
-                node.hdPosterUrl = Prairie.Artwork.preferred(library.poster_url as string)
+                node.hdPosterUrl = Prairie.Artwork.preferred(library.poster_url as string, 200)
             end if
             node.addFields({ library: library })
         end for

@@ -79,7 +79,7 @@ sub onItems()
             end if
             node.description = subtitle
             if entry.poster_url <> invalid
-                node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string)
+                node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string, 200)
             end if
             contentId = ""
             if entry.content_id <> invalid
