@@ -47,7 +47,7 @@ sub appendCollectionRow(content as object, title as string, cards as object)
             node.description = (card.item_count as integer).toStr() + " titles"
         end if
         if card.poster_url <> invalid and (card.poster_url as string).len() > 0
-            node.hdPosterUrl = Prairie.Artwork.preferred(card.poster_url as string)
+            node.hdPosterUrl = Prairie.Artwork.preferred(card.poster_url as string, 200)
         end if
         node.addFields({ collection: card })
     end for

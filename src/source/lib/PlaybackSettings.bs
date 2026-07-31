@@ -4,7 +4,8 @@ namespace Prairie.PlaybackSettings
         return {
             forceDirectPlay: false,
             forceTranscode: false,
-            preferredSubtitleLanguage: ""
+            preferredSubtitleLanguage: "",
+            preferredQuality: "auto"
         }
     end function
 
@@ -23,6 +24,12 @@ namespace Prairie.PlaybackSettings
         if input.preferredSubtitleLanguage <> invalid
             lang = input.preferredSubtitleLanguage as string
             nextSettings.preferredSubtitleLanguage = LCase(lang.trim())
+        end if
+        if input.preferredQuality <> invalid
+            q = LCase((input.preferredQuality as string).trim())
+            if q.len() > 0
+                nextSettings.preferredQuality = q
+            end if
         end if
 
         ' Direct wins when both are somehow set (UI should prevent this).

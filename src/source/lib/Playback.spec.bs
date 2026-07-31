@@ -37,6 +37,28 @@ namespace tests
             }))
             m.assertEqual(full.target_codec_video, "h264")
             m.assertEqual(full.target_resolution, "1080p")
+            targeted = ParseJson(Prairie.Playback.buildTranscodeStartBody({
+                sessionId: "s1",
+                seekSeconds: 5,
+                playMethod: "transcode",
+                targetResolution: "720p",
+                targetBitrateKbps: 2000,
+                copyVideo: false
+            }))
+            m.assertEqual(targeted.target_resolution, "720p")
+            m.assertEqual(targeted.target_bitrate_kbps, 2000)
+            m.assertEqual(targeted.target_codec_audio, "aac")
+            copy = ParseJson(Prairie.Playback.buildTranscodeStartBody({
+                sessionId: "s1",
+                seekSeconds: 0,
+                playMethod: "remux",
+                copyVideo: true,
+                targetResolution: "",
+                targetBitrateKbps: 0
+            }))
+            m.assertEqual(copy.target_codec_video, "copy")
+            m.assertEqual(copy.target_codec_audio, "aac")
+            m.assertEqual(Prairie.Playback.qualityLadderPath(), "/api/v1/playback/quality-ladder")
             m.assertTrue(Prairie.Playback.needsHlsBootstrap("remux"))
             m.assertTrue(Prairie.Playback.needsHlsBootstrap("transcode"))
             m.assertFalse(Prairie.Playback.needsHlsBootstrap("direct"))

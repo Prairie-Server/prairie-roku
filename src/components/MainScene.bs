@@ -10,6 +10,8 @@ import "pkg:/source/lib/Catalog.bs"
 import "pkg:/source/lib/Collections.bs"
 import "pkg:/source/lib/Watch.bs"
 import "pkg:/source/lib/Playback.bs"
+import "pkg:/source/lib/QualityLadder.bs"
+import "pkg:/source/lib/Trickplay.bs"
 import "pkg:/source/lib/LiveTv.bs"
 import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
@@ -52,6 +54,8 @@ sub init()
     m.playLaunch = invalid
     m.playbackSession = invalid
     m.audioTrackIndex = 0
+    m.activeQualityId = "original"
+    m.qualityLadder = invalid
     m.exitingPlayer = false
     m.liveChannels = []
     m.livePrograms = []
@@ -618,6 +622,7 @@ sub showPlayer(launch as object)
     m.playbackSession = invalid
     m.exitingPlayer = false
     m.audioTrackIndex = 0
+    m.activeQualityId = "original"
     screen = CreateObject("roSGNode", "PlayerScreen")
     screen.titleText = launch.title
     screen.busy = true
@@ -628,9 +633,141 @@ sub showPlayer(launch as object)
     screen.observeField("progressTick", "onPlayerProgressTick")
     screen.observeField("seekDelta", "onPlayerSeek")
     screen.observeField("audioCycleRequested", "onPlayerAudioCycle")
+    screen.observeField("qualityChangeRequested", "onPlayerQualityChange")
+    applyPlayerTrickplay(screen)
     m.screenHost.appendChild(screen)
     m.screen = screen
-    startPlaybackSession()
+    if m.qualityLadder = invalid
+        fetchQualityLadderThenPlay()
+    else
+        refreshPlayerQualityOptions()
+        startPlaybackSession()
+    end if
+end sub
+
+sub fetchQualityLadderThenPlay()
+    if m.session = invalid
+        m.qualityLadder = Prairie.QualityLadder.fallbackLadder()
+        refreshPlayerQualityOptions()
+        startPlaybackSession()
+        return
+    end if
+    m.pending = "qualityLadder"
+    if m.screen <> invalid
+        m.screen.busy = true
+    end if
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.qualityLadderPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+function activeWatchVersion() as dynamic
+    if m.playLaunch = invalid or m.playLaunch.watch = invalid
+        return invalid
+    end if
+    versions = m.playLaunch.watch.versions
+    if versions = invalid or versions.count() = 0
+        return invalid
+    end if
+    fileId = m.playLaunch.fileId
+    if fileId <> invalid
+        for each version in versions
+            if version.file_id = fileId
+                return version
+            end if
+        end for
+    end if
+    return versions[0]
+end function
+
+sub applyPlayerTrickplay(screen as object)
+    if screen = invalid
+        return
+    end if
+    version = activeWatchVersion()
+    trickplay = Prairie.Trickplay.fromVersion(version)
+    if trickplay = invalid or m.session = invalid
+        screen.trickplay = trickplay
+        return
+    end if
+    sheets = []
+    for each sheet in trickplay.sheets
+        nextSheet = {
+            index: 0,
+            url: ""
+        }
+        if sheet.index <> invalid
+            nextSheet.index = sheet.index as integer
+        end if
+        if sheet.url <> invalid and (sheet.url as string).len() > 0
+            nextSheet.url = Prairie.Url.buildStreamUrl(m.session.serverUrl, sheet.url as string, m.session.accessToken, invalid)
+        end if
+        sheets.push(nextSheet)
+    end for
+    trickplay.sheets = sheets
+    screen.trickplay = trickplay
+end sub
+
+sub refreshPlayerQualityOptions()
+    if m.screen = invalid or m.route <> "player"
+        return
+    end if
+    ladder = m.qualityLadder
+    if ladder = invalid
+        ladder = Prairie.QualityLadder.fallbackLadder()
+    end if
+    version = activeWatchVersion()
+    sourceResolution = ""
+    sourceBitrate = 0
+    if version <> invalid
+        if version.resolution <> invalid
+            sourceResolution = version.resolution as string
+        end if
+        if version.bitrate <> invalid
+            sourceBitrate = version.bitrate as integer
+        end if
+    end if
+    playMethod = invalid
+    if m.playbackSession <> invalid
+        playMethod = m.playbackSession.play_method
+    end if
+    options = Prairie.QualityLadder.buildQualityOptions({
+        ladder: ladder,
+        playMethod: playMethod,
+        sourceResolution: sourceResolution,
+        sourceBitrateKbps: sourceBitrate,
+        nativeHeight: Prairie.QualityLadder.sourceHeightForVersion(version, ladder)
+    })
+    m.screen.qualityOptions = options
+    m.screen.activeQualityId = m.activeQualityId
+end sub
+
+sub paintPlayerStats()
+    if m.screen = invalid or m.route <> "player"
+        return
+    end if
+    sid = ""
+    method = ""
+    if m.playbackSession <> invalid
+        if m.playbackSession.session_id <> invalid
+            sid = m.playbackSession.session_id as string
+        end if
+        if m.playbackSession.play_method <> invalid
+            method = m.playbackSession.play_method as string
+        end if
+    end if
+    m.screen.statsSessionId = sid
+    m.screen.statsPlayMethod = method
+    stream = m.screen.streamUrl
+    m.screen.statsStreamUrl = stream
+    resolution = m.activeQualityId
+    if m.screen.qualityOptions <> invalid
+        for each opt in m.screen.qualityOptions
+            if opt <> invalid and (opt.id as string) = m.activeQualityId and (opt.resolution as string).len() > 0
+                resolution = opt.resolution as string
+            end if
+        end for
+    end if
+    m.screen.statsResolution = resolution
 end sub
 
 sub loadItemDetail()
@@ -683,7 +820,7 @@ sub startPlaybackSession()
     m.httpTask.control = "RUN"
 end sub
 
-sub startPlaybackTranscode(seekSeconds as dynamic)
+sub startPlaybackTranscode(seekSeconds as dynamic, qualityId = invalid as dynamic)
     if m.session = invalid or m.playbackSession = invalid
         return
     end if
@@ -695,11 +832,71 @@ sub startPlaybackTranscode(seekSeconds as dynamic)
     if m.screen <> invalid
         m.screen.busy = true
     end if
-    body = Prairie.Playback.buildTranscodeStartBody({
+
+    ladder = m.qualityLadder
+    if ladder = invalid
+        ladder = Prairie.QualityLadder.fallbackLadder()
+    end if
+    version = activeWatchVersion()
+    sourceResolution = ""
+    sourceBitrate = 0
+    if version <> invalid
+        if version.resolution <> invalid
+            sourceResolution = version.resolution as string
+        end if
+        if version.bitrate <> invalid
+            sourceBitrate = version.bitrate as integer
+        end if
+    end if
+    options = Prairie.QualityLadder.buildQualityOptions({
+        ladder: ladder,
+        playMethod: m.playbackSession.play_method,
+        sourceResolution: sourceResolution,
+        sourceBitrateKbps: sourceBitrate,
+        nativeHeight: Prairie.QualityLadder.sourceHeightForVersion(version, ladder)
+    })
+    settings = Prairie.PlaybackSettings.load(m.store)
+    chosen = qualityId
+    if chosen = invalid or (chosen as string).len() = 0
+        chosen = Prairie.QualityLadder.autoStartQualityId({
+            playMethod: m.playbackSession.play_method,
+            preferredQuality: settings.preferredQuality,
+            options: options
+        })
+    end if
+    m.activeQualityId = chosen as string
+    if m.screen <> invalid
+        m.screen.qualityOptions = options
+        m.screen.activeQualityId = m.activeQualityId
+    end if
+
+    deviceMax = Prairie.QualityLadder.deviceDisplayHeight()
+    ' Auto: also cap by source height so we don't upscale.
+    if LCase(m.activeQualityId) = "auto"
+        nativeH = Prairie.QualityLadder.sourceHeightForVersion(version, ladder)
+        if nativeH > 0 and (deviceMax <= 0 or nativeH < deviceMax)
+            deviceMax = nativeH
+        end if
+    end if
+    targets = Prairie.QualityLadder.resolveQualityTargets({
+        qualityId: m.activeQualityId,
+        options: options,
+        playMethod: m.playbackSession.play_method,
+        ladder: ladder,
+        deviceMaxHeight: deviceMax
+    })
+
+    bodyInput = {
         sessionId: sid as string,
         seekSeconds: seekSeconds,
         playMethod: m.playbackSession.play_method
-    })
+    }
+    if targets <> invalid
+        bodyInput.targetResolution = targets.resolution
+        bodyInput.targetBitrateKbps = targets.bitrateKbps
+        bodyInput.copyVideo = targets.copyVideo
+    end if
+    body = Prairie.Playback.buildTranscodeStartBody(bodyInput)
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.transcodeStartPath(), "POST", body)
     m.httpTask.control = "RUN"
 end sub
@@ -712,6 +909,9 @@ sub applyPlayerStream(playback as object)
     m.screen.streamFormat = Prairie.Playback.detectStreamFormat(playback)
     m.screen.busy = false
     m.screen.streamUrl = streamUrl
+    m.screen.activeQualityId = m.activeQualityId
+    refreshPlayerQualityOptions()
+    paintPlayerStats()
     m.screen.callFunc("focusDefault")
 end sub
 
@@ -1081,6 +1281,11 @@ sub onSettingsSave()
     if payload = invalid
         return
     end if
+    ' Preserve in-player quality preference when saving force/subtitle settings.
+    current = Prairie.PlaybackSettings.load(m.store)
+    if payload.preferredQuality = invalid
+        payload.preferredQuality = current.preferredQuality
+    end if
     Prairie.PlaybackSettings.save(payload, m.store)
 end sub
 
@@ -1342,6 +1547,76 @@ sub onPlayerAudioCycle()
     m.httpTask.control = "RUN"
 end sub
 
+sub onPlayerQualityChange()
+    if m.session = invalid or m.playbackSession = invalid or m.screen = invalid
+        return
+    end if
+    qualityId = m.screen.qualityChangeRequested
+    if qualityId = invalid or (qualityId as string).len() = 0
+        return
+    end if
+    qualityId = qualityId as string
+    settings = Prairie.PlaybackSettings.load(m.store)
+    settings.preferredQuality = qualityId
+    Prairie.PlaybackSettings.save(settings, m.store)
+
+    playMethod = ""
+    if m.playbackSession.play_method <> invalid
+        playMethod = LCase((m.playbackSession.play_method as string).trim())
+    end if
+    ladder = m.qualityLadder
+    if ladder = invalid
+        ladder = Prairie.QualityLadder.fallbackLadder()
+    end if
+    version = activeWatchVersion()
+    sourceResolution = ""
+    sourceBitrate = 0
+    if version <> invalid
+        if version.resolution <> invalid
+            sourceResolution = version.resolution as string
+        end if
+        if version.bitrate <> invalid
+            sourceBitrate = version.bitrate as integer
+        end if
+    end if
+    options = Prairie.QualityLadder.buildQualityOptions({
+        ladder: ladder,
+        playMethod: m.playbackSession.play_method,
+        sourceResolution: sourceResolution,
+        sourceBitrateKbps: sourceBitrate,
+        nativeHeight: Prairie.QualityLadder.sourceHeightForVersion(version, ladder)
+    })
+    deviceMax = Prairie.QualityLadder.deviceDisplayHeight()
+    if LCase(qualityId) = "auto"
+        nativeH = Prairie.QualityLadder.sourceHeightForVersion(version, ladder)
+        if nativeH > 0 and (deviceMax <= 0 or nativeH < deviceMax)
+            deviceMax = nativeH
+        end if
+    end if
+    targets = Prairie.QualityLadder.resolveQualityTargets({
+        qualityId: qualityId,
+        options: options,
+        playMethod: m.playbackSession.play_method,
+        ladder: ladder,
+        deviceMaxHeight: deviceMax
+    })
+
+    m.activeQualityId = qualityId
+    m.screen.activeQualityId = qualityId
+    m.screen.qualityOptions = options
+    resumeAt = m.screen.positionSeconds
+
+    if targets = invalid and playMethod = "direct"
+        ' Revert to the original direct stream (no HLS).
+        m.screen.startPosition = resumeAt
+        applyPlayerStream(m.playbackSession)
+        return
+    end if
+
+    ' Remux/transcode (and original on those bases) restart HLS at current position.
+    startPlaybackTranscode(resumeAt, qualityId)
+end sub
+
 sub onProgressResponse()
     ' Best-effort progress / session teardown — ignore failures.
 end sub
@@ -1411,11 +1686,23 @@ sub onHttpResponse()
     chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
     chainingDiscover = pending = "discoverProbe"
     chainingAuth = pending = "authSetup" or pending = "deviceStart" or pending = "devicePoll"
-    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover and not chainingAuth
+    chainingQuality = pending = "qualityLadder"
+    if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover and not chainingAuth and not chainingQuality
         m.screen.busy = false
     end if
 
     if response = invalid
+        return
+    end if
+
+    if pending = "qualityLadder"
+        if response.ok = true
+            m.qualityLadder = Prairie.QualityLadder.rungsFromResponse(response.data)
+        else
+            m.qualityLadder = Prairie.QualityLadder.fallbackLadder()
+        end if
+        refreshPlayerQualityOptions()
+        startPlaybackSession()
         return
     end if
 
@@ -1769,6 +2056,7 @@ sub onHttpResponse()
             startPlaybackTranscode(seekSeconds)
             return
         end if
+        m.activeQualityId = "original"
         applyPlayerStream(playback)
     else if pending = "playbackTranscodeStart"
         transcode = response.data

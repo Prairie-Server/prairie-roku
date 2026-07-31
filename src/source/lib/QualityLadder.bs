@@ -1,0 +1,382 @@
+namespace Prairie.QualityLadder
+
+    ' Fallback ladder when GET /playback/quality-ladder fails.
+    ' Mirrors internal/playback/quality_ladder.go and web FALLBACK_LADDER.
+    function fallbackLadder() as object
+        return [
+            { id: "2160p", label: "4K", resolution: "2160p", height: 2160, bitrate_kbps: 20000 },
+            { id: "1080p-high", label: "1080p High", resolution: "1080p", height: 1080, bitrate_kbps: 10000 },
+            { id: "1080p", label: "1080p", resolution: "1080p", height: 1080, bitrate_kbps: 6000 },
+            { id: "720p-high", label: "720p High", resolution: "720p", height: 720, bitrate_kbps: 4000 },
+            { id: "720p", label: "720p", resolution: "720p", height: 720, bitrate_kbps: 2000 },
+            { id: "480p", label: "480p", resolution: "480p", height: 480, bitrate_kbps: 1500 },
+            { id: "420p", label: "420p", resolution: "420p", height: 420, bitrate_kbps: 720 }
+        ]
+    end function
+
+    function qualityLadderPath() as string
+        return "/api/v1/playback/quality-ladder"
+    end function
+
+    function isValidLadder(rungs as dynamic) as boolean
+        if rungs = invalid or type(rungs) <> "roArray" or rungs.count() = 0
+            return false
+        end if
+        for each rung in rungs
+            if rung = invalid or type(rung) <> "roAssociativeArray"
+                return false
+            end if
+            if rung.id = invalid or (rung.id as string).len() = 0
+                return false
+            end if
+            if rung.label = invalid or (rung.label as string).len() = 0
+                return false
+            end if
+            if rung.resolution = invalid or (rung.resolution as string).len() = 0
+                return false
+            end if
+            height = 0
+            if rung.height <> invalid
+                height = rung.height as integer
+            end if
+            bitrate = 0
+            if rung.bitrate_kbps <> invalid
+                bitrate = rung.bitrate_kbps as integer
+            end if
+            if height <= 0 or bitrate <= 0
+                return false
+            end if
+        end for
+        return true
+    end function
+
+    ' Parse API response → rungs array. Falls back when empty/malformed.
+    ' Failures are not cached by callers — transient errors must not pin fallback.
+    function rungsFromResponse(data as dynamic) as object
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return fallbackLadder()
+        end if
+        rungs = data.rungs
+        if not isValidLadder(rungs)
+            return fallbackLadder()
+        end if
+        return rungs
+    end function
+
+    function formatBitrate(kbps as integer) as string
+        if kbps >= 1000
+            if kbps mod 1000 = 0
+                return (kbps / 1000).toStr() + " Mbps"
+            end if
+            ' Integer tenths of Mbps (1500 → 15 → "1.5 Mbps"). Use Fix so
+            ' brs-node float division cannot produce "1.5.5 Mbps".
+            tenths = Fix(kbps / 100)
+            whole = Fix(tenths / 10)
+            frac = tenths mod 10
+            return whole.toStr() + "." + frac.toStr() + " Mbps"
+        end if
+        return kbps.toStr() + " kbps"
+    end function
+
+    function resolveNativeHeight(resolution as string, ladder as object) as integer
+        needle = LCase(resolution.trim())
+        if ladder <> invalid
+            for each rung in ladder
+                if LCase((rung.resolution as string).trim()) = needle and (rung.height as integer) > 0
+                    return rung.height as integer
+                end if
+            end for
+        end if
+        if needle = "2160p" or needle = "4k" or needle = "uhd"
+            return 2160
+        end if
+        if needle = "1440p"
+            return 1440
+        end if
+        if needle = "1080p" or needle = "fhd"
+            return 1080
+        end if
+        if needle = "720p" or needle = "hd"
+            return 720
+        end if
+        if needle = "480p" or needle = "sd"
+            return 480
+        end if
+        if needle = "420p"
+            return 420
+        end if
+        digits = needle
+        if digits.right(1) = "p"
+            digits = digits.left(digits.len() - 1)
+        end if
+        parsed = digits.toInt()
+        if parsed > 0
+            return parsed
+        end if
+        return 0
+    end function
+
+    function sourceHeightForVersion(version as dynamic, ladder as object) as integer
+        if version = invalid
+            return 0
+        end if
+        if version.height <> invalid and (version.height as integer) > 0
+            return version.height as integer
+        end if
+        if version.resolution <> invalid
+            return resolveNativeHeight(version.resolution as string, ladder)
+        end if
+        return 0
+    end function
+
+    function playMethodLabel(playMethod as dynamic) as string
+        if playMethod = invalid
+            return ""
+        end if
+        method = LCase((playMethod as string).trim())
+        if method = "direct"
+            return "Direct Play"
+        end if
+        if method = "remux"
+            return "Remux"
+        end if
+        if method = "transcode"
+            return "Transcode"
+        end if
+        return ""
+    end function
+
+    ' Menu rows: Auto + Original first, then rungs strictly below native height.
+    function buildQualityOptions(input as object) as object
+        ladder = input.ladder
+        if ladder = invalid
+            ladder = fallbackLadder()
+        end if
+        options = []
+        playMethod = invalid
+        if input.playMethod <> invalid
+            playMethod = input.playMethod
+        end if
+        sourceResolution = ""
+        if input.sourceResolution <> invalid
+            sourceResolution = (input.sourceResolution as string).trim()
+        end if
+        sourceBitrate = 0
+        if input.sourceBitrateKbps <> invalid
+            sourceBitrate = input.sourceBitrateKbps as integer
+        end if
+        nativeHeight = 0
+        if input.nativeHeight <> invalid
+            nativeHeight = input.nativeHeight as integer
+        end if
+
+        options.push({
+            id: "auto",
+            label: "Auto",
+            sublabel: "",
+            resolution: "",
+            bitrateKbps: 0,
+            isOriginal: false,
+            isAuto: true
+        })
+
+        displayRes = sourceResolution
+        if displayRes = "2160p"
+            displayRes = "4K"
+        end if
+        originalLabel = "Original"
+        if displayRes.len() > 0
+            originalLabel = "Original (" + displayRes + ")"
+        end if
+        subParts = []
+        methodLabel = playMethodLabel(playMethod)
+        if methodLabel.len() > 0
+            subParts.push(methodLabel)
+        end if
+        if sourceBitrate > 0
+            subParts.push(formatBitrate(sourceBitrate))
+        end if
+        options.push({
+            id: "original",
+            label: originalLabel,
+            sublabel: subParts.join(" · "),
+            resolution: "",
+            bitrateKbps: 0,
+            isOriginal: true,
+            isAuto: false
+        })
+
+        for each tier in ladder
+            height = tier.height as integer
+            if nativeHeight > 0 and height >= nativeHeight
+                ' Skip — Original already covers source resolution.
+            else
+                options.push({
+                    id: tier.id as string,
+                    label: tier.label as string,
+                    sublabel: "~" + formatBitrate(tier.bitrate_kbps as integer),
+                    resolution: tier.resolution as string,
+                    bitrateKbps: tier.bitrate_kbps as integer,
+                    isOriginal: false,
+                    isAuto: false
+                })
+            end if
+        end for
+        return options
+    end function
+
+    ' Best rung at or below maxHeight (+8 tolerance). Highest-first ladder.
+    function bestAutoRung(ladder as object, maxHeight as integer) as dynamic
+        if ladder = invalid or ladder.count() = 0
+            return invalid
+        end if
+        if maxHeight <= 0
+            return ladder[0]
+        end if
+        for each rung in ladder
+            if (rung.height as integer) <= maxHeight + 8
+                return rung
+            end if
+        end for
+        return ladder[ladder.count() - 1]
+    end function
+
+    function deviceDisplayHeight() as integer
+        di = CreateObject("roDeviceInfo")
+        if di = invalid
+            return 1080
+        end if
+        size = di.GetDisplaySize()
+        if size = invalid or size.h = invalid
+            return 1080
+        end if
+        h = size.h as integer
+        if h <= 0
+            return 1080
+        end if
+        return h
+    end function
+
+    ' Resolve menu id → transcode targets. Returns invalid for original+direct
+    ' (caller should drop HLS / play raw stream).
+    function resolveQualityTargets(input as object) as dynamic
+        qualityId = LCase((input.qualityId as string).trim())
+        ladder = input.ladder
+        if ladder = invalid
+            ladder = fallbackLadder()
+        end if
+        options = input.options
+        playMethod = ""
+        if input.playMethod <> invalid
+            playMethod = LCase((input.playMethod as string).trim())
+        end if
+        deviceMaxHeight = 0
+        if input.deviceMaxHeight <> invalid
+            deviceMaxHeight = input.deviceMaxHeight as integer
+        end if
+
+        if qualityId = "original"
+            if playMethod = "direct"
+                return invalid
+            end if
+            if playMethod = "remux"
+                return {
+                    resolution: "",
+                    bitrateKbps: 0,
+                    copyVideo: true
+                }
+            end if
+            ' Transcode base: encode at source scale; bitrate from top offerable rung.
+            top = bestAutoRung(ladder, deviceMaxHeight)
+            bitrate = 0
+            if top <> invalid
+                bitrate = top.bitrate_kbps as integer
+            end if
+            return {
+                resolution: "",
+                bitrateKbps: bitrate,
+                copyVideo: false
+            }
+        end if
+
+        if qualityId = "auto"
+            rung = bestAutoRung(ladder, deviceMaxHeight)
+            if rung = invalid
+                return {
+                    resolution: "1080p",
+                    bitrateKbps: 6000,
+                    copyVideo: false
+                }
+            end if
+            return {
+                resolution: rung.resolution as string,
+                bitrateKbps: rung.bitrate_kbps as integer,
+                copyVideo: false
+            }
+        end if
+
+        if options <> invalid
+            for each option in options
+                if option.id = qualityId and (option.resolution as string).len() > 0 and (option.bitrateKbps as integer) > 0
+                    return {
+                        resolution: option.resolution as string,
+                        bitrateKbps: option.bitrateKbps as integer,
+                        copyVideo: false
+                    }
+                end if
+            end for
+        end if
+        for each rung in ladder
+            if (rung.id as string) = qualityId
+                return {
+                    resolution: rung.resolution as string,
+                    bitrateKbps: rung.bitrate_kbps as integer,
+                    copyVideo: false
+                }
+            end if
+        end for
+        return invalid
+    end function
+
+    ' Auto-start quality id for remux/transcode bootstrap (web parity).
+    function autoStartQualityId(input as object) as string
+        playMethod = ""
+        if input.playMethod <> invalid
+            playMethod = LCase((input.playMethod as string).trim())
+        end if
+        preferred = ""
+        if input.preferredQuality <> invalid
+            preferred = LCase((input.preferredQuality as string).trim())
+        end if
+        options = input.options
+        if preferred.len() > 0 and preferred <> "auto"
+            if options <> invalid
+                for each option in options
+                    if LCase(option.id as string) = preferred
+                        return option.id as string
+                    end if
+                end for
+            end if
+            ' Map legacy resolution prefs (e.g. "1080p") to a matching option.
+            if options <> invalid
+                for each option in options
+                    if LCase(option.resolution as string) = preferred
+                        return option.id as string
+                    end if
+                end for
+            end if
+        end if
+        if playMethod = "transcode"
+            if options <> invalid
+                for each option in options
+                    if option.isOriginal <> true and option.isAuto <> true and (option.resolution as string).len() > 0
+                        return option.id as string
+                    end if
+                end for
+            end if
+            return "auto"
+        end if
+        return "original"
+    end function
+
+end namespace

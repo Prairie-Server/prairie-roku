@@ -1,5 +1,6 @@
 import "pkg:/source/lib/UrlUtils.bs"
 import "pkg:/source/lib/PlaybackSettings.bs"
+import "pkg:/source/lib/QualityLadder.bs"
 
 namespace Prairie.Playback
 
@@ -9,6 +10,10 @@ namespace Prairie.Playback
 
     function transcodeStartPath() as string
         return "/api/v1/playback/transcode/start"
+    end function
+
+    function qualityLadderPath() as string
+        return Prairie.QualityLadder.qualityLadderPath()
     end function
 
     function progressPath(sessionId as string) as string
@@ -72,6 +77,25 @@ namespace Prairie.Playback
         if input.seekSeconds <> invalid
             seekSeconds = input.seekSeconds
         end if
+
+        ' Explicit quality targets from the picker / Auto ladder.
+        hasTargets = false
+        targetResolution = ""
+        targetBitrate = 0
+        copyVideo = false
+        if input.targetResolution <> invalid
+            hasTargets = true
+            targetResolution = input.targetResolution as string
+        end if
+        if input.targetBitrateKbps <> invalid
+            hasTargets = true
+            targetBitrate = input.targetBitrateKbps as integer
+        end if
+        if input.copyVideo = true
+            hasTargets = true
+            copyVideo = true
+        end if
+
         body = {
             session_id: input.sessionId as string,
             seek_seconds: seekSeconds,
@@ -83,7 +107,26 @@ namespace Prairie.Playback
             subtitle_track_index: -1,
             subtitle_burn_in: false
         }
-        if not isRemux
+
+        if hasTargets
+            if copyVideo
+                body.target_resolution = ""
+                body.target_codec_video = "copy"
+                body.target_codec_audio = "aac"
+                body.target_bitrate_kbps = 0
+            else
+                body.target_resolution = targetResolution
+                body.target_codec_video = "h264"
+                body.target_codec_audio = "aac"
+                body.target_bitrate_kbps = targetBitrate
+            end if
+        else if isRemux
+            ' Default remux bootstrap: codec copy.
+            body.target_codec_video = "copy"
+            body.target_codec_audio = "copy"
+            body.target_bitrate_kbps = 0
+        else
+            ' Legacy fallback when no ladder targets were supplied.
             body.target_resolution = "1080p"
             body.target_codec_video = "h264"
             body.target_codec_audio = "aac"
