@@ -1,0 +1,243 @@
+namespace tests
+    @suite("Prairie.QualityLadder")
+    class QualityLadderSuite extends rooibos.BaseTestSuite
+
+        @describe("paths and fallback")
+        @it("exposes ladder path and a non-empty fallback")
+        sub _()
+            m.assertEqual(Prairie.QualityLadder.qualityLadderPath(), "/api/v1/playback/quality-ladder")
+            ladder = Prairie.QualityLadder.fallbackLadder()
+            m.assertTrue(ladder.count() >= 5)
+            m.assertTrue(Prairie.QualityLadder.isValidLadder(ladder))
+            m.assertFalse(Prairie.QualityLadder.isValidLadder([]))
+            m.assertFalse(Prairie.QualityLadder.isValidLadder(invalid))
+            m.assertFalse(Prairie.QualityLadder.isValidLadder([{ id: "x" }]))
+        end sub
+
+        @it("parses valid responses and falls back on bad payloads")
+        sub _()
+            fromFallback = Prairie.QualityLadder.rungsFromResponse(invalid)
+            m.assertTrue(fromFallback.count() > 0)
+            bad = Prairie.QualityLadder.rungsFromResponse({ rungs: [{ id: "x", label: "", resolution: "1080p", height: 0, bitrate_kbps: 0 }] })
+            m.assertEqual(bad[0].id, "2160p")
+            good = Prairie.QualityLadder.rungsFromResponse({
+                rungs: [{ id: "720p", label: "720p", resolution: "720p", height: 720, bitrate_kbps: 2000 }]
+            })
+            m.assertEqual(good.count(), 1)
+            m.assertEqual(good[0].id, "720p")
+        end sub
+
+        @describe("menu and targets")
+        @it("builds Auto/Original plus rungs below native height")
+        sub _()
+            ladder = Prairie.QualityLadder.fallbackLadder()
+            options = Prairie.QualityLadder.buildQualityOptions({
+                ladder: ladder,
+                playMethod: "transcode",
+                sourceResolution: "1080p",
+                sourceBitrateKbps: 8000,
+                nativeHeight: 1080
+            })
+            m.assertEqual(options[0].id, "auto")
+            m.assertEqual(options[1].id, "original")
+            m.assertTrue(options[1].label.instr("1080p") >= 0)
+            for each opt in options
+                if opt.isAuto <> true and opt.isOriginal <> true
+                    m.assertTrue((opt.bitrateKbps as integer) > 0)
+                    m.assertTrue((opt.resolution as string).len() > 0)
+                end if
+            end for
+            ' No 1080p+ rungs when native is 1080.
+            for each opt in options
+                m.assertFalse(opt.id = "1080p")
+                m.assertFalse(opt.id = "2160p")
+            end for
+        end sub
+
+        @it("resolves Auto/Original/rung targets")
+        sub _()
+            ladder = Prairie.QualityLadder.fallbackLadder()
+            options = Prairie.QualityLadder.buildQualityOptions({
+                ladder: ladder,
+                playMethod: "remux",
+                sourceResolution: "2160p",
+                nativeHeight: 2160
+            })
+            remuxOriginal = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "original",
+                options: options,
+                playMethod: "remux",
+                ladder: ladder
+            })
+            m.assertTrue(remuxOriginal.copyVideo)
+            m.assertEqual(remuxOriginal.bitrateKbps, 0)
+
+            directOriginal = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "original",
+                options: options,
+                playMethod: "direct",
+                ladder: ladder
+            })
+            m.assertInvalid(directOriginal)
+
+            auto = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "auto",
+                options: options,
+                playMethod: "transcode",
+                ladder: ladder,
+                deviceMaxHeight: 1080
+            })
+            m.assertEqual(auto.resolution, "1080p")
+            m.assertFalse(auto.copyVideo)
+
+            rung = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "720p",
+                options: options,
+                playMethod: "transcode",
+                ladder: ladder
+            })
+            m.assertEqual(rung.resolution, "720p")
+            m.assertEqual(rung.bitrateKbps, 2000)
+        end sub
+
+        @it("picks auto-start quality and formats bitrate")
+        sub _()
+            m.assertEqual(Prairie.QualityLadder.formatBitrate(6000), "6 Mbps")
+            m.assertEqual(Prairie.QualityLadder.formatBitrate(1500), "1.5 Mbps")
+            m.assertEqual(Prairie.QualityLadder.formatBitrate(720), "720 kbps")
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("4k", []), 2160)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("1080p", Prairie.QualityLadder.fallbackLadder()), 1080)
+            m.assertEqual(Prairie.QualityLadder.sourceHeightForVersion({ height: 720 }, []), 720)
+            m.assertEqual(Prairie.QualityLadder.sourceHeightForVersion({ resolution: "480p" }, []), 480)
+            m.assertEqual(Prairie.QualityLadder.playMethodLabel("direct"), "Direct Play")
+            m.assertEqual(Prairie.QualityLadder.playMethodLabel(invalid), "")
+
+            options = Prairie.QualityLadder.buildQualityOptions({
+                ladder: Prairie.QualityLadder.fallbackLadder(),
+                playMethod: "transcode",
+                sourceResolution: "2160p",
+                nativeHeight: 2160
+            })
+            autoStart = Prairie.QualityLadder.autoStartQualityId({
+                playMethod: "transcode",
+                preferredQuality: "auto",
+                options: options
+            })
+            m.assertTrue(autoStart <> "original")
+            remuxStart = Prairie.QualityLadder.autoStartQualityId({
+                playMethod: "remux",
+                preferredQuality: "",
+                options: options
+            })
+            m.assertEqual(remuxStart, "original")
+            pref = Prairie.QualityLadder.autoStartQualityId({
+                playMethod: "transcode",
+                preferredQuality: "720p",
+                options: options
+            })
+            m.assertEqual(pref, "720p")
+            best = Prairie.QualityLadder.bestAutoRung(Prairie.QualityLadder.fallbackLadder(), 800)
+            m.assertEqual(best.id, "720p-high")
+            m.assertInvalid(Prairie.QualityLadder.bestAutoRung([], 1080))
+            m.assertInvalid(Prairie.QualityLadder.bestAutoRung(invalid, 1080))
+            top = Prairie.QualityLadder.bestAutoRung(Prairie.QualityLadder.fallbackLadder(), 0)
+            m.assertEqual(top.id, "2160p")
+            tiny = Prairie.QualityLadder.bestAutoRung(Prairie.QualityLadder.fallbackLadder(), 100)
+            m.assertEqual(tiny.id, "420p")
+        end sub
+
+        @it("covers height helpers, original transcode, and menu edge cases")
+        sub _()
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("1440p", []), 1440)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("fhd", []), 1080)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("hd", []), 720)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("sd", []), 480)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("420p", []), 420)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("900p", []), 900)
+            m.assertEqual(Prairie.QualityLadder.resolveNativeHeight("nope", []), 0)
+            m.assertEqual(Prairie.QualityLadder.sourceHeightForVersion(invalid, []), 0)
+            m.assertEqual(Prairie.QualityLadder.sourceHeightForVersion({}, []), 0)
+            m.assertEqual(Prairie.QualityLadder.playMethodLabel("transcode"), "Transcode")
+            m.assertEqual(Prairie.QualityLadder.playMethodLabel("mystery"), "")
+
+            m.assertFalse(Prairie.QualityLadder.isValidLadder([{ id: "", label: "x", resolution: "720p", height: 720, bitrate_kbps: 1 }]))
+            m.assertFalse(Prairie.QualityLadder.isValidLadder([{ id: "x", label: "", resolution: "720p", height: 720, bitrate_kbps: 1 }]))
+            m.assertFalse(Prairie.QualityLadder.isValidLadder([{ id: "x", label: "x", resolution: "", height: 720, bitrate_kbps: 1 }]))
+            m.assertFalse(Prairie.QualityLadder.isValidLadder([invalid]))
+
+            opts = Prairie.QualityLadder.buildQualityOptions({
+                ladder: invalid,
+                playMethod: "transcode",
+                sourceResolution: "2160p",
+                sourceBitrateKbps: 20000,
+                nativeHeight: 0
+            })
+            m.assertEqual(opts[0].id, "auto")
+            m.assertTrue(opts[1].label.instr("4K") >= 0)
+
+            ladder = Prairie.QualityLadder.fallbackLadder()
+            originalTc = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "original",
+                options: [],
+                playMethod: "transcode",
+                ladder: ladder,
+                deviceMaxHeight: 1080
+            })
+            m.assertFalse(originalTc.copyVideo)
+            m.assertTrue((originalTc.bitrateKbps as integer) > 0)
+
+            emptyAuto = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "auto",
+                options: [],
+                playMethod: "transcode",
+                ladder: [],
+                deviceMaxHeight: 1080
+            })
+            m.assertEqual(emptyAuto.resolution, "1080p")
+            m.assertEqual(emptyAuto.bitrateKbps, 6000)
+
+            fromLadder = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "480p",
+                options: [],
+                playMethod: "transcode",
+                ladder: ladder
+            })
+            m.assertEqual(fromLadder.resolution, "480p")
+            m.assertInvalid(Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "missing",
+                options: [],
+                playMethod: "transcode",
+                ladder: ladder
+            }))
+            noLadder = Prairie.QualityLadder.resolveQualityTargets({
+                qualityId: "720p",
+                options: invalid,
+                playMethod: "transcode",
+                ladder: invalid
+            })
+            m.assertEqual(noLadder.resolution, "720p")
+
+            mapped = Prairie.QualityLadder.autoStartQualityId({
+                playMethod: "transcode",
+                preferredQuality: "720p",
+                options: Prairie.QualityLadder.buildQualityOptions({
+                    ladder: ladder,
+                    playMethod: "transcode",
+                    sourceResolution: "1080p",
+                    nativeHeight: 1080
+                })
+            })
+            m.assertEqual(mapped, "720p")
+            fallbackAuto = Prairie.QualityLadder.autoStartQualityId({
+                playMethod: "transcode",
+                preferredQuality: "auto",
+                options: [{ id: "auto", isAuto: true, isOriginal: false, resolution: "" }]
+            })
+            m.assertEqual(fallbackAuto, "auto")
+
+            h = Prairie.QualityLadder.deviceDisplayHeight()
+            m.assertTrue(h > 0)
+        end sub
+
+    end class
+end namespace

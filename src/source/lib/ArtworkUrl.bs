@@ -15,20 +15,42 @@ namespace Prairie.Artwork
     ' Roku Poster only documents JPEG/PNG/WebP — AVIF does not decode. Keep
     ' the server's WebP URL (rewrite accidental .avif siblings back to .webp).
     ' On Roku OS older than 9.4 (no WebP decode), prefer the PNG sibling.
-    function preferred(url as string) as string
+    '
+    ' When width > 0, rewrite to /w{width}. for Prairie-signed non-original
+    ' artwork URLs only (mirrors web artworkUrl.ts artworkWidthVariant).
+    ' When width is 0, poster/logo paths default to w200 for TV grid density.
+    function preferred(url as string, width = 0 as integer) as string
         trimmed = url.trim()
         if trimmed.len() = 0
             return ""
         end if
         webp = toWebP(trimmed)
-        if supportsWebP()
-            return webp
+        chosen = webp
+        if not supportsWebP()
+            png = pngSibling(webp)
+            if png.len() > 0
+                chosen = png
+            end if
         end if
-        png = pngSibling(webp)
-        if png.len() > 0
-            return png
+        targetWidth = width
+        if targetWidth <= 0
+            lower = LCase(chosen)
+            if lower.instr("/poster/") >= 0 or lower.instr("/logo/") >= 0
+                targetWidth = 200
+            end if
         end if
-        return webp
+        if targetWidth > 0
+            sized = widthVariant(chosen, targetWidth)
+            if sized.len() > 0
+                return sized
+            end if
+        end if
+        return chosen
+    end function
+
+    ' Alias kept for call sites that want an explicit sized helper name.
+    function preferredSized(url as string, width as integer) as string
+        return preferred(url, width)
     end function
 
     ' PNG sibling of a canonical .webp (or accidental .avif) path/URL.
@@ -92,6 +114,141 @@ namespace Prairie.Artwork
             return false
         end if
         return minor >= 4
+    end function
+
+    ' Prairie artwork store signature: sig= + expires= on an /artwork/ path.
+    ' Revision-scoped — width rung rewrites still validate (unlike SigV4).
+    function isPrairieSigned(url as string) as boolean
+        trimmed = url.trim()
+        if trimmed.len() = 0
+            return false
+        end if
+        lower = LCase(trimmed)
+        if lower.instr("sig=") < 0 or lower.instr("expires=") < 0
+            return false
+        end if
+        parts = splitPathSuffix(trimmed)
+        return LCase(parts.path).instr("/artwork/") >= 0
+    end function
+
+    ' Third-party signed URL whose path must not be rewritten.
+    function isExternallySigned(url as string) as boolean
+        if isPrairieSigned(url)
+            return false
+        end if
+        lower = LCase(url)
+        markers = ["x-amz-signature=", "x-goog-signature=", "signature=", "sig=", "verify="]
+        for each marker in markers
+            if lower.instr(marker) >= 0
+                return true
+            end if
+        end for
+        return false
+    end function
+
+    ' Signed original object — rewriting width invalidates the signature.
+    function isSignedOriginal(url as string) as boolean
+        if not isPrairieSigned(url)
+            return false
+        end if
+        parts = splitPathSuffix(url)
+        return hasVariantSegment(parts.path, "original")
+    end function
+
+    function hasVariantSegment(pathname as string, variant as string) as boolean
+        needle = "/" + variant + "."
+        lower = LCase(pathname)
+        return lower.instr(LCase(needle)) >= 0
+    end function
+
+    ' Rewrite /original. or /wN. → /w{width}. Returns "" when unsafe/impossible.
+    function widthVariant(url as string, width as integer) as string
+        trimmed = url.trim()
+        if trimmed.len() = 0 or width <= 0
+            return ""
+        end if
+        if isExternallySigned(trimmed) or isSignedOriginal(trimmed)
+            return ""
+        end if
+        ' Only rewrite Prairie-signed or unsigned artwork-shaped paths.
+        parts = splitPathSuffix(trimmed)
+        path = parts.path
+        suffix = parts.suffix
+        if not pathHasWidthVariant(path)
+            return ""
+        end if
+        nextPath = rewritePathWidth(path, width)
+        if nextPath.len() = 0 or nextPath = path
+            return ""
+        end if
+        return nextPath + suffix
+    end function
+
+    function pathHasWidthVariant(pathname as string) as boolean
+        lower = LCase(pathname)
+        if Instr(1, lower, "/original.") > 0
+            return true
+        end if
+        startAt = 1
+        guard = 0
+        while guard < 64
+            guard = guard + 1
+            idx = Instr(startAt, lower, "/w")
+            if idx = 0
+                return false
+            end if
+            digitStart = idx + 2
+            digitEnd = digitStart
+            while digitEnd <= lower.len()
+                ch = Mid(lower, digitEnd, 1)
+                if ch >= "0" and ch <= "9"
+                    digitEnd = digitEnd + 1
+                else
+                    exit while
+                end if
+            end while
+            if digitEnd > digitStart and digitEnd <= lower.len() and Mid(lower, digitEnd, 1) = "."
+                return true
+            end if
+            startAt = idx + 1
+        end while
+        return false
+    end function
+
+    function rewritePathWidth(pathname as string, width as integer) as string
+        lower = LCase(pathname)
+        replacement = "/w" + width.toStr() + "."
+        origToken = "/original."
+        origIdx = Instr(1, lower, origToken)
+        if origIdx > 0
+            after = origIdx + origToken.len()
+            return Left(pathname, origIdx - 1) + replacement + Mid(pathname, after)
+        end if
+        startAt = 1
+        guard = 0
+        while guard < 64
+            guard = guard + 1
+            idx = Instr(startAt, lower, "/w")
+            if idx = 0
+                return ""
+            end if
+            digitStart = idx + 2
+            digitEnd = digitStart
+            while digitEnd <= lower.len()
+                ch = Mid(lower, digitEnd, 1)
+                if ch >= "0" and ch <= "9"
+                    digitEnd = digitEnd + 1
+                else
+                    exit while
+                end if
+            end while
+            if digitEnd > digitStart and digitEnd <= lower.len() and Mid(lower, digitEnd, 1) = "."
+                afterDot = digitEnd + 1
+                return Left(pathname, idx - 1) + replacement + Mid(pathname, afterDot)
+            end if
+            startAt = idx + 1
+        end while
+        return ""
     end function
 
     ' Split URL/path into path (no query/fragment) and suffix (query/fragment).

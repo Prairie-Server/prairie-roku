@@ -52,5 +52,45 @@ namespace tests
             end if
         end sub
 
+        @describe("widthVariant")
+        @it("rewrites Prairie-signed /wN. and unsigned artwork paths")
+        sub _()
+            m.assertEqual(Prairie.Artwork.widthVariant("https://prairie.example.com/artwork/m/1/poster/w500.rev.webp?expires=999&sig=abc", 200), "https://prairie.example.com/artwork/m/1/poster/w200.rev.webp?expires=999&sig=abc")
+            m.assertEqual(Prairie.Artwork.widthVariant("/library/1/poster/w500.abc.webp", 200), "/library/1/poster/w200.abc.webp")
+            ' Signed original must not be rewritten (signature covers path).
+            m.assertEqual(Prairie.Artwork.widthVariant("https://prairie.example.com/artwork/m/1/poster/original.rev.webp?expires=1&sig=2", 200), "")
+            ' preferred() auto-selects w200 for /poster/ paths (1-arg form is Rooibos-safe).
+            m.assertEqual(Prairie.Artwork.preferred("https://prairie.example.com/artwork/m/1/poster/w500.rev.webp?expires=999&sig=abc"), "https://prairie.example.com/artwork/m/1/poster/w200.rev.webp?expires=999&sig=abc")
+            m.assertEqual(Prairie.Artwork.preferred("https://prairie.example.com/artwork/m/1/backdrop/w1280.rev.webp?expires=999&sig=abc"), "https://prairie.example.com/artwork/m/1/backdrop/w1280.rev.webp?expires=999&sig=abc")
+        end sub
+
+        @it("refuses blank, zero width, and externally signed URLs")
+        sub _()
+            m.assertEqual(Prairie.Artwork.widthVariant("", 200), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://x/artwork/a/w500.x.webp?expires=1&sig=2", 0), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://cdn.example.com/art/w500.webp?X-Amz-Signature=dead", 200), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://cdn.example.com/art/w500.webp?X-Goog-Signature=dead", 200), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://cdn.example.com/plain.jpg", 200), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://cdn.example.com/x.webp?signature=1", 200), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://cdn.example.com/x.webp?verify=1", 200), "")
+            m.assertEqual(Prairie.Artwork.widthVariant("https://cdn.example.com/x.webp?sig=1", 200), "")
+        end sub
+
+        @it("rewrites path width tokens including original and mid-path /wN.")
+        sub _()
+            m.assertEqual(Prairie.Artwork.rewritePathWidth("/a/original.rev.webp", 200), "/a/w200.rev.webp")
+            m.assertEqual(Prairie.Artwork.rewritePathWidth("/a/w500.rev.webp", 200), "/a/w200.rev.webp")
+            m.assertEqual(Prairie.Artwork.rewritePathWidth("/a/poster.jpg", 200), "")
+            m.assertEqual(Prairie.Artwork.pathHasWidthVariant("/a/original.x.webp"), true)
+            m.assertEqual(Prairie.Artwork.pathHasWidthVariant("/a/w12.x.webp"), true)
+            m.assertEqual(Prairie.Artwork.pathHasWidthVariant("/a/wx.x.webp"), false)
+            m.assertEqual(Prairie.Artwork.pathHasWidthVariant("/a/poster.jpg"), false)
+            parts = Prairie.Artwork.splitPathSuffix("https://h/a.webp?q=1#frag")
+            m.assertEqual(parts.path, "https://h/a.webp")
+            m.assertEqual(parts.suffix, "?q=1#frag")
+            hashOnly = Prairie.Artwork.splitPathSuffix("https://h/a.webp#frag")
+            m.assertEqual(hashOnly.suffix, "#frag")
+        end sub
+
     end class
 end namespace

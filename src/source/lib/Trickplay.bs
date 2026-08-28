@@ -1,0 +1,131 @@
+namespace Prairie.Trickplay
+
+    ' Extract PlayerTrickplay-shaped metadata from a watch file version.
+    function fromVersion(version as dynamic) as dynamic
+        if version = invalid
+            return invalid
+        end if
+        raw = version.trickplay
+        if raw = invalid or type(raw) <> "roAssociativeArray"
+            return invalid
+        end if
+        sheets = raw.sheets
+        if sheets = invalid or type(sheets) <> "roArray" or sheets.count() = 0
+            return invalid
+        end if
+        thumbnailCount = 0
+        if raw.thumbnail_count <> invalid
+            thumbnailCount = raw.thumbnail_count as integer
+        end if
+        if thumbnailCount <= 0
+            return invalid
+        end if
+        return {
+            interval_seconds: intOr(raw.interval_seconds, 10),
+            width: intOr(raw.width, 320),
+            height: intOr(raw.height, 180),
+            tile_columns: intOr(raw.tile_columns, 10),
+            tile_rows: intOr(raw.tile_rows, 10),
+            thumbnail_count: thumbnailCount,
+            sheets: sheets
+        }
+    end function
+
+    function intOr(value as dynamic, fallback as integer) as integer
+        if value = invalid
+            return fallback
+        end if
+        n = value as integer
+        if n <= 0
+            return fallback
+        end if
+        return n
+    end function
+
+    ' Resolve sprite-sheet tile for scrub time. Returns invalid when unavailable.
+    ' Pixel offsets suit SceneGraph clipping: Poster translation = [-offsetX, -offsetY]
+    ' inside a Group whose clippingRect is [0, 0, tileWidth, tileHeight].
+    function resolveTile(trickplay as dynamic, seconds as float) as dynamic
+        if trickplay = invalid
+            return invalid
+        end if
+        sheets = trickplay.sheets
+        if sheets = invalid or sheets.count() = 0
+            return invalid
+        end if
+        thumbnailCount = trickplay.thumbnail_count as integer
+        if thumbnailCount <= 0
+            return invalid
+        end if
+
+        interval = intOr(trickplay.interval_seconds, 10)
+        columns = intOr(trickplay.tile_columns, 10)
+        rows = intOr(trickplay.tile_rows, 10)
+        width = intOr(trickplay.width, 320)
+        height = intOr(trickplay.height, CInt((width * 9) / 16))
+        tilesPerSheet = columns * rows
+        if tilesPerSheet <= 0
+            return invalid
+        end if
+
+        tileIndex = Fix(CInt(seconds) / interval)
+        if tileIndex < 0
+            tileIndex = 0
+        end if
+        maxIndex = thumbnailCount - 1
+        if tileIndex > maxIndex
+            tileIndex = maxIndex
+        end if
+
+        sheetIndex = Fix(tileIndex / tilesPerSheet)
+        sheet = invalid
+        for each entry in sheets
+            if entry <> invalid and entry.index <> invalid and (entry.index as integer) = sheetIndex
+                sheet = entry
+                exit for
+            end if
+        end for
+        if sheet = invalid or sheet.url = invalid or (sheet.url as string).len() = 0
+            return invalid
+        end if
+
+        local = tileIndex mod tilesPerSheet
+        col = local mod columns
+        row = Fix(local / columns)
+
+        return {
+            url: sheet.url as string,
+            tileWidth: width,
+            tileHeight: height,
+            sheetPixelWidth: columns * width,
+            sheetPixelHeight: rows * height,
+            offsetX: CInt(col * width),
+            offsetY: CInt(row * height),
+            column: CInt(col),
+            row: CInt(row),
+            tileIndex: CInt(tileIndex)
+        }
+    end function
+
+    function formatSeekTime(seconds as float) as string
+        total = CInt(seconds)
+        if total < 0
+            total = 0
+        end if
+        h = CInt(total / 3600)
+        m = CInt((total mod 3600) / 60)
+        s = total mod 60
+        if h > 0
+            return h.toStr() + ":" + pad2(m) + ":" + pad2(s)
+        end if
+        return m.toStr() + ":" + pad2(s)
+    end function
+
+    function pad2(n as integer) as string
+        if n < 10
+            return "0" + n.toStr()
+        end if
+        return n.toStr()
+    end function
+
+end namespace

@@ -51,3 +51,5 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 8. `GET /api/v1/livetv/channels` · guide · channel session
 
 Device headers: `X-Prairie-Device-Platform: roku`, `X-Prairie-Device-Name: Prairie Roku`.
+Server `deviceclass` does not yet map `roku` → TV (w200 posters); coordinate adding it.
+Until then the client rewrites Prairie-signed non-original artwork URLs to `/w200.` via `Artwork.preferred(…, 200)`.

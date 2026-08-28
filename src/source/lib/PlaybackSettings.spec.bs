@@ -15,14 +15,17 @@ namespace tests
             m.assertFalse(defaults.forceDirectPlay)
             m.assertFalse(defaults.forceTranscode)
             m.assertEqual(defaults.preferredSubtitleLanguage, "")
+            m.assertEqual(defaults.preferredQuality, "auto")
             settings = Prairie.PlaybackSettings.normalize({
                 forceDirectPlay: true,
                 forceTranscode: true,
-                preferredSubtitleLanguage: " ENG "
+                preferredSubtitleLanguage: " ENG ",
+                preferredQuality: "1080p-high"
             })
             m.assertTrue(settings.forceDirectPlay)
             m.assertFalse(settings.forceTranscode)
             m.assertEqual(settings.preferredSubtitleLanguage, "eng")
+            m.assertEqual(settings.preferredQuality, "1080p-high")
         end sub
 
         @it("resolves forced play method")
@@ -46,12 +49,14 @@ namespace tests
         sub _()
             saved = Prairie.PlaybackSettings.save({
                 forceTranscode: true,
-                preferredSubtitleLanguage: "spa"
+                preferredSubtitleLanguage: "spa",
+                preferredQuality: "720p"
             }, m.store)
             m.assertTrue(saved.forceTranscode)
             loaded = Prairie.PlaybackSettings.load(m.store)
             m.assertTrue(loaded.forceTranscode)
             m.assertEqual(loaded.preferredSubtitleLanguage, "spa")
+            m.assertEqual(loaded.preferredQuality, "720p")
         end sub
 
         @it("returns defaults when unset")
@@ -60,6 +65,7 @@ namespace tests
             m.assertFalse(loaded.forceDirectPlay)
             m.assertFalse(loaded.forceTranscode)
             m.assertEqual(loaded.preferredSubtitleLanguage, "")
+            m.assertEqual(loaded.preferredQuality, "auto")
         end sub
 
     end class

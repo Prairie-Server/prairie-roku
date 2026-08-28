@@ -1,0 +1,122 @@
+namespace tests
+    @suite("Prairie.Trickplay")
+    class TrickplaySuite extends rooibos.BaseTestSuite
+
+        @describe("fromVersion")
+        @it("returns invalid without sheets or thumbnails")
+        sub _()
+            m.assertInvalid(Prairie.Trickplay.fromVersion(invalid))
+            m.assertInvalid(Prairie.Trickplay.fromVersion({}))
+            m.assertInvalid(Prairie.Trickplay.fromVersion({ trickplay: { sheets: [], thumbnail_count: 10 } }))
+            m.assertInvalid(Prairie.Trickplay.fromVersion({ trickplay: { sheets: [{ index: 0, url: "/s.jpg" }], thumbnail_count: 0 } }))
+        end sub
+
+        @it("normalizes trickplay metadata from a version")
+        sub _()
+            tp = Prairie.Trickplay.fromVersion({
+                trickplay: {
+                    interval_seconds: 10,
+                    width: 320,
+                    height: 180,
+                    tile_columns: 10,
+                    tile_rows: 10,
+                    thumbnail_count: 25,
+                    sheets: [{ index: 0, url: "/sheet0.jpg" }]
+                }
+            })
+            m.assertEqual(tp.thumbnail_count, 25)
+            m.assertEqual(tp.width, 320)
+            m.assertEqual(tp.sheets.count(), 1)
+        end sub
+
+        @describe("resolveTile")
+        @it("maps scrub time to sheet pixel offsets")
+        sub _()
+            tp = {
+                interval_seconds: 10,
+                width: 100,
+                height: 50,
+                tile_columns: 10,
+                tile_rows: 10,
+                thumbnail_count: 25,
+                sheets: [
+                    { index: 0, url: "https://cdn.example.com/s0.jpg" },
+                    { index: 1, url: "https://cdn.example.com/s1.jpg" }
+                ]
+            }
+            first = Prairie.Trickplay.resolveTile(tp, 0)
+            m.assertEqual(first.url, "https://cdn.example.com/s0.jpg")
+            m.assertEqual(first.offsetX, 0)
+            m.assertEqual(first.offsetY, 0)
+            m.assertEqual(first.sheetPixelWidth, 1000)
+            m.assertEqual(first.sheetPixelHeight, 500)
+
+            mid = Prairie.Trickplay.resolveTile(tp, 55)
+            ' floor(55/10)=5 → col 5, row 0
+            m.assertEqual(mid.column, 5)
+            m.assertEqual(mid.offsetX, 500)
+            m.assertEqual(mid.offsetY, 0)
+
+            nextSheet = Prairie.Trickplay.resolveTile(tp, 1000)
+            ' tileIndex clamped to 24 → sheet 0 still (25 tiles, 100/sheet)
+            m.assertEqual(nextSheet.tileIndex, 24)
+            m.assertEqual(nextSheet.url, "https://cdn.example.com/s0.jpg")
+
+            m.assertInvalid(Prairie.Trickplay.resolveTile(invalid, 10))
+            m.assertInvalid(Prairie.Trickplay.resolveTile({ thumbnail_count: 0, sheets: [] }, 1))
+        end sub
+
+        @it("formats seek clock labels")
+        sub _()
+            m.assertEqual(Prairie.Trickplay.formatSeekTime(65), "1:05")
+            m.assertEqual(Prairie.Trickplay.formatSeekTime(3661), "1:01:01")
+            m.assertEqual(Prairie.Trickplay.formatSeekTime(-3), "0:00")
+            m.assertEqual(Prairie.Trickplay.formatSeekTime(9), "0:09")
+        end sub
+
+        @it("rejects empty sheet urls and clamps negative scrub time")
+        sub _()
+            m.assertInvalid(Prairie.Trickplay.resolveTile({
+                interval_seconds: 10,
+                width: 100,
+                height: 50,
+                tile_columns: 10,
+                tile_rows: 10,
+                thumbnail_count: 5,
+                sheets: [{ index: 0, url: "" }]
+            }, 0))
+            m.assertInvalid(Prairie.Trickplay.resolveTile({
+                interval_seconds: 10,
+                width: 100,
+                height: 50,
+                tile_columns: 10,
+                tile_rows: 10,
+                thumbnail_count: 5,
+                sheets: [{ index: 99, url: "https://cdn.example.com/missing.jpg" }]
+            }, 0))
+            ' Negative scrub clamps to tile 0.
+            tp = {
+                interval_seconds: 10,
+                width: 100,
+                height: 50,
+                tile_columns: 10,
+                tile_rows: 10,
+                thumbnail_count: 5,
+                sheets: [{ index: 0, url: "https://cdn.example.com/s0.jpg" }]
+            }
+            neg = Prairie.Trickplay.resolveTile(tp, -20)
+            m.assertEqual(neg.tileIndex, 0)
+            m.assertEqual(Prairie.Trickplay.formatSeekTime(70), "1:10")
+            ' Defaults when interval/size omitted (intOr fallbacks).
+            defaults = Prairie.Trickplay.fromVersion({
+                trickplay: {
+                    thumbnail_count: 3,
+                    sheets: [{ index: 0, url: "/s.jpg" }]
+                }
+            })
+            m.assertEqual(defaults.interval_seconds, 10)
+            m.assertEqual(defaults.width, 320)
+        end sub
+
+    end class
+end namespace

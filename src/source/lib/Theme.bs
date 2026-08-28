@@ -19,6 +19,13 @@ namespace Prairie.Theme
         return "Prairie"
     end function
 
+    ' Value for X-Prairie-Device-Platform.
+    '
+    ' Server deviceclass.tvPlatforms currently maps smarttv|tizen|webos|androidtv|tvos
+    ' → TV artwork (w200 posters). "roku" is not in that set yet — coordinate a
+    ' server-side addition so catalog-minted URLs are TV-sized without client rewrite.
+    ' Until then Artwork.preferred auto-rewrites Prairie-signed /poster/ and /logo/
+    ' URLs to w200 (revision-scoped signatures still validate).
     function devicePlatformHeader() as string
         return "roku"
     end function

@@ -139,7 +139,7 @@ sub onChannels()
             end if
             node.description = number
             if channel.logo_url <> invalid
-                node.hdPosterUrl = Prairie.Artwork.preferred(channel.logo_url as string)
+                node.hdPosterUrl = Prairie.Artwork.preferred(channel.logo_url as string, 200)
             end if
             node.addFields({ channel: channel })
             index = index + 1
