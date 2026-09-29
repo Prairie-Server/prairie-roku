@@ -209,6 +209,20 @@ namespace Prairie.Playback
         if plan.source <> invalid and plan.source.duration_seconds <> invalid
             duration = plan.source.duration_seconds
         end if
+        canSeekAnywhere = false
+        videoCodec = invalid
+        audioCodec = invalid
+        if plan.timeline <> invalid and plan.timeline.can_seek_anywhere = true
+            canSeekAnywhere = true
+        end if
+        if plan.effective_recipe <> invalid
+            if plan.effective_recipe.video_codec <> invalid
+                videoCodec = plan.effective_recipe.video_codec
+            end if
+            if plan.effective_recipe.audio_codec <> invalid
+                audioCodec = plan.effective_recipe.audio_codec
+            end if
+        end if
         return {
             session_id: data.session_id,
             media_file_id: plan.effective_media_file_id,
@@ -220,10 +234,10 @@ namespace Prairie.Playback
             duration_seconds: duration,
             playback_info: {
                 stream_type: streamProtocol,
-                can_seek_anywhere: plan.timeline <> invalid and plan.timeline.can_seek_anywhere = true,
+                can_seek_anywhere: canSeekAnywhere,
                 transcode_audio: playMethod = "transcode",
-                video_codec: plan.effective_recipe <> invalid and plan.effective_recipe.video_codec,
-                audio_codec: plan.effective_recipe <> invalid and plan.effective_recipe.audio_codec
+                video_codec: videoCodec,
+                audio_codec: audioCodec
             },
             is_protocol_v3: true,
             playback_attempt_id: data.playback_attempt_id,
