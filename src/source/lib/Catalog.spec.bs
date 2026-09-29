@@ -64,15 +64,6 @@ namespace tests
             m.assertEqual(empty.items.count(), 0)
             m.assertFalse(empty.has_more)
         end sub
-
-    end class
-end namespace
-
-
-
-namespace tests
-    @suite("Prairie.CatalogV2")
-    class CatalogV2Suite extends rooibos.BaseTestSuite
         @it("builds a POST body for search and cursor pagination")
         sub _()
             request = Prairie.Catalog.buildCatalogRequest({
@@ -108,3 +99,5 @@ namespace tests
         end sub
     end class
 end namespace
+
+
