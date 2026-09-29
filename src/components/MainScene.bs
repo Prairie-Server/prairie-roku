@@ -1059,8 +1059,7 @@ sub loadCatalogPage(append as boolean)
     if m.screen <> invalid and m.screen.hasField("busy")
         m.screen.busy = true
     end if
-    path = Prairie.Catalog.buildCatalogPath(buildCatalogQuery(append))
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.request = Prairie.Catalog.buildCatalogRequest(buildCatalogQuery(append), Prairie.Api.sessionOptions(m.session))
     m.httpTask.control = "RUN"
 end sub
 
@@ -1672,12 +1671,12 @@ sub onSearchSubmit()
     m.pending = "search"
     m.screen.busy = true
     m.screen.statusText = ""
-    path = Prairie.Catalog.buildCatalogPath({
+    m.httpTask.request = Prairie.Catalog.buildCatalogRequest({
         q: trimmed,
+        source: "query",
         offset: 0,
         limit: 48
-    })
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    }, Prairie.Api.sessionOptions(m.session))
     m.httpTask.control = "RUN"
 end sub
 
