@@ -61,6 +61,9 @@ namespace Prairie.Playback
             client_capabilities: buildClientCapabilities(caps),
             client_playback_context: buildClientPlaybackContext()
         }
+        if input.qualityPreference <> invalid and (input.qualityPreference as string).len() > 0
+            body.quality_preference = input.qualityPreference as string
+        end if
         if input.forcedPlayMethod <> invalid and (input.forcedPlayMethod as string).len() > 0
             forced = LCase(input.forcedPlayMethod as string)
             if forced = "direct"
