@@ -5,7 +5,7 @@ namespace tests
         @describe("buildCatalogPath")
         @it("returns bare path without query")
         sub _()
-            m.assertEqual(Prairie.Catalog.buildCatalogPath({}), "/api/v1/catalog")
+            m.assertEqual(Prairie.Catalog.buildCatalogPath({}), "/api/v2/catalog/query")
         end sub
 
         @it("encodes query parameters")
@@ -18,10 +18,10 @@ namespace tests
                 sort: "title",
                 order: "asc"
             })
-            m.assertTrue(path.instr("/api/v1/catalog?") = 0)
+            m.assertTrue(path.instr("/api/v2/catalog/query?") = 0)
             m.assertTrue(path.instr("library_id=3") >= 0)
             m.assertTrue(path.instr("q=star%20wars") >= 0)
-            m.assertTrue(path.instr("offset=10") >= 0)
+            m.assertTrue(path.instr("seek=10") >= 0)
             m.assertTrue(path.instr("limit=25") >= 0)
         end sub
 
@@ -68,3 +68,43 @@ namespace tests
     end class
 end namespace
 
+
+
+namespace tests
+    @suite("Prairie.CatalogV2")
+    class CatalogV2Suite extends rooibos.BaseTestSuite
+        @it("builds a POST body for search and cursor pagination")
+        sub _()
+            request = Prairie.Catalog.buildCatalogRequest({
+                q: "star wars",
+                source: "query",
+                offset: 48,
+                limit: 48,
+                snapshot: "cursor-1"
+            }, {
+                serverUrl: "https://prairie.example"
+            })
+            m.assertEqual(request.method, "POST")
+            m.assertEqual(request.url, "https://prairie.example/api/v2/catalog/query")
+            body = ParseJson(request.body)
+            m.assertEqual(body.q, "star wars")
+            m.assertEqual(body.source, "query")
+            m.assertEqual(body.seek, 48)
+            m.assertEqual(body.limit, 48)
+            m.assertEqual(body.cursor, "cursor-1")
+        end sub
+
+        @it("normalizes v2 page metadata")
+        sub _()
+            page = Prairie.Catalog.pageFromResponse({
+                items: [{ content_id: "1" }],
+                window_cursor: "cursor-2",
+                page: { has_more: true },
+                total: 100
+            })
+            m.assertTrue(page.has_more)
+            m.assertEqual(page.snapshot, "cursor-2")
+            m.assertEqual(page.total, 100)
+        end sub
+    end class
+end namespace
