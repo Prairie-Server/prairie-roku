@@ -1606,6 +1606,19 @@ sub onPlayerQualityChange()
     m.screen.qualityOptions = options
     resumeAt = m.screen.positionSeconds
 
+    if m.playbackSession.is_protocol_v3 = true
+        m.pending = "playbackReplan"
+        m.screen.busy = true
+        replanQuality = qualityId
+        if LCase(qualityId) = "auto" and targets <> invalid and targets.id <> invalid
+            replanQuality = targets.id as string
+        end if
+        body = Prairie.Playback.buildReplanBody(m.playbackSession, replanQuality, resumeAt)
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(m.playbackSession.session_id) + "/replan", "POST", body)
+        m.httpTask.control = "RUN"
+        return
+    end if
+
     if targets = invalid and playMethod = "direct"
         ' Revert to the original direct stream (no HLS).
         m.screen.startPosition = resumeAt
@@ -2041,12 +2054,18 @@ sub onHttpResponse()
             m.screen.errorText = "Playback failed to start"
             return
         end if
-        m.playbackSession = playback
-        if playback.audio_track_index <> invalid
-            m.audioTrackIndex = playback.audio_track_index as integer
-        end if
-        ' Remux/transcode need /playback/transcode/start → manifest_url (web/mobile parity).
-        if Prairie.Playback.needsHlsBootstrap(playback.play_method)
+        playback = Prairie.Playback.normalizeStartResponse(playback)
+    m.playbackSession = playback
+    if playback.audio_track_index <> invalid
+        m.audioTrackIndex = playback.audio_track_index as integer
+    end if
+    if playback.is_protocol_v3 = true
+        m.activeQualityId = "auto"
+        applyPlayerStream(playback)
+        return
+    end if
+    ' Legacy fallback for older Prairie servers.
+    if Prairie.Playback.needsHlsBootstrap(playback.play_method)
             seekSeconds = 0
             if m.playLaunch <> invalid and m.playLaunch.startPosition <> invalid
                 seekSeconds = m.playLaunch.startPosition
@@ -2058,6 +2077,15 @@ sub onHttpResponse()
         end if
         m.activeQualityId = "original"
         applyPlayerStream(playback)
+    else if pending = "playbackReplan"
+        replanned = Prairie.Playback.applyReplanResponse(m.playbackSession, response.data)
+        if replanned = invalid or replanned.stream_url = invalid
+            m.screen.errorText = "Could not change playback quality"
+            return
+        end if
+        m.playbackSession = replanned
+        m.screen.startPosition = m.screen.positionSeconds
+        applyPlayerStream(replanned)
     else if pending = "playbackTranscodeStart"
         transcode = response.data
         if transcode = invalid or transcode.manifest_url = invalid
