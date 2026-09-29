@@ -811,10 +811,12 @@ sub startPlaybackSession()
         m.screen.busy = true
     end if
     forced = Prairie.Playback.forcedPlayMethodFromStore(m.store)
+    settings = Prairie.PlaybackSettings.load(m.store)
     body = Prairie.Playback.buildStartBody({
         fileId: m.playLaunch.fileId,
         profileId: m.session.profileId,
         forcedPlayMethod: forced,
+        qualityPreference: settings.preferredQuality,
         startPosition: m.playLaunch.startPosition
     })
     requestBody = ParseJson(body)
@@ -1621,7 +1623,11 @@ sub onPlayerQualityChange()
         m.pendingQualityPreference = replanQuality
         body = Prairie.Playback.buildReplanBody(m.playbackSession, replanQuality, resumeAt)
         m.playbackRoute = "v2"
-        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/" + m.playbackSession.session_id.encodeUriComponent() + "/replan", "POST", body)
+        sid = m.playbackSession.session_id
+        if sid = invalid or (sid as string).len() = 0
+            return
+        end if
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/" + (sid as string).encodeUriComponent() + "/replan", "POST", body)
         m.httpTask.control = "RUN"
         return
     end if
@@ -1830,13 +1836,7 @@ sub onHttpResponse()
         if (pending = "playbackStart" or pending = "playbackReplan") and m.playbackRoute = "v2" and (status = 404 or status = 405)
             m.playbackRoute = "v1"
             if pending = "playbackStart"
-                forced = Prairie.Playback.forcedPlayMethodFromStore(m.store)
-                body = Prairie.Playback.buildStartBody({
-                    fileId: m.playLaunch.fileId,
-                    profileId: m.session.profileId,
-                    forcedPlayMethod: forced,
-                    startPosition: m.playLaunch.startPosition
-                })
+                body = m.playbackStartBody
                 requestBody = ParseJson(body)
                 if requestBody <> invalid and requestBody.playback_attempt_id <> invalid
                     m.playbackAttemptId = requestBody.playback_attempt_id as string
@@ -2084,12 +2084,11 @@ sub onHttpResponse()
             watch: watch
         })
     else if pending = "playbackStart"
-        playback = response.data
+        playback = Prairie.Playback.normalizeStartResponse(response.data)
         if playback = invalid or playback.session_id = invalid or playback.stream_url = invalid
             m.screen.errorText = "Playback failed to start"
             return
         end if
-        playback = Prairie.Playback.normalizeStartResponse(playback)
     if playback <> invalid and m.playbackAttemptId <> invalid
         playback.playback_attempt_id = m.playbackAttemptId
     end if
