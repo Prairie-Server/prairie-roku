@@ -264,8 +264,17 @@ namespace Prairie.Playback
                 keys.push(key)
             end for
         end if
-        if nextPlayback.plan_attempt_key <> invalid and not keys.instr(nextPlayback.plan_attempt_key)
-            keys.push(nextPlayback.plan_attempt_key)
+        if nextPlayback.plan_attempt_key <> invalid
+            found = false
+            for each key in keys
+                if key = nextPlayback.plan_attempt_key
+                    found = true
+                    exit for
+                end if
+            end for
+            if not found
+                keys.push(nextPlayback.plan_attempt_key)
+            end if
         end if
         nextPlayback.attempted_plan_keys = keys
         return nextPlayback
