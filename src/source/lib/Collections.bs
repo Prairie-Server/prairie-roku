@@ -1,11 +1,11 @@
 namespace Prairie.Collections
 
     function libraryCollectionsPath(libraryId as integer) as string
-        return "/api/v1/library/" + libraryId.toStr() + "/collections"
+        return "/api/v2/library/" + libraryId.toStr() + "/collections"
     end function
 
     function personalCollectionsPath() as string
-        return "/api/v1/collections"
+        return "/api/v2/collections"
     end function
 
     function flattenLibraryCollections(libraryId as integer, data as dynamic) as object
@@ -39,19 +39,14 @@ namespace Prairie.Collections
             return out
         end if
 
-        if type(data.collections) = "roArray"
-            for each card in data.collections
+        if type(data.items) = "roArray"
+            for each card in data.items
                 out.push(normalizeCard(card, invalid))
             end for
-        end if
-
-        if type(data.groups) = "roArray"
-            for each group in data.groups
-                if type(group) = "roAssociativeArray" and type(group.collections) = "roArray"
-                    for each card in group.collections
-                        out.push(normalizeCard(card, invalid))
-                    end for
-                end if
+        else if type(data.collections) = "roArray"
+            ' Compatibility with older servers.
+            for each card in data.collections
+                out.push(normalizeCard(card, invalid))
             end for
         end if
 
