@@ -19,6 +19,12 @@ namespace tests
             m.assertEqual(body.file_id, 9)
             m.assertEqual(body.profile_id, "p1")
             m.assertEqual(body.quality_preference, "original")
+            preferred = ParseJson(Prairie.Playback.buildStartBody({
+                fileId: 9,
+                profileId: "p1",
+                qualityPreference: "720p"
+            }))
+            m.assertEqual(preferred.quality_preference, "720p")
             m.assertEqual(body.client_playback_context.protocol_version, 3)
             m.assertEqual(body.client_playback_context.device.platform, "roku")
             m.assertEqual(body.start_position, 30)
