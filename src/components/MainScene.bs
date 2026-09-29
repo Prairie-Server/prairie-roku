@@ -1610,9 +1610,6 @@ sub onPlayerQualityChange()
         m.pending = "playbackReplan"
         m.screen.busy = true
         replanQuality = qualityId
-        if LCase(qualityId) = "auto" and targets <> invalid and targets.id <> invalid
-            replanQuality = targets.id as string
-        end if
         body = Prairie.Playback.buildReplanBody(m.playbackSession, replanQuality, resumeAt)
         m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(m.playbackSession.session_id) + "/replan", "POST", body)
         m.httpTask.control = "RUN"
