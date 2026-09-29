@@ -2098,7 +2098,11 @@ sub onHttpResponse()
         m.audioTrackIndex = playback.audio_track_index as integer
     end if
     if playback.is_protocol_v3 = true
-        m.activeQualityId = "auto"
+        if playback.play_method = "direct"
+            m.activeQualityId = "original"
+        else
+            m.activeQualityId = "auto"
+        end if
         applyPlayerStream(playback)
         return
     end if
