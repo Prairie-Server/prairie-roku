@@ -15,8 +15,12 @@ namespace tests
                 forcedPlayMethod: "direct",
                 startPosition: 30
             }))
+            m.assertEqual(body.protocol_version, 3)
             m.assertEqual(body.file_id, 9)
             m.assertEqual(body.profile_id, "p1")
+            m.assertEqual(body.quality_preference, "original")
+            m.assertEqual(body.client_playback_context.protocol_version, 3)
+            m.assertEqual(body.client_playback_context.device.platform, "roku")
             m.assertEqual(body.play_method, "direct")
             m.assertEqual(body.start_position, 30)
             progress = ParseJson(Prairie.Playback.buildProgressBody(12.5, true))
@@ -156,6 +160,62 @@ namespace tests
                 forceTranscode: false
             }, store)
             m.assertEqual(Prairie.Playback.forcedPlayMethodFromStore(store), "direct")
+        end sub
+
+        @it("normalizes protocol-v3 playback plans and builds quality replans")
+        sub _()
+            playback = Prairie.Playback.normalizeStartResponse({
+                protocol_version: 3,
+                session_id: "s1",
+                playback_plan: {
+                    plan_id: "plan-12345678",
+                    plan_attempt_key: "v3:plan-12345678",
+                    delivery: "server_remux_progressive",
+                    stream: { url: "/api/v2/playback/stream/s1", protocol: "http_progressive" },
+                    timeline: { player_start_seconds: 10, stream_origin_seconds: 2, can_seek_anywhere: false },
+                    selected_tracks: { audio: { id: "a1", index: 2 } },
+                    effective_recipe: { video_codec: "hevc", audio_codec: "aac" },
+                    source: { duration_seconds: 3600 },
+                    effective_media_file_id: 9
+                }
+            })
+            m.assertEqual(playback.session_id, "s1")
+            m.assertEqual(playback.play_method, "remux")
+            m.assertEqual(playback.stream_url, "/api/v2/playback/stream/s1")
+            m.assertEqual(playback.position, 12)
+            m.assertEqual(playback.audio_track_index, 2)
+            m.assertTrue(playback.is_protocol_v3)
+            m.assertEqual(playback.plan_id, "plan-12345678")
+            m.assertEqual(playback.plan_attempt_key, "v3:plan-12345678")
+
+            playback.playback_attempt_id = "attempt-12345678"
+            replan = ParseJson(Prairie.Playback.buildReplanBody(playback, "720p", 120.0))
+            m.assertEqual(replan.protocol_version, 3)
+            m.assertEqual(replan.operation, "quality_change")
+            m.assertEqual(replan.playback_attempt_id, "attempt-12345678")
+            m.assertEqual(replan.failed_plan_id, "plan-12345678")
+            m.assertEqual(replan.plan_attempt_key, "v3:plan-12345678")
+            m.assertEqual(replan.quality_preference, "720p")
+            m.assertEqual(replan.position_seconds, 120)
+
+            updated = Prairie.Playback.applyReplanResponse(playback, {
+                protocol_version: 3,
+                session_id: "s1",
+                playback_plan: {
+                    plan_id: "plan-87654321",
+                    plan_attempt_key: "v3:plan-87654321",
+                    delivery: "hls_transcode",
+                    stream: { url: "/api/v2/playback/transcode/s1/master.m3u8", protocol: "hls" },
+                    timeline: { player_start_seconds: 120, stream_origin_seconds: 0, can_seek_anywhere: true },
+                    selected_tracks: { audio: { id: "a1", index: 2 } },
+                    effective_recipe: { video_codec: "h264", audio_codec: "aac" },
+                    source: { duration_seconds: 3600 },
+                    effective_media_file_id: 9
+                }
+            })
+            m.assertEqual(updated.plan_id, "plan-87654321")
+            m.assertEqual(updated.play_method, "transcode")
+            m.assertEqual(updated.attempted_plan_keys.count(), 2)
         end sub
 
     end class
