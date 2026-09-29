@@ -816,6 +816,12 @@ sub startPlaybackSession()
         forcedPlayMethod: forced,
         startPosition: m.playLaunch.startPosition
     })
+    requestBody = ParseJson(body)
+    if requestBody <> invalid and requestBody.playback_attempt_id <> invalid
+        m.playbackAttemptId = requestBody.playback_attempt_id as string
+    else
+        m.playbackAttemptId = invalid
+    end if
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.startPath(), "POST", body)
     m.httpTask.control = "RUN"
 end sub
@@ -2052,6 +2058,9 @@ sub onHttpResponse()
             return
         end if
         playback = Prairie.Playback.normalizeStartResponse(playback)
+    if playback <> invalid and m.playbackAttemptId <> invalid
+        playback.playback_attempt_id = m.playbackAttemptId
+    end if
     m.playbackSession = playback
     if playback.audio_track_index <> invalid
         m.audioTrackIndex = playback.audio_track_index as integer
