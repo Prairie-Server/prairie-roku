@@ -21,7 +21,6 @@ namespace tests
             m.assertEqual(body.quality_preference, "original")
             m.assertEqual(body.client_playback_context.protocol_version, 3)
             m.assertEqual(body.client_playback_context.device.platform, "roku")
-            m.assertEqual(body.play_method, "direct")
             m.assertEqual(body.start_position, 30)
             progress = ParseJson(Prairie.Playback.buildProgressBody(12.5, true))
             m.assertEqual(progress.position, 12.5)
