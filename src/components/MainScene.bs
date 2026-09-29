@@ -1618,6 +1618,7 @@ sub onPlayerQualityChange()
         m.pending = "playbackReplan"
         m.screen.busy = true
         replanQuality = qualityId
+        m.pendingQualityPreference = replanQuality
         body = Prairie.Playback.buildReplanBody(m.playbackSession, replanQuality, resumeAt)
         m.playbackRoute = "v2"
         m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/" + m.playbackSession.session_id.encodeUriComponent() + "/replan", "POST", body)
