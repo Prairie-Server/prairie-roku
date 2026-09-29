@@ -62,8 +62,16 @@ namespace Prairie.Playback
             client_playback_context: buildClientPlaybackContext()
         }
         if input.forcedPlayMethod <> invalid and (input.forcedPlayMethod as string).len() > 0
-            if LCase(input.forcedPlayMethod as string) = "direct"
+            forced = LCase(input.forcedPlayMethod as string)
+            if forced = "direct"
                 body.quality_preference = "original"
+                body.client_playback_context.deliveries.progressive.enabled = false
+                body.client_playback_context.deliveries.hls.enabled = false
+            else if forced = "transcode"
+                body.client_playback_context.deliveries.original_http.enabled = false
+                body.client_playback_context.deliveries.progressive.enabled = false
+            else if forced = "remux"
+                body.client_playback_context.deliveries.original_http.enabled = false
             end if
         end if
         if input.startPosition <> invalid and (input.startPosition as float) > 0
