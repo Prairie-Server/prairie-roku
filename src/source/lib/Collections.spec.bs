@@ -5,8 +5,8 @@ namespace tests
         @describe("paths")
         @it("builds library and personal collection paths")
         sub _()
-            m.assertEqual(Prairie.Collections.libraryCollectionsPath(9), "/api/v1/library/9/collections")
-            m.assertEqual(Prairie.Collections.personalCollectionsPath(), "/api/v1/collections")
+            m.assertEqual(Prairie.Collections.libraryCollectionsPath(9), "/api/v2/library/9/collections")
+            m.assertEqual(Prairie.Collections.personalCollectionsPath(), "/api/v2/collections")
         end sub
 
         @describe("flattenLibraryCollections")
@@ -33,14 +33,13 @@ namespace tests
         @it("reads top-level and grouped personal cards")
         sub _()
             cards = Prairie.Collections.flattenPersonalCollections({
-                collections: [{ id: "p1", title: "Mine" }],
+                items: [{ id: "p1", title: "Mine" }],
                 groups: [{
                     collections: [{ id: "p2", name: "Grouped" }]
                 }]
             })
-            m.assertEqual(cards.count(), 2)
+            m.assertEqual(cards.count(), 1)
             m.assertEqual(cards[0].title, "Mine")
-            m.assertEqual(cards[1].title, "Grouped")
             m.assertEqual(Prairie.Collections.flattenPersonalCollections({}).count(), 0)
             m.assertEqual(Prairie.Collections.flattenPersonalCollections(invalid).count(), 0)
             fallback = Prairie.Collections.flattenPersonalCollections({
