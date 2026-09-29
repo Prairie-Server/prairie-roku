@@ -1,6 +1,8 @@
 namespace Prairie.Catalog
 
     function buildCatalogPath(query as object) as string
+        ' Kept for callers that only need a URL. Catalog reads themselves use
+        ' buildCatalogRequest below because v2 is a POST contract.
         params = []
         if query.libraryId <> invalid
             params.push("library_id=" + (query.libraryId as integer).toStr())
@@ -18,13 +20,13 @@ namespace Prairie.Catalog
             params.push("collection_id=" + (query.collectionId as string).encodeUriComponent())
         end if
         if query.offset <> invalid
-            params.push("offset=" + (query.offset as integer).toStr())
+            params.push("seek=" + (query.offset as integer).toStr())
         end if
         if query.limit <> invalid
             params.push("limit=" + (query.limit as integer).toStr())
         end if
         if query.snapshot <> invalid and (query.snapshot as string).len() > 0
-            params.push("snapshot=" + (query.snapshot as string).encodeUriComponent())
+            params.push("cursor=" + (query.snapshot as string).encodeUriComponent())
         end if
         if query.sort <> invalid and (query.sort as string).len() > 0
             params.push("sort=" + (query.sort as string).encodeUriComponent())
@@ -32,13 +34,46 @@ namespace Prairie.Catalog
         if query.order <> invalid and (query.order as string).len() > 0
             params.push("order=" + (query.order as string).encodeUriComponent())
         end if
-
         if params.count() = 0
-            return "/api/v1/catalog"
+            return "/api/v2/catalog/query"
         end if
-        return "/api/v1/catalog?" + params.join("&")
+        return "/api/v2/catalog/query?" + params.join("&")
     end function
 
+    function buildCatalogRequest(query as object, options as object) as object
+        body = {}
+        if query.libraryId <> invalid
+            body.library_id = (query.libraryId as integer).toStr()
+        end if
+        if query.type <> invalid and (query.type as string).len() > 0
+            body.type = query.type as string
+        end if
+        if query.q <> invalid and (query.q as string).len() > 0
+            body.q = query.q as string
+        end if
+        if query.source <> invalid and (query.source as string).len() > 0
+            body.source = query.source as string
+        end if
+        if query.collectionId <> invalid and (query.collectionId as string).len() > 0
+            body.collection_id = query.collectionId as string
+        end if
+        if query.offset <> invalid
+            body.seek = query.offset as integer
+        end if
+        if query.limit <> invalid
+            body.limit = query.limit as integer
+        end if
+        if query.snapshot <> invalid and (query.snapshot as string).len() > 0
+            body.cursor = query.snapshot as string
+        end if
+        if query.sort <> invalid and (query.sort as string).len() > 0
+            body.sort = query.sort as string
+        end if
+        if query.order <> invalid and (query.order as string).len() > 0
+            body.order = query.order as string
+        end if
+        return Prairie.Api.buildRequest(options, "/api/v2/catalog/query", "POST", FormatJson(body))
+    end function
     function itemDetailPath(contentId as string) as string
         return "/api/v1/catalog/items/" + contentId.encodeUriComponent()
     end function
@@ -95,10 +130,18 @@ namespace Prairie.Catalog
         if type(data) <> "roAssociativeArray"
             return page
         end if
-        if data.has_more = true
+        pageMeta = invalid
+        if data.page <> invalid and type(data.page) = "roAssociativeArray"
+            pageMeta = data.page
+        end if
+        if pageMeta <> invalid and pageMeta.has_more = true
+            page.has_more = true
+        else if data.has_more = true
             page.has_more = true
         end if
-        if data.snapshot <> invalid
+        if data.window_cursor <> invalid
+            page.snapshot = data.window_cursor as string
+        else if data.snapshot <> invalid
             page.snapshot = data.snapshot as string
         end if
         if data.total <> invalid
