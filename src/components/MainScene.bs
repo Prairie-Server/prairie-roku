@@ -74,6 +74,7 @@ sub init()
     m.quickConnectDeviceCode = ""
     m.quickConnectServerUrl = ""
     m.quickConnectInterval = 3
+    m.playbackRoute = "v2"
 
     ' If the persisted session blob exists but tokens are missing, treat the
     ' user as logged out and route to the login/connect flow.
@@ -810,13 +811,22 @@ sub startPlaybackSession()
         m.screen.busy = true
     end if
     forced = Prairie.Playback.forcedPlayMethodFromStore(m.store)
+    settings = Prairie.PlaybackSettings.load(m.store)
     body = Prairie.Playback.buildStartBody({
         fileId: m.playLaunch.fileId,
         profileId: m.session.profileId,
         forcedPlayMethod: forced,
+        qualityPreference: settings.preferredQuality,
         startPosition: m.playLaunch.startPosition
     })
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.startPath(), "POST", body)
+    requestBody = ParseJson(body)
+    if requestBody <> invalid and requestBody.playback_attempt_id <> invalid
+        m.playbackAttemptId = requestBody.playback_attempt_id as string
+    else
+        m.playbackAttemptId = invalid
+    end if
+    m.playbackRoute = "v2"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/start", "POST", body)
     m.httpTask.control = "RUN"
 end sub
 
@@ -1606,6 +1616,22 @@ sub onPlayerQualityChange()
     m.screen.qualityOptions = options
     resumeAt = m.screen.positionSeconds
 
+    if m.playbackSession.is_protocol_v3 = true
+        m.pending = "playbackReplan"
+        m.screen.busy = true
+        replanQuality = qualityId
+        m.pendingQualityPreference = replanQuality
+        body = Prairie.Playback.buildReplanBody(m.playbackSession, replanQuality, resumeAt)
+        m.playbackRoute = "v2"
+        sid = m.playbackSession.session_id
+        if sid = invalid or (sid as string).len() = 0
+            return
+        end if
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/" + (sid as string).encodeUriComponent() + "/replan", "POST", body)
+        m.httpTask.control = "RUN"
+        return
+    end if
+
     if targets = invalid and playMethod = "direct"
         ' Revert to the original direct stream (no HLS).
         m.screen.startPosition = resumeAt
@@ -1803,6 +1829,28 @@ sub onHttpResponse()
     end if
 
     if response.ok <> true
+        status = 0
+        if response.error <> invalid and response.error.status <> invalid
+            status = response.error.status as integer
+        end if
+        if (pending = "playbackStart" or pending = "playbackReplan") and m.playbackRoute = "v2" and (status = 404 or status = 405)
+            m.playbackRoute = "v1"
+            if pending = "playbackStart"
+                body = m.playbackStartBody
+                requestBody = ParseJson(body)
+                if requestBody <> invalid and requestBody.playback_attempt_id <> invalid
+                    m.playbackAttemptId = requestBody.playback_attempt_id as string
+                end if
+                m.pending = "playbackStart"
+                m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v1/playback/start", "POST", body)
+            else
+                m.pending = "playbackReplan"
+                body = Prairie.Playback.buildReplanBody(m.playbackSession, m.pendingQualityPreference, m.screen.positionSeconds)
+                m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(m.playbackSession.session_id) + "/replan", "POST", body)
+            end if
+            m.httpTask.control = "RUN"
+            return
+        end if
         message = "Request failed"
         if response.error <> invalid and response.error.message <> invalid
             message = response.error.message
@@ -2036,17 +2084,29 @@ sub onHttpResponse()
             watch: watch
         })
     else if pending = "playbackStart"
-        playback = response.data
+        playback = Prairie.Playback.normalizeStartResponse(response.data)
         if playback = invalid or playback.session_id = invalid or playback.stream_url = invalid
             m.screen.errorText = "Playback failed to start"
             return
         end if
-        m.playbackSession = playback
-        if playback.audio_track_index <> invalid
-            m.audioTrackIndex = playback.audio_track_index as integer
+    if playback <> invalid and m.playbackAttemptId <> invalid
+        playback.playback_attempt_id = m.playbackAttemptId
+    end if
+    m.playbackSession = playback
+    if playback.audio_track_index <> invalid
+        m.audioTrackIndex = playback.audio_track_index as integer
+    end if
+    if playback.is_protocol_v3 = true
+        if playback.play_method = "direct"
+            m.activeQualityId = "original"
+        else
+            m.activeQualityId = "auto"
         end if
-        ' Remux/transcode need /playback/transcode/start → manifest_url (web/mobile parity).
-        if Prairie.Playback.needsHlsBootstrap(playback.play_method)
+        applyPlayerStream(playback)
+        return
+    end if
+    ' Legacy fallback for older Prairie servers.
+    if Prairie.Playback.needsHlsBootstrap(playback.play_method)
             seekSeconds = 0
             if m.playLaunch <> invalid and m.playLaunch.startPosition <> invalid
                 seekSeconds = m.playLaunch.startPosition
@@ -2058,6 +2118,15 @@ sub onHttpResponse()
         end if
         m.activeQualityId = "original"
         applyPlayerStream(playback)
+    else if pending = "playbackReplan"
+        replanned = Prairie.Playback.applyReplanResponse(m.playbackSession, response.data)
+        if replanned = invalid or replanned.stream_url = invalid
+            m.screen.errorText = "Could not change playback quality"
+            return
+        end if
+        m.playbackSession = replanned
+        m.screen.startPosition = m.screen.positionSeconds
+        applyPlayerStream(replanned)
     else if pending = "playbackTranscodeStart"
         transcode = response.data
         if transcode = invalid or transcode.manifest_url = invalid
