@@ -1,5 +1,7 @@
 import "pkg:/source/lib/Theme.bs"
 import "pkg:/source/lib/ArtworkUrl.bs"
+import "pkg:/source/lib/ApiClient.bs"
+import "pkg:/source/lib/Catalog.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -93,6 +95,10 @@ sub onDetail()
     end if
     if itemType.len() > 0
         metaParts.push(itemType)
+    end if
+    communityRating = Prairie.Catalog.formatCommunityRating(detail.community_rating)
+    if communityRating.len() > 0
+        metaParts.push(communityRating)
     end if
     m.meta.text = metaParts.join(" · ")
     overview = ""

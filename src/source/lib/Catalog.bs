@@ -150,6 +150,34 @@ namespace Prairie.Catalog
         return page
     end function
 
+    function isNumber(value as dynamic) as boolean
+        t = LCase(type(value))
+        return t = "integer" or t = "rointeger" or t = "roint" or t = "longinteger" or t = "rolonginteger" or t = "float" or t = "rofloat" or t = "double" or t = "rodouble"
+    end function
+
+    ' Formats item detail `community_rating` ({ average, count }) as
+    ' "4.2/5 · 7 ratings". Returns "" when absent or invalid so the caller
+    ' can hide it (the server omits the field below 3 ratings).
+    function formatCommunityRating(rating as dynamic) as string
+        if type(rating) <> "roAssociativeArray"
+            return ""
+        end if
+        if not isNumber(rating.average) or not isNumber(rating.count)
+            return ""
+        end if
+        average = rating.average
+        count = Int(rating.count)
+        if average < 1 or average > 5 or count < 1 or count <> rating.count
+            return ""
+        end if
+        tenths = Int(average * 10 + 0.5)
+        text = (tenths \ 10).toStr() + "." + (tenths mod 10).toStr() + "/5 · " + count.toStr()
+        if count = 1
+            return text + " rating"
+        end if
+        return text + " ratings"
+    end function
+
 end namespace
 
 

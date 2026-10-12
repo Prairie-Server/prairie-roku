@@ -97,6 +97,24 @@ namespace tests
             m.assertEqual(page.snapshot, "cursor-2")
             m.assertEqual(page.total, 100)
         end sub
+
+        @describe("formatCommunityRating")
+        @it("formats average to one decimal with count")
+        sub _()
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4.2, count: 7 }), "4.2/5 · 7 ratings")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4, count: 1 }), "4.0/5 · 1 rating")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 3.96, count: 12 }), "4.0/5 · 12 ratings")
+        end sub
+
+        @it("returns empty for absent or invalid ratings")
+        sub _()
+            m.assertEqual(Prairie.Catalog.formatCommunityRating(invalid), "")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: "4.2", count: 7 }), "")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4.2 }), "")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 0, count: 7 }), "")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4.2, count: 0 }), "")
+            m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4.2, count: 1.9 }), "")
+        end sub
     end class
 end namespace
 
