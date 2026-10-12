@@ -5,7 +5,7 @@ namespace tests
         @describe("paths and fallback")
         @it("exposes ladder path and a non-empty fallback")
         sub _()
-            m.assertEqual(Prairie.QualityLadder.qualityLadderPath(), "/api/v1/playback/quality-ladder")
+            m.assertEqual(Prairie.QualityLadder.qualityLadderPath(), "/api/v2/playback/quality-ladder")
             ladder = Prairie.QualityLadder.fallbackLadder()
             m.assertTrue(ladder.count() >= 5)
             m.assertTrue(Prairie.QualityLadder.isValidLadder(ladder))

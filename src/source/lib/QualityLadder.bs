@@ -15,7 +15,7 @@ namespace Prairie.QualityLadder
     end function
 
     function qualityLadderPath() as string
-        return "/api/v1/playback/quality-ladder"
+        return "/api/v2/playback/quality-ladder"
     end function
 
     function isValidLadder(rungs as dynamic) as boolean

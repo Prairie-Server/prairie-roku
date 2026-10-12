@@ -67,7 +67,7 @@ namespace tests
             }))
             m.assertEqual(copy.target_codec_video, "copy")
             m.assertEqual(copy.target_codec_audio, "aac")
-            m.assertEqual(Prairie.Playback.qualityLadderPath(), "/api/v1/playback/quality-ladder")
+            m.assertEqual(Prairie.Playback.qualityLadderPath(), "/api/v2/playback/quality-ladder")
             m.assertTrue(Prairie.Playback.needsHlsBootstrap("remux"))
             m.assertTrue(Prairie.Playback.needsHlsBootstrap("transcode"))
             m.assertFalse(Prairie.Playback.needsHlsBootstrap("direct"))

@@ -84,6 +84,11 @@ namespace Prairie.Api
                     message = body.message as string
                 else if body.error <> invalid
                     message = body.error as string
+                else if body.detail <> invalid
+                    ' RFC 9457 problem+json (v2 routes).
+                    message = body.detail as string
+                else if body.title <> invalid
+                    message = body.title as string
                 end if
                 if body.code <> invalid
                     code = body.code as string
