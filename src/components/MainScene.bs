@@ -49,6 +49,8 @@ sub init()
     m.libraryCollectionCards = []
     m.personalCollectionCards = []
     m.detailContentId = ""
+    m.ratingPrevious = 0
+    m.ratingDialog = invalid
     m.detailBackRoute = "home"
     m.detailItem = invalid
     m.playLaunch = invalid
@@ -611,6 +613,7 @@ sub showItemDetail(contentId as string)
     screen.observeField("playRequested", "onDetailPlayRequested")
     screen.observeField("seasonSelected", "onDetailSeasonSelected")
     screen.observeField("backRequested", "onDetailBack")
+    screen.observeField("rateRequested", "onDetailRateRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
     loadItemDetail()
@@ -779,6 +782,37 @@ sub loadItemDetail()
     m.screen.busy = true
     path = Prairie.Catalog.itemDetailPath(m.detailContentId)
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub onDetailRateRequested()
+    ' ponytail: one shared HttpTask; ignore rating while another request is in flight.
+    if m.route <> "detail" or m.session = invalid or m.pending <> ""
+        return
+    end if
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = "Your rating"
+    dialog.buttons = Prairie.Catalog.ratingDialogButtons()
+    dialog.observeField("buttonSelected", "onRatingDialogButton")
+    m.ratingDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onRatingDialogButton()
+    if m.ratingDialog = invalid
+        return
+    end if
+    rating = Prairie.Catalog.ratingFromDialogIndex(m.ratingDialog.buttonSelected)
+    m.ratingDialog.close = true
+    m.ratingDialog = invalid
+    if rating < 0 or m.route <> "detail" or m.session = invalid or m.pending <> ""
+        return
+    end if
+    m.ratingPrevious = m.screen.userRating
+    m.screen.userRating = rating
+    m.screen.errorText = ""
+    m.pending = "setRating"
+    m.httpTask.request = Prairie.Catalog.buildRatingRequest(Prairie.Api.sessionOptions(m.session), m.detailContentId, rating)
     m.httpTask.control = "RUN"
 end sub
 
@@ -1468,9 +1502,13 @@ sub onDetailBack()
     end if
 end sub
 
+function ratingInFlight() as boolean
+    return m.pending = "setRating" or m.pending = "ratingRefresh"
+end function
+
 sub onDetailSeasonSelected()
     seasonNumber = m.screen.seasonSelected
-    if seasonNumber < 0
+    if seasonNumber < 0 or ratingInFlight()
         return
     end if
     loadEpisodes(seasonNumber)
@@ -1478,7 +1516,7 @@ end sub
 
 sub onDetailPlayRequested()
     launchReq = m.screen.playRequested
-    if launchReq = invalid or m.session = invalid
+    if launchReq = invalid or m.session = invalid or ratingInFlight()
         return
     end if
     m.pending = "watchForPlay"
@@ -1858,6 +1896,17 @@ sub onHttpResponse()
         if response.error <> invalid and response.error.status <> invalid
             status = response.error.status as integer
         end if
+        if pending = "setRating"
+            if m.route = "detail" and m.screen <> invalid
+                m.screen.userRating = m.ratingPrevious
+                m.screen.errorText = "Could not save rating"
+            end if
+            return
+        end if
+        ' Rating saved; a failed community refresh only leaves the meta line stale.
+        if pending = "ratingRefresh"
+            return
+        end if
         ' Personal collections are optional on some servers.
         if pending = "personalCollections"
             m.personalCollectionCards = []
@@ -2033,6 +2082,17 @@ sub onHttpResponse()
     else if pending = "personalCollections"
         m.personalCollectionCards = Prairie.Collections.flattenPersonalCollections(response.data)
         finishCollectionsScreen()
+    else if pending = "setRating"
+        if m.route = "detail"
+            m.pending = "ratingRefresh"
+            m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Catalog.itemDetailPath(m.detailContentId), "GET")
+            m.httpTask.control = "RUN"
+        end if
+    else if pending = "ratingRefresh"
+        if m.route = "detail" and type(response.data) = "roAssociativeArray"
+            m.detailItem = response.data
+            m.screen.detail = response.data
+        end if
     else if pending = "itemDetail"
         detail = response.data
         if detail = invalid or type(detail) <> "roAssociativeArray"

@@ -22,8 +22,10 @@ function stripAnsi(text) {
 
 function runTests(zipPath) {
   return new Promise((resolve) => {
-    const brsCli = path.join(ROOT, "node_modules", ".bin", "brs-cli");
-    const child = spawn(brsCli, [zipPath, "-c", "0"], { cwd: ROOT });
+    // Run the JS entry with node directly: no .cmd shim / shell on Windows,
+    // so child.kill() on timeout reaches the CLI itself.
+    const brsCli = path.join(ROOT, "node_modules", "brs-node", "bin", "brs.cli.js");
+    const child = spawn(process.execPath, [brsCli, zipPath, "-c", "0"], { cwd: ROOT });
 
     let output = "";
     let settled = false;

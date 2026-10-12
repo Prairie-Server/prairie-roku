@@ -115,6 +115,39 @@ namespace tests
             m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4.2, count: 0 }), "")
             m.assertEqual(Prairie.Catalog.formatCommunityRating({ average: 4.2, count: 1.9 }), "")
         end sub
+        @describe("user rating helpers")
+        @it("normalizes and formats user_rating")
+        sub _()
+            m.assertEqual(Prairie.Catalog.normalizeUserRating(4), 4)
+            m.assertEqual(Prairie.Catalog.normalizeUserRating(invalid), 0)
+            m.assertEqual(Prairie.Catalog.normalizeUserRating(6), 0)
+            m.assertEqual(Prairie.Catalog.normalizeUserRating(2.5), 0)
+            m.assertEqual(Prairie.Catalog.normalizeUserRating("3"), 0)
+            m.assertEqual(Prairie.Catalog.formatUserRating(4), "★ Rated 4/5")
+            m.assertEqual(Prairie.Catalog.formatUserRating(0), "☆ Rate")
+        end sub
+
+        @it("maps dialog indexes to ratings")
+        sub _()
+            m.assertEqual(Prairie.Catalog.ratingDialogButtons().count(), 6)
+            m.assertEqual(Prairie.Catalog.ratingFromDialogIndex(0), 5)
+            m.assertEqual(Prairie.Catalog.ratingFromDialogIndex(4), 1)
+            m.assertEqual(Prairie.Catalog.ratingFromDialogIndex(5), 0)
+            m.assertEqual(Prairie.Catalog.ratingFromDialogIndex(6), -1)
+        end sub
+
+        @it("builds PUT and DELETE rating requests")
+        sub _()
+            options = { serverUrl: "http://srv", accessToken: "t" }
+            put = Prairie.Catalog.buildRatingRequest(options, "movie:heat 1995", 4)
+            m.assertEqual(put.method, "PUT")
+            m.assertEqual(put.path, "/api/v2/ratings/movie%3Aheat%201995")
+            m.assertEqual(ParseJson(put.body).rating, 4)
+            del = Prairie.Catalog.buildRatingRequest(options, "movie:heat 1995", 0)
+            m.assertEqual(del.method, "DELETE")
+            m.assertEqual(del.path, "/api/v2/ratings/movie%3Aheat%201995")
+            m.assertInvalid(del.body)
+        end sub
     end class
 end namespace
 
