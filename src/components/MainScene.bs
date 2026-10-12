@@ -1502,9 +1502,13 @@ sub onDetailBack()
     end if
 end sub
 
+function ratingInFlight() as boolean
+    return m.pending = "setRating" or m.pending = "ratingRefresh"
+end function
+
 sub onDetailSeasonSelected()
     seasonNumber = m.screen.seasonSelected
-    if seasonNumber < 0
+    if seasonNumber < 0 or ratingInFlight()
         return
     end if
     loadEpisodes(seasonNumber)
@@ -1512,7 +1516,7 @@ end sub
 
 sub onDetailPlayRequested()
     launchReq = m.screen.playRequested
-    if launchReq = invalid or m.session = invalid
+    if launchReq = invalid or m.session = invalid or ratingInFlight()
         return
     end if
     m.pending = "watchForPlay"
