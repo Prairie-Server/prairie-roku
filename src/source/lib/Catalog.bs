@@ -167,7 +167,7 @@ namespace Prairie.Catalog
         end if
         average = rating.average
         count = Int(rating.count)
-        if average < 1 or average > 5 or count < 1
+        if average < 1 or average > 5 or count < 1 or count <> rating.count
             return ""
         end if
         tenths = Int(average * 10 + 0.5)
