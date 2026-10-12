@@ -16,6 +16,8 @@ sub init()
     m.errorLabel = m.top.findNode("errorLabel")
     m.playBg = m.top.findNode("playBg")
     m.playLabel = m.top.findNode("playLabel")
+    m.rateBg = m.top.findNode("rateBg")
+    m.rateLabel = m.top.findNode("rateLabel")
     m.seasonsTitle = m.top.findNode("seasonsTitle")
     m.seasonList = m.top.findNode("seasonList")
     m.episodeList = m.top.findNode("episodeList")
@@ -28,12 +30,17 @@ sub init()
     m.playBg.color = colors.amber
     m.playLabel.color = colors.bg
     m.seasonsTitle.color = colors.amber
+    m.rateLabel.color = colors.ink
+    m.colors = colors
+    m.rateBg.color = colors.bgElevated
+    m.rateBg.observeField("focusedChild", "onRateFocus")
 
     m.top.observeField("detail", "onDetail")
     m.top.observeField("seasons", "onSeasons")
     m.top.observeField("episodes", "onEpisodes")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("busy", "onBusy")
+    m.top.observeField("userRating", "onUserRating")
     m.seasonList.observeField("rowItemSelected", "onSeasonSelected")
     m.episodeList.observeField("rowItemSelected", "onEpisodeSelected")
 end sub
@@ -48,6 +55,20 @@ sub onBusy()
     else
         m.playLabel.text = "▶ Play"
     end if
+end sub
+
+sub onRateFocus()
+    if m.rateBg.hasFocus()
+        m.rateBg.color = m.colors.ring
+        m.rateLabel.color = m.colors.bg
+    else
+        m.rateBg.color = m.colors.bgElevated
+        m.rateLabel.color = m.colors.ink
+    end if
+end sub
+
+sub onUserRating()
+    m.rateLabel.text = Prairie.Catalog.formatUserRating(m.top.userRating)
 end sub
 
 function isSeriesType(itemType as string) as boolean
@@ -112,6 +133,7 @@ sub onDetail()
     else if detail.poster_url <> invalid
         art = detail.poster_url as string
     end if
+    m.top.userRating = Prairie.Catalog.normalizeUserRating(detail.user_rating)
     m.heroCanonical = art
     m.heroArt.uri = Prairie.Artwork.preferred(art)
 
@@ -120,6 +142,11 @@ sub onDetail()
     m.seasonsTitle.visible = series
     m.seasonList.visible = series
     m.episodeList.visible = series
+    if series
+        m.rateBg.translation = [80, 620]
+    else
+        m.rateBg.translation = [380, 620]
+    end if
 end sub
 
 sub onSeasons()
@@ -170,6 +197,8 @@ sub focusDefault()
         m.playBg.setFocus(true)
     else if m.seasonList.visible
         m.seasonList.setFocus(true)
+    else
+        m.rateBg.setFocus(true)
     end if
 end sub
 
@@ -222,6 +251,26 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if key = "back"
         m.top.backRequested = true
+        return true
+    end if
+    if key = "OK" and m.rateBg.hasFocus()
+        m.top.rateRequested = true
+        return true
+    end if
+    if key = "right" and m.playBg.visible and m.playBg.hasFocus()
+        m.rateBg.setFocus(true)
+        return true
+    end if
+    if key = "left" and m.playBg.visible and m.rateBg.hasFocus()
+        m.playBg.setFocus(true)
+        return true
+    end if
+    if key = "down" and m.seasonList.visible and m.rateBg.hasFocus()
+        m.seasonList.setFocus(true)
+        return true
+    end if
+    if key = "up" and m.seasonList.visible and m.seasonList.hasFocus()
+        m.rateBg.setFocus(true)
         return true
     end if
     if (key = "OK" or key = "play") and m.playBg.visible and m.playBg.isInFocusChain()

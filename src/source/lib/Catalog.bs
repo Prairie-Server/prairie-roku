@@ -178,6 +178,47 @@ namespace Prairie.Catalog
         return text + " ratings"
     end function
 
+    ' Normalizes item detail `user_rating` to 1–5, or 0 when unrated/invalid.
+    function normalizeUserRating(value as dynamic) as integer
+        if not isNumber(value) or value <> Int(value) or value < 1 or value > 5
+            return 0
+        end if
+        return Int(value)
+    end function
+
+    ' Label for the detail screen's rate control.
+    function formatUserRating(rating as integer) as string
+        if rating < 1 or rating > 5
+            return "☆ Rate"
+        end if
+        return "★ Rated " + rating.toStr() + "/5"
+    end function
+
+    ' Dialog buttons for picking a rating; index i maps via ratingFromDialogIndex.
+    function ratingDialogButtons() as object
+        return ["★★★★★  5", "★★★★  4", "★★★  3", "★★  2", "★  1", "Clear rating"]
+    end function
+
+    ' Maps a ratingDialogButtons index to 5..1, 0 (clear), or -1 (out of range).
+    function ratingFromDialogIndex(index as integer) as integer
+        if index >= 0 and index <= 4
+            return 5 - index
+        end if
+        if index = 5
+            return 0
+        end if
+        return -1
+    end function
+
+    ' PUT /api/v2/ratings/{item_id} {"rating": n} for 1–5; DELETE to clear.
+    function buildRatingRequest(options as object, itemId as string, rating as integer) as object
+        path = "/api/v2/ratings/" + itemId.encodeUriComponent()
+        if rating < 1 or rating > 5
+            return Prairie.Api.buildRequest(options, path, "DELETE")
+        end if
+        return Prairie.Api.buildRequest(options, path, "PUT", FormatJson({ rating: rating }))
+    end function
+
 end namespace
 
 

@@ -23,7 +23,11 @@ function stripAnsi(text) {
 function runTests(zipPath) {
   return new Promise((resolve) => {
     const brsCli = path.join(ROOT, "node_modules", ".bin", "brs-cli");
-    const child = spawn(brsCli, [zipPath, "-c", "0"], { cwd: ROOT });
+    // Windows ships brs-cli as a .cmd shim, which Node only spawns via a shell.
+    const isWin = process.platform === "win32";
+    const child = isWin
+      ? spawn(`"${brsCli}.cmd"`, [`"${zipPath}"`, "-c", "0"], { cwd: ROOT, shell: true })
+      : spawn(brsCli, [zipPath, "-c", "0"], { cwd: ROOT });
 
     let output = "";
     let settled = false;
