@@ -66,6 +66,16 @@ namespace tests
             }))
             m.assertEqual(errorBody.message, "bad_request")
 
+            problem = Prairie.Api.parseErrorBody(409, "", FormatJson({
+                title: "Conflict",
+                detail: "no tuner available",
+                code: "conflict"
+            }))
+            m.assertEqual(problem.message, "no tuner available")
+            m.assertEqual(problem.code, "conflict")
+            titleOnly = Prairie.Api.parseErrorBody(422, "", FormatJson({ title: "Validation failed" }))
+            m.assertEqual(titleOnly.message, "Validation failed")
+
             asArray = Prairie.Api.parseErrorBody(500, "Error", "[1,2]")
             m.assertEqual(asArray.message, "Error")
             m.assertInvalid(asArray.code)

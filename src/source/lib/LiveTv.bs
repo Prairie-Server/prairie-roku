@@ -3,12 +3,19 @@ import "pkg:/source/lib/UrlUtils.bs"
 namespace Prairie.LiveTv
 
     function channelsPath() as string
-        return "/api/v1/livetv/channels"
+        return "/api/v2/livetv/channels"
     end function
 
+    ' v2 repeats channel_id once per channel (server cap: 500).
     function guidePath(channelIds as object) as string
-        joined = channelIds.join(",")
-        path = "/api/v1/livetv/guide?channels=" + joined.encodeUriComponent()
+        params = []
+        for each channelId in channelIds
+            if params.count() >= 500
+                exit for
+            end if
+            params.push("channel_id=" + (channelId as string).encodeUriComponent())
+        end for
+        path = "/api/v2/livetv/guide?" + params.join("&")
         nowSec = nowSeconds()
         startIso = secondsToIso(nowSec)
         endIso = secondsToIso(nowSec + 6 * 3600)
@@ -19,19 +26,41 @@ namespace Prairie.LiveTv
     end function
 
     function channelSessionPath(channelId as string) as string
-        return "/api/v1/livetv/channels/" + channelId.encodeUriComponent() + "/session"
+        return "/api/v2/livetv/channels/" + channelId.encodeUriComponent() + "/sessions"
     end function
 
     function liveSessionPath(sessionId as string) as string
-        return "/api/v1/livetv/sessions/" + sessionId.encodeUriComponent()
+        return "/api/v2/livetv/sessions/" + sessionId.encodeUriComponent()
+    end function
+
+    function liveHeartbeatPath(sessionId as string) as string
+        return liveSessionPath(sessionId) + "/heartbeat"
     end function
 
     function recordingsPath() as string
-        return "/api/v1/livetv/recordings"
+        return "/api/v2/livetv/recordings"
     end function
 
     function recordingPath(recordingId as string) as string
-        return "/api/v1/livetv/recordings/" + recordingId.encodeUriComponent()
+        return "/api/v2/livetv/recordings/" + recordingId.encodeUriComponent()
+    end function
+
+    ' Session start body: v2 nests capabilities under client_capabilities.
+    function buildSessionStartBody(caps as dynamic) as string
+        if caps = invalid
+            return "{}"
+        end if
+        clientCaps = {}
+        if type(caps.codecs_video) = "roArray"
+            clientCaps.codecs_video = caps.codecs_video
+        end if
+        if type(caps.codecs_audio) = "roArray"
+            clientCaps.codecs_audio = caps.codecs_audio
+        end if
+        if caps.max_resolution <> invalid
+            clientCaps.max_resolution = caps.max_resolution
+        end if
+        return FormatJson({ client_capabilities: clientCaps })
     end function
 
     ' Returns JSON with only program_id, or invalid when the id is missing.
@@ -74,10 +103,10 @@ namespace Prairie.LiveTv
         if data = invalid or type(data) <> "roAssociativeArray"
             return channels
         end if
-        if type(data.channels) <> "roArray"
+        if type(data.items) <> "roArray"
             return channels
         end if
-        for each channel in data.channels
+        for each channel in data.items
             if type(channel) = "roAssociativeArray" and channel.enabled <> false
                 channels.push(channel)
             end if
@@ -89,8 +118,8 @@ namespace Prairie.LiveTv
         if data = invalid or type(data) <> "roAssociativeArray"
             return []
         end if
-        if type(data.programs) = "roArray"
-            return data.programs
+        if type(data.items) = "roArray"
+            return data.items
         end if
         return []
     end function
@@ -100,10 +129,10 @@ namespace Prairie.LiveTv
         if data = invalid or type(data) <> "roAssociativeArray"
             return recordings
         end if
-        if type(data.recordings) <> "roArray"
+        if type(data.items) <> "roArray"
             return recordings
         end if
-        for each recording in data.recordings
+        for each recording in data.items
             if type(recording) = "roAssociativeArray"
                 recordings.push(recording)
             end if
@@ -127,30 +156,12 @@ namespace Prairie.LiveTv
         return "Channel " + number
     end function
 
+    ' v2 returns one opaque stream_url for hls and mpegts alike.
     function playableLiveUrl(start as object) as dynamic
-        if start = invalid
+        if start = invalid or start.stream_url = invalid
             return invalid
         end if
-        transport = ""
-        if start.transport <> invalid
-            transport = LCase((start.transport as string).trim())
-        end if
-        url = ""
-        if transport = "hls"
-            if start.hls_url <> invalid
-                url = (start.hls_url as string).trim()
-            end if
-        else if transport = "mpegts"
-            if start.stream_url <> invalid
-                url = (start.stream_url as string).trim()
-            end if
-        else
-            if start.hls_url <> invalid and (start.hls_url as string).trim().len() > 0
-                url = (start.hls_url as string).trim()
-            else if start.stream_url <> invalid and (start.stream_url as string).trim().len() > 0
-                url = (start.stream_url as string).trim()
-            end if
-        end if
+        url = (start.stream_url as string).trim()
         if url.len() = 0
             return invalid
         end if
