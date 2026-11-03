@@ -1,0 +1,72 @@
+namespace tests
+    @suite("Prairie.ThemeMusic")
+    class ThemeMusicSuite extends rooibos.BaseTestSuite
+
+        @describe("settings")
+        @it("reads the effective profile settings, off by default")
+        sub _()
+            m.assertEqual(Prairie.ThemeMusic.settingsPath(), "/api/v2/settings/values/effective?keys=ui.theme_music_enabled&keys=ui.theme_music_loop")
+            parsed = Prairie.ThemeMusic.parseSettings({ items: [
+                { key: "ui.theme_music_enabled", value: true },
+                { key: "ui.theme_music_loop", value: true },
+                { key: "ui.other", value: true },
+                { value: true },
+                "junk"
+            ] })
+            m.assertTrue(parsed.enabled)
+            m.assertTrue(parsed.loop)
+            off = Prairie.ThemeMusic.parseSettings({ items: [{ key: "ui.theme_music_enabled", value: "yes" }] })
+            m.assertFalse(off.enabled)
+            m.assertFalse(Prairie.ThemeMusic.parseSettings(invalid).enabled)
+            m.assertFalse(Prairie.ThemeMusic.parseSettings({ items: "x" }).loop)
+        end sub
+
+        @describe("selection")
+        @it("picks the first theme on movie, series, season and episode pages")
+        sub _()
+            detail = { type: "Season", themes: { owner_id: "series:1", items: ["junk", { title: "x" }, { id: "7" }, { id: "8" }] } }
+            pick = Prairie.ThemeMusic.selection(detail)
+            m.assertEqual(pick.ownerId, "series:1")
+            m.assertEqual(pick.themeId, "7")
+            m.assertEqual(pick.key, "series:1/7")
+            m.assertTrue(Prairie.ThemeMusic.supportsType("movie"))
+            m.assertTrue(Prairie.ThemeMusic.supportsType("episode"))
+            m.assertTrue(Prairie.ThemeMusic.supportsType("series"))
+        end sub
+
+        @it("has no theme for other types or missing themes")
+        sub _()
+            m.assertInvalid(Prairie.ThemeMusic.selection(invalid))
+            m.assertInvalid(Prairie.ThemeMusic.selection({ type: "audiobook", themes: { owner_id: "a", items: [{ id: "1" }] } }))
+            m.assertInvalid(Prairie.ThemeMusic.selection({ type: "movie" }))
+            m.assertInvalid(Prairie.ThemeMusic.selection({ type: "movie", themes: { owner_id: "a", items: [] } }))
+            m.assertInvalid(Prairie.ThemeMusic.selection({ type: "movie", themes: { owner_id: "", items: [{ id: "1" }] } }))
+            m.assertFalse(Prairie.ThemeMusic.supportsType(invalid))
+        end sub
+
+        @describe("playback")
+        @it("asks for a grant in containers Roku decodes")
+        sub _()
+            m.assertEqual(Prairie.ThemeMusic.playbackPath("movie:a b", "3"), "/api/v2/catalog/items/movie%3Aa%20b/themes/3/playback")
+            body = ParseJson(Prairie.ThemeMusic.playbackBody())
+            m.assertEqual(body.accepted_formats[0].container, "mp3")
+            m.assertEqual(body.accepted_formats[2].audio_codec, "aac")
+        end sub
+
+        @it("resolves the grant URL and stream format")
+        sub _()
+            relative = Prairie.ThemeMusic.grantStream("https://srv:8080/", { url: "/api/v2/themes/x.mp3?sig=1", content_type: "audio/mpeg" })
+            m.assertEqual(relative.url, "https://srv:8080/api/v2/themes/x.mp3?sig=1")
+            m.assertEqual(relative.streamFormat, "mp3")
+            absolute = Prairie.ThemeMusic.grantStream("https://srv", { url: "https://cdn/x.m4a", content_type: "audio/mp4" })
+            m.assertEqual(absolute.url, "https://cdn/x.m4a")
+            m.assertEqual(absolute.streamFormat, "mp4")
+            m.assertInvalid(Prairie.ThemeMusic.grantStream("https://srv", { url: "  " }))
+            m.assertInvalid(Prairie.ThemeMusic.grantStream("https://srv", invalid))
+            m.assertEqual(Prairie.ThemeMusic.streamFormat("audio/flac"), "flac")
+            m.assertEqual(Prairie.ThemeMusic.streamFormat("audio/wav"), "wav")
+            m.assertEqual(Prairie.ThemeMusic.streamFormat(invalid), "mp4")
+        end sub
+
+    end class
+end namespace

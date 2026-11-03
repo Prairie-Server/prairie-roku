@@ -1,0 +1,367 @@
+' Media requests (android a#709/a#773, apple i#748): the profile menu's
+' Requests hub shows the server's Discover rows in row_order with a See all
+' page each, closes to Home once the server reports requests off, and search
+' lists requestable titles that are not already in the library.
+namespace Prairie.Requests
+
+    function statusPath() as string
+        return "/api/v2/requests/status"
+    end function
+
+    function discoverPath() as string
+        return "/api/v2/requests/discover"
+    end function
+
+    function rowPath(rowKey as string, page = 1 as integer) as string
+        return "/api/v2/requests/discover/rows/" + rowKey.encodeUriComponent() + "?page=" + page.toStr()
+    end function
+
+    ' Older servers only page the six built-in rows by section.
+    function legacySectionPath(rowKey as string, page = 1 as integer) as string
+        return "/api/v2/requests/discover/" + rowKey.encodeUriComponent() + "?page=" + page.toStr()
+    end function
+
+    function searchPath(query as string, page = 1 as integer) as string
+        return "/api/v2/requests/search?q=" + query.trim().encodeUriComponent() + "&media_type=all&page=" + page.toStr()
+    end function
+
+    function createPath() as string
+        return "/api/v2/requests"
+    end function
+
+    ' Requests are on for this viewer when the server enables them and the
+    ' viewer may request. Anything unreadable counts as off.
+    function enabledFromStatus(data as dynamic) as boolean
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return false
+        end if
+        if data.requests_enabled <> true
+            return false
+        end if
+        if data.allowed = false
+            return false
+        end if
+        if data.state <> invalid and LCase(data.state as string) <> "available"
+            return false
+        end if
+        return true
+    end function
+
+    ' A requests read that answers "off": disabled, forbidden or gone.
+    function isRequestsOffError(status as integer, code = invalid as dynamic) as boolean
+        if status = 404 or status = 410
+            return true
+        end if
+        if code <> invalid
+            text = LCase(code as string)
+            return text = "requests_disabled" or text = "feature_disabled" or text = "capability_unsupported" or text = "not_configured"
+        end if
+        return false
+    end function
+
+    ' TMDB artwork path -> URL; absolute URLs pass through.
+    function imageUrl(path as dynamic, size = "w342" as string) as string
+        if path = invalid
+            return ""
+        end if
+        value = (path as string).trim()
+        if value.len() = 0
+            return ""
+        end if
+        if LCase(value.left(4)) = "http"
+            return value
+        end if
+        if value.left(1) <> "/"
+            value = "/" + value
+        end if
+        return "https://image.tmdb.org/t/p/" + size + value
+    end function
+
+    function intOr(value as dynamic, fallback as integer) as integer
+        if value = invalid
+            return fallback
+        end if
+        kind = type(value)
+        if kind = "roInt" or kind = "Integer" or kind = "roInteger" or kind = "LongInteger" or kind = "roLongInteger" or kind = "roFloat" or kind = "Float" or kind = "Double" or kind = "roDouble"
+            return Int(value)
+        end if
+        return fallback
+    end function
+
+    function isInLibrary(result as object) as boolean
+        if result.availability <> invalid and LCase(result.availability as string) = "available"
+            return true
+        end if
+        return false
+    end function
+
+    ' The card label for a title's request state: "In Library", "Requested",
+    ' "Request" or "" (not requestable).
+    function stateLabel(result as object) as string
+        if isInLibrary(result)
+            return "In Library"
+        end if
+        req = result.request
+        if type(req) = "roAssociativeArray"
+            if req.request_id <> invalid and (req.request_id as string).len() > 0
+                return "Requested"
+            end if
+            if req.requested_by_viewer = true
+                return "Requested"
+            end if
+            if req.requestable = false
+                return ""
+            end if
+        end if
+        return "Request"
+    end function
+
+    ' A card for one RequestMediaResult, or invalid without tmdb id / title.
+    function card(result as dynamic) as dynamic
+        if result = invalid or type(result) <> "roAssociativeArray"
+            return invalid
+        end if
+        tmdbId = intOr(result.tmdb_id, 0)
+        title = ""
+        if result.title <> invalid
+            title = (result.title as string).trim()
+        end if
+        mediaType = ""
+        if result.media_type <> invalid
+            mediaType = LCase(result.media_type as string)
+        end if
+        if tmdbId <= 0 or title.len() = 0 or (mediaType <> "movie" and mediaType <> "series")
+            return invalid
+        end if
+        libraryId = ""
+        if result.library_content_id <> invalid
+            libraryId = result.library_content_id as string
+        end if
+        overview = ""
+        if result.overview <> invalid
+            overview = result.overview as string
+        end if
+        return {
+            tmdbId: tmdbId,
+            mediaType: mediaType,
+            title: title,
+            year: intOr(result.year, 0),
+            overview: overview,
+            posterPath: result.poster_path,
+            backdropPath: result.backdrop_path,
+            posterUrl: imageUrl(result.poster_path),
+            inLibrary: isInLibrary(result),
+            libraryContentId: libraryId,
+            state: stateLabel(result)
+        }
+    end function
+
+    function cardsFrom(results as dynamic) as object
+        cards = []
+        if type(results) <> "roArray"
+            return cards
+        end if
+        seen = {}
+        for each result in results
+            entry = card(result)
+            if entry <> invalid
+                key = entry.mediaType + ":" + entry.tmdbId.toStr()
+                if not seen.doesExist(key)
+                    seen[key] = true
+                    cards.push(entry)
+                end if
+            end if
+        end for
+        return cards
+    end function
+
+    ' Rows the hub draws. A server with row_order lists every row in that
+    ' order; brand rows (studios, networks, genres) and empty rows are
+    ' skipped. Without row_order the sections show in the order sent.
+    ' Each row: { key, title, cards, browsable }.
+    function hubRows(data as dynamic) as object
+        rows = []
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return rows
+        end if
+        sections = {}
+        sectionList = []
+        if type(data.items) = "roArray"
+            for each section in data.items
+                if type(section) = "roAssociativeArray" and section.key <> invalid
+                    sections[section.key as string] = section
+                    sectionList.push(section)
+                end if
+            end for
+        end if
+        browsable = type(data.row_order) = "roArray" and data.row_order.count() > 0
+        ordered = []
+        if browsable
+            for each ref in data.row_order
+                if type(ref) = "roAssociativeArray" and ref.key <> invalid and not isBrandRow(ref.type)
+                    section = sections[ref.key as string]
+                    if section <> invalid
+                        ordered.push(section)
+                    end if
+                end if
+            end for
+        else
+            ordered = sectionList
+        end if
+        for each section in ordered
+            cards = cardsFrom(section.results)
+            if cards.count() > 0
+                title = section.key as string
+                if section.title <> invalid and (section.title as string).len() > 0
+                    title = section.title as string
+                end if
+                rows.push({ key: section.key as string, title: title, cards: cards, browsable: true })
+            end if
+        end for
+        return rows
+    end function
+
+    function isBrandRow(rowType as dynamic) as boolean
+        if rowType = invalid
+            return false
+        end if
+        kind = LCase(rowType as string)
+        return kind = "studios" or kind = "networks" or kind = "genres"
+    end function
+
+    ' { cards, page, nextPage } for one See all page; nextPage is 0 at the end.
+    ' A server that read several provider pages answers next_page; one that
+    ' does not move forward, or passes total_pages, is the end. TMDB stops at 500.
+    function rowPageFromResponse(data as dynamic, requestedPage as integer) as object
+        result = { cards: [], page: requestedPage, nextPage: 0 }
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return result
+        end if
+        result.cards = cardsFrom(data.results)
+        page = intOr(data.page, requestedPage)
+        result.page = page
+        totalPages = intOr(data.total_pages, 0)
+        if totalPages > 500
+            totalPages = 500
+        end if
+        cursor = intOr(data.next_page, 0)
+        if cursor > 0
+            if cursor > page and cursor <= totalPages
+                result.nextPage = cursor
+            end if
+        else if page < totalPages
+            result.nextPage = page + 1
+        end if
+        return result
+    end function
+
+    ' Search results not already in the library (those show in the library
+    ' results), and whether every match was in the library.
+    function searchFromResponse(data as dynamic) as object
+        result = { cards: [], onlyLibraryMatches: false }
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return result
+        end if
+        matches = cardsFrom(data.results)
+        for each entry in matches
+            if not entry.inLibrary
+                result.cards.push(entry)
+            end if
+        end for
+        result.onlyLibraryMatches = matches.count() > 0 and result.cards.count() = 0
+        return result
+    end function
+
+    function createBody(entry as object) as string
+        body = {
+            media_type: entry.mediaType,
+            tmdb_id: entry.tmdbId,
+            title: entry.title
+        }
+        if entry.year > 0
+            body.year = entry.year
+        end if
+        if entry.overview.len() > 0
+            body.overview = entry.overview
+        end if
+        if entry.posterPath <> invalid
+            body.poster_path = entry.posterPath
+        end if
+        if entry.backdropPath <> invalid
+            body.backdrop_path = entry.backdropPath
+        end if
+        return FormatJson(body)
+    end function
+
+    ' Dialog choices for a title: Open (in library) / Request, then Cancel.
+    function actions(entry as object) as object
+        list = []
+        if entry.inLibrary and entry.libraryContentId.len() > 0
+            list.push({ id: "open", label: "Open" })
+        else if entry.state = "Request"
+            list.push({ id: "request", label: "Request" })
+        end if
+        list.push({ id: "cancel", label: "Cancel" })
+        return list
+    end function
+
+    function actionLabels(list as object) as object
+        labels = []
+        for each action in list
+            labels.push(action.label)
+        end for
+        return labels
+    end function
+
+    function actionAt(list as object, index as integer) as string
+        if index < 0 or index >= list.count()
+            return "cancel"
+        end if
+        return list[index].id
+    end function
+
+    function dialogMessage(entry as object) as string
+        parts = []
+        if entry.year > 0
+            parts.push(entry.year.toStr())
+        end if
+        if entry.mediaType = "series"
+            parts.push("Series")
+        else
+            parts.push("Movie")
+        end if
+        if entry.state.len() > 0 and entry.state <> "Request"
+            parts.push(entry.state)
+        end if
+        text = parts.join(" · ")
+        if entry.overview.len() > 0
+            text = text + chr(10) + chr(10) + entry.overview
+        end if
+        return text
+    end function
+
+    ' A created request's answer for the confirmation message.
+    function createdMessage(data as dynamic, title as string) as string
+        status = ""
+        if data <> invalid and type(data) = "roAssociativeArray" and data.status <> invalid
+            status = LCase(data.status as string)
+        end if
+        if status = "approved" or status = "processing" or status = "available"
+            return title + " was requested and approved."
+        end if
+        return title + " was requested."
+    end function
+
+    ' A card's caption: year and request state.
+    function cardCaption(entry as object) as string
+        parts = []
+        if entry.year > 0
+            parts.push(entry.year.toStr())
+        end if
+        if entry.state.len() > 0
+            parts.push(entry.state)
+        end if
+        return parts.join(" · ")
+    end function
+
+end namespace

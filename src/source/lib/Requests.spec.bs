@@ -1,0 +1,226 @@
+namespace tests
+    @suite("Prairie.Requests")
+    class RequestsSuite extends rooibos.BaseTestSuite
+
+        function result(tmdbId as integer, title as string, mediaType = "movie" as string) as object
+            return {
+                tmdb_id: tmdbId,
+                title: title,
+                media_type: mediaType,
+                availability: "missing",
+                poster_path: "/p" + tmdbId.toStr() + ".jpg",
+                request: { requestable: true, requested_by_viewer: false, following: false }
+            }
+        end function
+
+        @describe("paths")
+        @it("builds the request reads and writes")
+        sub _()
+            m.assertEqual(Prairie.Requests.statusPath(), "/api/v2/requests/status")
+            m.assertEqual(Prairie.Requests.discoverPath(), "/api/v2/requests/discover")
+            m.assertEqual(Prairie.Requests.rowPath("trending_movies", 2), "/api/v2/requests/discover/rows/trending_movies?page=2")
+            m.assertEqual(Prairie.Requests.legacySectionPath("popular_series"), "/api/v2/requests/discover/popular_series?page=1")
+            m.assertEqual(Prairie.Requests.searchPath(" the heat "), "/api/v2/requests/search?q=the%20heat&media_type=all&page=1")
+            m.assertEqual(Prairie.Requests.createPath(), "/api/v2/requests")
+        end sub
+
+        @describe("status")
+        @it("is on only while the server enables requests for the viewer")
+        sub _()
+            m.assertTrue(Prairie.Requests.enabledFromStatus({ requests_enabled: true, allowed: true, state: "available" }))
+            m.assertTrue(Prairie.Requests.enabledFromStatus({ requests_enabled: true }))
+            m.assertFalse(Prairie.Requests.enabledFromStatus({ requests_enabled: false, allowed: true }))
+            m.assertFalse(Prairie.Requests.enabledFromStatus({ requests_enabled: true, allowed: false }))
+            m.assertFalse(Prairie.Requests.enabledFromStatus({ requests_enabled: true, state: "disabled" }))
+            m.assertFalse(Prairie.Requests.enabledFromStatus(invalid))
+        end sub
+
+        @it("reads disabled answers as requests off")
+        sub _()
+            m.assertTrue(Prairie.Requests.isRequestsOffError(404))
+            m.assertTrue(Prairie.Requests.isRequestsOffError(410))
+            m.assertTrue(Prairie.Requests.isRequestsOffError(403, "requests_disabled"))
+            m.assertFalse(Prairie.Requests.isRequestsOffError(403, "permission_denied"))
+            m.assertFalse(Prairie.Requests.isRequestsOffError(500))
+        end sub
+
+        @describe("cards")
+        @it("maps results to cards with request state")
+        sub _()
+            entry = Prairie.Requests.card(m.result(7, "Heat"))
+            m.assertEqual(entry.tmdbId, 7)
+            m.assertEqual(entry.posterUrl, "https://image.tmdb.org/t/p/w342/p7.jpg")
+            m.assertEqual(entry.state, "Request")
+            m.assertFalse(entry.inLibrary)
+
+            inLibrary = m.result(8, "Alien")
+            inLibrary.availability = "available"
+            inLibrary.library_content_id = "movie:alien"
+            entry = Prairie.Requests.card(inLibrary)
+            m.assertEqual(entry.state, "In Library")
+            m.assertEqual(entry.libraryContentId, "movie:alien")
+
+            requested = m.result(9, "Up", "series")
+            requested.request = { request_id: "r1", requestable: false }
+            m.assertEqual(Prairie.Requests.card(requested).state, "Requested")
+            mine = m.result(10, "Mine")
+            mine.request = { requested_by_viewer: true }
+            m.assertEqual(Prairie.Requests.card(mine).state, "Requested")
+            blocked = m.result(11, "No")
+            blocked.request = { requestable: false }
+            m.assertEqual(Prairie.Requests.card(blocked).state, "")
+            noState = m.result(12, "Bare")
+            noState.delete("request")
+            m.assertEqual(Prairie.Requests.card(noState).state, "Request")
+        end sub
+
+        @it("drops incomplete results and duplicates")
+        sub _()
+            m.assertInvalid(Prairie.Requests.card(invalid))
+            m.assertInvalid(Prairie.Requests.card({ tmdb_id: 1, title: "x", media_type: "person" }))
+            m.assertInvalid(Prairie.Requests.card({ tmdb_id: 0, title: "x", media_type: "movie" }))
+            m.assertInvalid(Prairie.Requests.card({ tmdb_id: 1, media_type: "movie" }))
+            m.assertEqual(Prairie.Requests.card({ tmdb_id: 1, title: "x", media_type: "movie", year: "1995" }).year, 0)
+            cards = Prairie.Requests.cardsFrom([m.result(1, "A"), m.result(1, "A"), m.result(1, "A", "series"), "junk"])
+            m.assertEqual(cards.count(), 2)
+            m.assertEqual(Prairie.Requests.cardsFrom(invalid).count(), 0)
+        end sub
+
+        @it("resolves TMDB artwork")
+        sub _()
+            m.assertEqual(Prairie.Requests.imageUrl("p.jpg", "w500"), "https://image.tmdb.org/t/p/w500/p.jpg")
+            m.assertEqual(Prairie.Requests.imageUrl("https://x/p.jpg"), "https://x/p.jpg")
+            m.assertEqual(Prairie.Requests.imageUrl(" "), "")
+            m.assertEqual(Prairie.Requests.imageUrl(invalid), "")
+        end sub
+
+        @describe("hub")
+        @it("follows row_order and skips brand and empty rows")
+        sub _()
+            data = {
+                items: [
+                    { key: "popular_movies", title: "Popular", results: [m.result(1, "A")] },
+                    { key: "trending_movies", title: "Trending", results: [m.result(2, "B")] },
+                    { key: "studios", title: "Studios", results: [m.result(3, "C")] },
+                    { key: "empty", title: "Empty", results: [] },
+                    { title: "no key" }
+                ],
+                row_order: [
+                    { key: "trending_movies", title: "Trending", type: "titles" },
+                    { key: "studios", title: "Studios", type: "studios" },
+                    { key: "missing", title: "Missing", type: "titles" },
+                    { key: "empty", title: "Empty", type: "titles" },
+                    { key: "popular_movies", title: "Popular", type: "titles" },
+                    "junk"
+                ]
+            }
+            rows = Prairie.Requests.hubRows(data)
+            m.assertEqual(rows.count(), 2)
+            m.assertEqual(rows[0].key, "trending_movies")
+            m.assertEqual(rows[0].title, "Trending")
+            m.assertEqual(rows[1].key, "popular_movies")
+            m.assertTrue(rows[1].browsable)
+        end sub
+
+        @it("keeps the sent order on servers without row_order")
+        sub _()
+            rows = Prairie.Requests.hubRows({ items: [
+                { key: "upcoming_movies", results: [m.result(1, "A")] },
+                { key: "on_air_series", title: "On Air", results: [m.result(2, "B", "series")] }
+            ] })
+            m.assertEqual(rows.count(), 2)
+            m.assertEqual(rows[0].title, "upcoming_movies")
+            m.assertEqual(rows[1].title, "On Air")
+            m.assertEqual(Prairie.Requests.hubRows(invalid).count(), 0)
+            m.assertFalse(Prairie.Requests.isBrandRow(invalid))
+            m.assertTrue(Prairie.Requests.isBrandRow("Genres"))
+        end sub
+
+        @describe("see all")
+        @it("pages a row until the server's last page")
+        sub _()
+            first = Prairie.Requests.rowPageFromResponse({ page: 1, total_pages: 3, results: [m.result(1, "A")] }, 1)
+            m.assertEqual(first.cards.count(), 1)
+            m.assertEqual(first.nextPage, 2)
+            cursor = Prairie.Requests.rowPageFromResponse({ page: 1, next_page: 3, total_pages: 9, results: [] }, 1)
+            m.assertEqual(cursor.nextPage, 3)
+            stuck = Prairie.Requests.rowPageFromResponse({ page: 3, next_page: 3, total_pages: 9 }, 3)
+            m.assertEqual(stuck.nextPage, 0)
+            last = Prairie.Requests.rowPageFromResponse({ page: 3, total_pages: 3 }, 3)
+            m.assertEqual(last.nextPage, 0)
+            capped = Prairie.Requests.rowPageFromResponse({ page: 500, total_pages: 900 }, 500)
+            m.assertEqual(capped.nextPage, 0)
+            bad = Prairie.Requests.rowPageFromResponse(invalid, 4)
+            m.assertEqual(bad.page, 4)
+            m.assertEqual(bad.nextPage, 0)
+        end sub
+
+        @describe("search")
+        @it("leaves out titles already in the library")
+        sub _()
+            owned = m.result(2, "Owned")
+            owned.availability = "Available"
+            found = Prairie.Requests.searchFromResponse({ results: [m.result(1, "New"), owned] })
+            m.assertEqual(found.cards.count(), 1)
+            m.assertEqual(found.cards[0].title, "New")
+            m.assertFalse(found.onlyLibraryMatches)
+            onlyOwned = Prairie.Requests.searchFromResponse({ results: [owned] })
+            m.assertEqual(onlyOwned.cards.count(), 0)
+            m.assertTrue(onlyOwned.onlyLibraryMatches)
+            m.assertFalse(Prairie.Requests.searchFromResponse(invalid).onlyLibraryMatches)
+        end sub
+
+        @describe("request dialog")
+        @it("builds the create body")
+        sub _()
+            source = m.result(5, "Heat")
+            source.year = 1995
+            source.overview = "Crime"
+            source.backdrop_path = "/b.jpg"
+            body = ParseJson(Prairie.Requests.createBody(Prairie.Requests.card(source)))
+            m.assertEqual(body.media_type, "movie")
+            m.assertEqual(body.tmdb_id, 5)
+            m.assertEqual(body.year, 1995)
+            m.assertEqual(body.overview, "Crime")
+            m.assertEqual(body.poster_path, "/p5.jpg")
+            m.assertEqual(body.backdrop_path, "/b.jpg")
+            bare = { tmdb_id: 6, title: "Bare", media_type: "series" }
+            minimal = ParseJson(Prairie.Requests.createBody(Prairie.Requests.card(bare)))
+            m.assertInvalid(minimal.year)
+            m.assertInvalid(minimal.poster_path)
+        end sub
+
+        @it("offers Request, Open or nothing besides Cancel")
+        sub _()
+            entry = Prairie.Requests.card(m.result(5, "Heat"))
+            actions = Prairie.Requests.actions(entry)
+            m.assertEqual(Prairie.Requests.actionLabels(actions).join("|"), "Request|Cancel")
+            m.assertEqual(Prairie.Requests.actionAt(actions, 0), "request")
+            m.assertEqual(Prairie.Requests.actionAt(actions, 5), "cancel")
+            owned = m.result(6, "Owned")
+            owned.availability = "available"
+            owned.library_content_id = "movie:o"
+            m.assertEqual(Prairie.Requests.actionLabels(Prairie.Requests.actions(Prairie.Requests.card(owned))).join("|"), "Open|Cancel")
+            done = m.result(7, "Done")
+            done.request = { request_id: "r" }
+            m.assertEqual(Prairie.Requests.actionLabels(Prairie.Requests.actions(Prairie.Requests.card(done))).join("|"), "Cancel")
+        end sub
+
+        @it("describes the title and the created request")
+        sub _()
+            source = m.result(5, "Heat", "series")
+            source.year = 1995
+            source.overview = "Crime"
+            source.request = { request_id: "r" }
+            entry = Prairie.Requests.card(source)
+            m.assertEqual(Prairie.Requests.dialogMessage(entry), "1995 · Series · Requested" + chr(10) + chr(10) + "Crime")
+            m.assertEqual(Prairie.Requests.cardCaption(entry), "1995 · Requested")
+            plain = Prairie.Requests.card(m.result(6, "Plain"))
+            m.assertEqual(Prairie.Requests.dialogMessage(plain), "Movie")
+            m.assertEqual(Prairie.Requests.createdMessage({ status: "approved" }, "Heat"), "Heat was requested and approved.")
+            m.assertEqual(Prairie.Requests.createdMessage({ status: "pending" }, "Heat"), "Heat was requested.")
+            m.assertEqual(Prairie.Requests.createdMessage(invalid, "Heat"), "Heat was requested.")
+        end sub
+
+    end class
+end namespace

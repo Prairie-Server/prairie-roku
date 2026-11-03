@@ -1,0 +1,205 @@
+' Calendar top bar tab: upcoming airings and releases grouped by the
+' viewer's local day (GET /api/v2/calendar). Badges read PREMIERE for a
+' series premiere (apple i#919), NEW SEASON and FINALE.
+namespace Prairie.Calendar
+
+    function windowDays() as integer
+        return 14
+    end function
+
+    function path(startDate as string, endDate as string, timezone = "" as string) as string
+        result = "/api/v2/calendar?start=" + startDate.encodeUriComponent() + "&end=" + endDate.encodeUriComponent()
+        if timezone.len() > 0
+            result = result + "&timezone=" + timezone.encodeUriComponent()
+        end if
+        return result
+    end function
+
+    function isLeapYear(year as integer) as boolean
+        return (year mod 4 = 0 and year mod 100 <> 0) or year mod 400 = 0
+    end function
+
+    function daysInMonth(year as integer, month as integer) as integer
+        if month = 2
+            if isLeapYear(year)
+                return 29
+            end if
+            return 28
+        end if
+        if month = 4 or month = 6 or month = 9 or month = 11
+            return 30
+        end if
+        return 31
+    end function
+
+    function pad2(value as integer) as string
+        return Right("0" + value.toStr(), 2)
+    end function
+
+    ' { year, month, day } from "YYYY-MM-DD", or invalid.
+    function parseDate(text as dynamic) as dynamic
+        if text = invalid
+            return invalid
+        end if
+        parts = (text as string).left(10).split("-")
+        if parts.count() <> 3
+            return invalid
+        end if
+        year = parts[0].toInt()
+        month = parts[1].toInt()
+        day = parts[2].toInt()
+        if year < 1 or month < 1 or month > 12 or day < 1 or day > daysInMonth(year, month)
+            return invalid
+        end if
+        return { year: year, month: month, day: day }
+    end function
+
+    function formatDate(date as object) as string
+        return date.year.toStr() + "-" + pad2(date.month) + "-" + pad2(date.day)
+    end function
+
+    function addDays(date as object, days as integer) as object
+        year = date.year
+        month = date.month
+        day = date.day + days
+        while day > daysInMonth(year, month)
+            day = day - daysInMonth(year, month)
+            month = month + 1
+            if month > 12
+                month = 1
+                year = year + 1
+            end if
+        end while
+        return { year: year, month: month, day: day }
+    end function
+
+    ' 0 = Sunday … 6 = Saturday (Zeller's congruence).
+    function dayOfWeek(date as object) as integer
+        month = date.month
+        year = date.year
+        if month < 3
+            month = month + 12
+            year = year - 1
+        end if
+        k = year mod 100
+        j = year \ 100
+        h = (date.day + (13 * (month + 1)) \ 5 + k + k \ 4 + j \ 4 + 5 * j) mod 7
+        return (h + 6) mod 7
+    end function
+
+    ' "Today", "Tomorrow", else "Wed, Nov 5".
+    function dayLabel(dateText as dynamic, todayText as string) as string
+        date = parseDate(dateText)
+        if date = invalid
+            return ""
+        end if
+        today = parseDate(todayText)
+        if today <> invalid
+            if formatDate(date) = formatDate(today)
+                return "Today"
+            end if
+            if formatDate(date) = formatDate(addDays(today, 1))
+                return "Tomorrow"
+            end if
+        end if
+        weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return weekdays[dayOfWeek(date)] + ", " + months[date.month - 1] + " " + date.day.toStr()
+    end function
+
+    function badgeLabel(badge as dynamic) as string
+        if badge = invalid
+            return ""
+        end if
+        kind = LCase(badge as string)
+        if kind = "series_premiere"
+            return "PREMIERE"
+        else if kind = "season_premiere"
+            return "NEW SEASON"
+        else if kind = "finale"
+            return "FINALE"
+        end if
+        return ""
+    end function
+
+    ' "S5 · E14 · PREMIERE" / "Season 2 · NEW SEASON" / "FINALE".
+    function eventCaption(event as object) as string
+        parts = []
+        kind = ""
+        if event.type <> invalid
+            kind = LCase(event.type as string)
+        end if
+        if kind = "episode" and event.season_number <> invalid and event.episode_number <> invalid
+            parts.push("S" + (event.season_number as integer).toStr() + " · E" + (event.episode_number as integer).toStr())
+        else if kind = "season_premiere" and event.season_number <> invalid
+            parts.push("Season " + (event.season_number as integer).toStr())
+        end if
+        if type(event.badges) = "roArray"
+            for each badge in event.badges
+                label = badgeLabel(badge)
+                if label.len() > 0
+                    parts.push(label)
+                end if
+            end for
+        end if
+        return parts.join(" · ")
+    end function
+
+    ' Where an event opens: episodes and season premieres open their series.
+    function targetContentId(event as object) as string
+        kind = ""
+        if event.type <> invalid
+            kind = LCase(event.type as string)
+        end if
+        if (kind = "episode" or kind = "season_premiere") and event.series_id <> invalid
+            seriesId = (event.series_id as string).trim()
+            if seriesId.len() > 0
+                return seriesId
+            end if
+        end if
+        if event.content_id <> invalid
+            return event.content_id as string
+        end if
+        return ""
+    end function
+
+    ' Screen rows { id, title, items } (one per day with events); each item is
+    ' a card { content_id, title, poster_url, caption }.
+    function rowsFromResponse(data as dynamic, todayText as string) as object
+        rows = []
+        if data = invalid or type(data) <> "roAssociativeArray" or type(data.events) <> "roArray"
+            return rows
+        end if
+        for each day in data.events
+            if type(day) = "roAssociativeArray" and type(day.items) = "roArray"
+                items = []
+                for each event in day.items
+                    if type(event) = "roAssociativeArray"
+                        target = targetContentId(event)
+                        if target.len() > 0
+                            title = ""
+                            if event.title <> invalid
+                                title = event.title as string
+                            end if
+                            caption = eventCaption(event)
+                            label = title
+                            if caption.len() > 0
+                                label = title + " · " + caption
+                            end if
+                            poster = ""
+                            if event.poster_url <> invalid
+                                poster = event.poster_url as string
+                            end if
+                            items.push({ content_id: target, title: label, poster_url: poster, caption: caption, watched: event.watched = true })
+                        end if
+                    end if
+                end for
+                if items.count() > 0
+                    rows.push({ id: "", title: dayLabel(day.date, todayText), items: items })
+                end if
+            end if
+        end for
+        return rows
+    end function
+
+end namespace

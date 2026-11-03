@@ -1,0 +1,220 @@
+' Movie box sets (android a#646, apple i#852): the movies TMDB lists in one
+' collection that the viewer can see in one library. They open on their own
+' page with the films in release (collection) order, are listed first in
+' search and show on a movie's page; library browse still lists each movie.
+namespace Prairie.BoxSets
+
+    function cardType() as string
+        return "box_set"
+    end function
+
+    function searchPath(query as string, limit = 5 as integer) as string
+        return "/api/v2/catalog/box-sets?q=" + query.trim().encodeUriComponent() + "&limit=" + limit.toStr()
+    end function
+
+    function detailPath(boxSetId as string, libraryId as string) as string
+        return "/api/v2/catalog/box-sets/" + boxSetId.encodeUriComponent() + "?library_id=" + libraryId.encodeUriComponent()
+    end function
+
+    function itemBoxSetPath(contentId as string) as string
+        return "/api/v2/catalog/items/" + contentId.encodeUriComponent() + "/box-set"
+    end function
+
+    function idText(value as dynamic) as string
+        if value = invalid
+            return ""
+        end if
+        kind = type(value)
+        if kind = "roInt" or kind = "Integer" or kind = "roInteger" or kind = "LongInteger" or kind = "roLongInteger"
+            return value.toStr()
+        end if
+        if kind = "roString" or kind = "String"
+            return (value as string).trim()
+        end if
+        return ""
+    end function
+
+    function intOr(value as dynamic, fallback as integer) as integer
+        if value = invalid
+            return fallback
+        end if
+        kind = type(value)
+        if kind = "roInt" or kind = "Integer" or kind = "roInteger" or kind = "LongInteger" or kind = "roLongInteger" or kind = "roFloat" or kind = "Float" or kind = "Double" or kind = "roDouble"
+            return Int(value)
+        end if
+        return fallback
+    end function
+
+    ' A normalized box set, or invalid without an id, library or title.
+    function normalize(raw as dynamic) as dynamic
+        if raw = invalid or type(raw) <> "roAssociativeArray"
+            return invalid
+        end if
+        boxSetId = idText(raw.id)
+        libraryId = idText(raw.library_id)
+        title = ""
+        if raw.title <> invalid
+            title = (raw.title as string).trim()
+        end if
+        if boxSetId.len() = 0 or libraryId.len() = 0 or title.len() = 0
+            return invalid
+        end if
+        result = {
+            id: boxSetId,
+            libraryId: libraryId,
+            title: title,
+            overview: "",
+            posterUrl: "",
+            backdropUrl: "",
+            movieCount: intOr(raw.movie_count, 0),
+            playedCount: intOr(raw.played_count, 0),
+            firstYear: intOr(raw.first_year, 0),
+            lastYear: intOr(raw.last_year, 0)
+        }
+        if raw.overview <> invalid
+            result.overview = raw.overview as string
+        end if
+        if raw.poster_url <> invalid
+            result.posterUrl = raw.poster_url as string
+        end if
+        if raw.backdrop_url <> invalid
+            result.backdropUrl = raw.backdrop_url as string
+        end if
+        return result
+    end function
+
+    function listFromResponse(data as dynamic) as object
+        sets = []
+        if data = invalid or type(data) <> "roAssociativeArray" or type(data.items) <> "roArray"
+            return sets
+        end if
+        for each raw in data.items
+            boxSet = normalize(raw)
+            if boxSet <> invalid
+                sets.push(boxSet)
+            end if
+        end for
+        return sets
+    end function
+
+    ' { boxSet, items } from GET box-sets/{id} (items already in release order).
+    function detailFromResponse(data as dynamic) as dynamic
+        boxSet = normalize(data)
+        if boxSet = invalid
+            return invalid
+        end if
+        items = []
+        if type(data.items) = "roArray"
+            for each item in data.items
+                if type(item) = "roAssociativeArray" and item.content_id <> invalid
+                    items.push(item)
+                end if
+            end for
+        end if
+        return { boxSet: boxSet, items: items }
+    end function
+
+    ' The box set a movie belongs to (the server answers {} when none).
+    function itemBoxSetFromResponse(data as dynamic) as dynamic
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return invalid
+        end if
+        if type(data.box_set) = "roAssociativeArray"
+            return normalize(data.box_set)
+        end if
+        return normalize(data)
+    end function
+
+    function filmCount(count as integer) as string
+        if count = 1
+            return "1 film"
+        end if
+        return count.toStr() + " films"
+    end function
+
+    ' "2001 – 2011", one year when the set spans one, "" with no year.
+    function yearsLabel(boxSet as object) as string
+        first = boxSet.firstYear
+        last = boxSet.lastYear
+        if first > 0 and last > 0 and first <> last
+            return first.toStr() + " – " + last.toStr()
+        end if
+        if first > 0
+            return first.toStr()
+        end if
+        if last > 0
+            return last.toStr()
+        end if
+        return ""
+    end function
+
+    ' Card caption: watched progress once started, else the years or film count.
+    function caption(boxSet as object) as string
+        if boxSet.playedCount > 0
+            return boxSet.playedCount.toStr() + " / " + boxSet.movieCount.toStr() + " watched"
+        end if
+        years = yearsLabel(boxSet)
+        if years.len() > 0
+            return years
+        end if
+        return filmCount(boxSet.movieCount)
+    end function
+
+    ' The page's meta line: film count, years, watched progress once started.
+    function heroFacts(boxSet as object) as string
+        facts = [filmCount(boxSet.movieCount)]
+        years = yearsLabel(boxSet)
+        if years.len() > 0
+            facts.push(years)
+        end if
+        if boxSet.playedCount > 0
+            facts.push(boxSet.playedCount.toStr() + " of " + boxSet.movieCount.toStr() + " watched")
+        end if
+        return facts.join(" · ")
+    end function
+
+    ' A search grid card for the box set; content_id names the library too
+    ' because search can return one collection from two libraries.
+    function searchCard(boxSet as object) as object
+        return {
+            content_id: cardType() + ":" + boxSet.libraryId + ":" + boxSet.id,
+            type: cardType(),
+            title: boxSet.title,
+            poster_url: boxSet.posterUrl,
+            overview: boxSet.overview,
+            subtitle: caption(boxSet),
+            box_set: boxSet
+        }
+    end function
+
+    ' { id, libraryId } from a search card's content_id, or invalid.
+    function parseCardId(contentId as dynamic) as dynamic
+        if contentId = invalid
+            return invalid
+        end if
+        prefix = cardType() + ":"
+        text = contentId as string
+        if text.left(prefix.len()) <> prefix
+            return invalid
+        end if
+        rest = text.mid(prefix.len())
+        sep = rest.instr(":")
+        if sep <= 0 or sep >= rest.len() - 1
+            return invalid
+        end if
+        return { libraryId: rest.left(sep), id: rest.mid(sep + 1) }
+    end function
+
+    ' Box sets first, then the catalog matches.
+    function mergeSearch(boxSets as object, items as object) as object
+        merged = []
+        for each boxSet in boxSets
+            merged.push(searchCard(boxSet))
+        end for
+        for each item in items
+            merged.push(item)
+        end for
+        return merged
+    end function
+
+end namespace

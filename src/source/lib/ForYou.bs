@@ -1,0 +1,58 @@
+' For You top bar tab: the profile's main recommendation row, then one row
+' per taste cluster. The screen is rebuilt and re-read every time it is shown,
+' so it refreshes when shown again (android a#676).
+namespace Prairie.ForYou
+
+    function mainPath(limit = 20 as integer) as string
+        return "/api/v2/recommendations/for-you/main?limit=" + limit.toStr()
+    end function
+
+    function rowsPath(limit = 20 as integer) as string
+        return "/api/v2/recommendations/for-you/rows?limit=" + limit.toStr()
+    end function
+
+    ' A RecommendationRow as a screen row { id, title, items }, or invalid
+    ' when it has no cards.
+    function rowFrom(raw as dynamic, fallbackTitle as string) as dynamic
+        if raw = invalid or type(raw) <> "roAssociativeArray" or type(raw.items) <> "roArray"
+            return invalid
+        end if
+        items = []
+        for each item in raw.items
+            if type(item) = "roAssociativeArray" and item.content_id <> invalid and items.count() < 20
+                items.push(item)
+            end if
+        end for
+        if items.count() = 0
+            return invalid
+        end if
+        title = fallbackTitle
+        if raw.title <> invalid and (raw.title as string).trim().len() > 0
+            title = (raw.title as string).trim()
+        end if
+        rowId = ""
+        if raw.key <> invalid
+            rowId = raw.key as string
+        end if
+        return { id: rowId, title: title, items: items }
+    end function
+
+    ' The main row (when it has cards) followed by the cluster rows.
+    function rowsFromResponses(mainData as dynamic, rowsData as dynamic) as object
+        rows = []
+        mainRow = rowFrom(mainData, "For You")
+        if mainRow <> invalid
+            rows.push(mainRow)
+        end if
+        if rowsData <> invalid and type(rowsData) = "roAssociativeArray" and type(rowsData.items) = "roArray"
+            for each raw in rowsData.items
+                row = rowFrom(raw, "Recommended")
+                if row <> invalid
+                    rows.push(row)
+                end if
+            end for
+        end if
+        return rows
+    end function
+
+end namespace
