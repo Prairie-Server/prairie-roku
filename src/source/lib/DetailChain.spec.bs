@@ -1,0 +1,51 @@
+namespace tests
+    @suite("Prairie.DetailChain")
+    class DetailChainSuite extends rooibos.BaseTestSuite
+
+        @describe("pick")
+        @it("pushes on the first pick and records the origin")
+        sub _()
+            result = Prairie.DetailChain.pick(invalid, "a", "home", "b")
+            m.assertEqual(result.action, "open")
+            m.assertEqual(result.contentId, "b")
+            m.assertEqual(result.chain.originId, "a")
+            m.assertEqual(result.chain.originBackRoute, "home")
+        end sub
+
+        @it("replaces on later picks so Back reaches the origin in two steps")
+        sub _()
+            first = Prairie.DetailChain.pick(invalid, "a", "search", "b")
+            second = Prairie.DetailChain.pick(first.chain, "b", first.backRoute, "c")
+            third = Prairie.DetailChain.pick(second.chain, "c", second.backRoute, "d")
+            m.assertEqual(third.action, "open")
+            m.assertEqual(third.contentId, "d")
+            m.assertEqual(third.chain.originId, "a")
+            backTo = Prairie.DetailChain.back(third.chain)
+            m.assertEqual(backTo.contentId, "a")
+            m.assertEqual(backTo.backRoute, "search")
+        end sub
+
+        @it("returns to the origin when it is picked again")
+        sub _()
+            first = Prairie.DetailChain.pick(invalid, "a", "home", "b")
+            result = Prairie.DetailChain.pick(first.chain, "b", "detail", "a")
+            m.assertEqual(result.action, "back")
+            m.assertEqual(result.contentId, "a")
+            m.assertEqual(result.backRoute, "home")
+            m.assertInvalid(result.chain)
+        end sub
+
+        @it("ignores a repeat pick of the title on screen")
+        sub _()
+            m.assertEqual(Prairie.DetailChain.pick(invalid, "a", "home", "a").action, "ignore")
+            m.assertEqual(Prairie.DetailChain.pick(invalid, "a", "home", "").action, "ignore")
+        end sub
+
+        @describe("back")
+        @it("is invalid outside a chain")
+        sub _()
+            m.assertInvalid(Prairie.DetailChain.back(invalid))
+        end sub
+
+    end class
+end namespace

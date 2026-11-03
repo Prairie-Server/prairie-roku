@@ -6,6 +6,7 @@ import "pkg:/source/lib/ApiClient.bs"
 import "pkg:/source/lib/Auth.bs"
 import "pkg:/source/lib/Home.bs"
 import "pkg:/source/lib/Nav.bs"
+import "pkg:/source/lib/DetailChain.bs"
 import "pkg:/source/lib/Libraries.bs"
 import "pkg:/source/lib/Catalog.bs"
 import "pkg:/source/lib/Collections.bs"
@@ -55,8 +56,10 @@ sub init()
     m.navLiveTvKnown = false
     m.navCacheKey = ""
     m.homeReturnFocus = invalid
+    m.detailChain = invalid
     m.profilesBackRoute = ""
     m.profileMenuDialog = invalid
+    m.episodesSeason = -1
     m.collectionLibraryQueue = []
     m.libraryCollectionCards = []
     m.personalCollectionCards = []
@@ -793,15 +796,20 @@ sub onMessageDialogButton()
     end if
 end sub
 
-sub showItemDetail(contentId as string)
+sub showItemDetail(contentId as string, backRoute = "" as string)
     m.detailContentId = contentId
-    m.detailBackRoute = m.route
+    if backRoute.len() > 0
+        m.detailBackRoute = backRoute
+    else
+        m.detailBackRoute = m.route
+    end if
     clearScreen()
     m.route = "detail"
     m.detailItem = invalid
     screen = CreateObject("roSGNode", "ItemDetailScreen")
     screen.observeField("playRequested", "onDetailPlayRequested")
     screen.observeField("seasonSelected", "onDetailSeasonSelected")
+    screen.observeField("similarSelected", "onDetailSimilarSelected")
     screen.observeField("backRequested", "onDetailBack")
     screen.observeField("rateRequested", "onDetailRateRequested")
     m.screenHost.appendChild(screen)
@@ -1006,6 +1014,15 @@ sub onRatingDialogButton()
     m.httpTask.control = "RUN"
 end sub
 
+sub loadSimilar()
+    if m.session = invalid or m.detailContentId.len() = 0
+        return
+    end if
+    m.pending = "similar"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Catalog.similarPath(m.detailContentId), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
 sub loadSeasons()
     if m.session = invalid
         return
@@ -1021,6 +1038,7 @@ sub loadEpisodes(seasonNumber as integer)
         return
     end if
     m.pending = "episodes"
+    m.episodesSeason = seasonNumber
     path = Prairie.Catalog.episodesPath(m.detailContentId, seasonNumber)
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
     m.httpTask.control = "RUN"
@@ -1502,6 +1520,7 @@ sub onHomeItemSelected()
         return
     end if
     m.homeReturnFocus = m.screen.lastRowItem
+    m.detailChain = invalid
     showItemDetail(contentId)
 end sub
 
@@ -1733,10 +1752,32 @@ sub onCatalogItemSelected()
     if contentId = invalid or contentId.len() = 0
         return
     end if
+    m.detailChain = invalid
     showItemDetail(contentId)
 end sub
 
+' More Like This: the first pick pushes, later picks replace the page the
+' rail opened, so Back returns to the starting title in two steps.
+sub onDetailSimilarSelected()
+    picked = m.screen.similarSelected
+    if picked = invalid or ratingInFlight()
+        return
+    end if
+    result = Prairie.DetailChain.pick(m.detailChain, m.detailContentId, m.detailBackRoute, picked)
+    if result.action = "ignore"
+        return
+    end if
+    m.detailChain = result.chain
+    showItemDetail(result.contentId, result.backRoute)
+end sub
+
 sub onDetailBack()
+    origin = Prairie.DetailChain.back(m.detailChain)
+    if origin <> invalid
+        m.detailChain = invalid
+        showItemDetail(origin.contentId, origin.backRoute)
+        return
+    end if
     back = m.detailBackRoute
     if back = "section" and m.browseSection <> invalid
         showSectionBrowse(m.browseSection)
@@ -2189,6 +2230,10 @@ sub onHttpResponse()
             m.navLiveTvKnown = true
             return
         end if
+        ' More Like This is optional; the rail just stays hidden.
+        if pending = "similar"
+            return
+        end if
         ' Rating saved; a failed community refresh only leaves the meta line stale.
         if pending = "ratingRefresh"
             return
@@ -2344,6 +2389,10 @@ sub onHttpResponse()
         m.navHasLiveTv = Prairie.LiveTv.channelsFromResponse(response.data).count() > 0
         m.navLiveTvKnown = true
         paintHomeNav()
+    else if pending = "similar"
+        if m.route = "detail" and m.screen <> invalid
+            m.screen.similar = Prairie.Catalog.itemsFromResponse(response.data)
+        end if
     else if pending = "libraries"
         libraries = Prairie.Libraries.librariesFromResponse(response.data)
         m.screen.libraries = libraries
@@ -2402,6 +2451,8 @@ sub onHttpResponse()
         m.screen.callFunc("focusDefault")
         if isSeriesDetail(detail)
             loadSeasons()
+        else
+            loadSimilar()
         end if
     else if pending = "seasons"
         seasons = Prairie.Catalog.seasonsFromResponse(response.data)
@@ -2413,6 +2464,7 @@ sub onHttpResponse()
         end if
     else if pending = "episodes"
         episodes = Prairie.Catalog.episodesFromResponse(response.data)
+        m.screen.episodeSeason = m.episodesSeason
         m.screen.episodes = episodes
         m.screen.callFunc("focusDefault")
     else if pending = "watchForPlay"

@@ -1,0 +1,47 @@
+namespace Prairie.DetailChain
+
+    ' More Like This navigation. Roku rebuilds each screen, so the "stack" is
+    ' the chain origin: the title the first rail pick left from plus where that
+    ' title goes Back to. The first pick "pushes" (records the origin), later
+    ' picks from the opened page "replace" it (the origin stays), so Back
+    ' returns to the starting title and then to wherever it was opened from.
+    '
+    ' Returns { action, contentId, backRoute, chain }:
+    '   action "ignore" - repeat pick of the title already on screen
+    '   action "open"   - show contentId; its Back goes to the chain origin
+    '   action "back"   - the pick is the origin itself; reopen it and end the chain
+    function pick(chain as dynamic, currentId as string, currentBackRoute as string, pickedId as string) as object
+        result = { action: "ignore", contentId: "", backRoute: currentBackRoute, chain: chain }
+        if pickedId.len() = 0 or pickedId = currentId
+            return result
+        end if
+        if chain = invalid
+            result.action = "open"
+            result.contentId = pickedId
+            result.backRoute = "detail"
+            result.chain = { originId: currentId, originBackRoute: currentBackRoute }
+            return result
+        end if
+        if pickedId = chain.originId
+            result.action = "back"
+            result.contentId = chain.originId
+            result.backRoute = chain.originBackRoute
+            result.chain = invalid
+            return result
+        end if
+        result.action = "open"
+        result.contentId = pickedId
+        result.backRoute = "detail"
+        return result
+    end function
+
+    ' Back from a page a rail opened: { contentId, backRoute } of the origin,
+    ' or invalid when the page was not opened from a rail.
+    function back(chain as dynamic) as dynamic
+        if chain = invalid
+            return invalid
+        end if
+        return { contentId: chain.originId, backRoute: chain.originBackRoute }
+    end function
+
+end namespace

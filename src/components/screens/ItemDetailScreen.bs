@@ -21,6 +21,8 @@ sub init()
     m.seasonsTitle = m.top.findNode("seasonsTitle")
     m.seasonList = m.top.findNode("seasonList")
     m.episodeList = m.top.findNode("episodeList")
+    m.similarTitle = m.top.findNode("similarTitle")
+    m.similarList = m.top.findNode("similarList")
 
     m.eyebrow.color = colors.amber
     m.title.color = colors.ink
@@ -30,6 +32,7 @@ sub init()
     m.playBg.color = colors.amber
     m.playLabel.color = colors.bg
     m.seasonsTitle.color = colors.amber
+    m.similarTitle.color = colors.amber
     m.rateLabel.color = colors.ink
     m.colors = colors
     m.rateBg.color = colors.bgElevated
@@ -38,11 +41,13 @@ sub init()
     m.top.observeField("detail", "onDetail")
     m.top.observeField("seasons", "onSeasons")
     m.top.observeField("episodes", "onEpisodes")
+    m.top.observeField("similar", "onSimilar")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("busy", "onBusy")
     m.top.observeField("userRating", "onUserRating")
     m.seasonList.observeField("rowItemSelected", "onSeasonSelected")
     m.episodeList.observeField("rowItemSelected", "onEpisodeSelected")
+    m.similarList.observeField("rowItemSelected", "onSimilarSelected")
 end sub
 
 sub onErrorText()
@@ -143,6 +148,10 @@ sub onDetail()
     m.seasonList.visible = series
     m.episodeList.visible = series
     if series
+        m.similarTitle.visible = false
+        m.similarList.visible = false
+    end if
+    if series
         m.rateBg.translation = [80, 620]
     else
         m.rateBg.translation = [380, 620]
@@ -174,14 +183,13 @@ sub onEpisodes()
     if episodes <> invalid
         for each episode in episodes
             node = row.createChild("ContentNode")
-            title = "Episode"
-            if episode.title <> invalid
-                title = episode.title as string
+            fallbackSeason = invalid
+            if m.top.episodeSeason >= 0
+                fallbackSeason = m.top.episodeSeason
             end if
-            if episode.episode_number <> invalid
-                title = "E" + (episode.episode_number as integer).toStr() + " · " + title
-            end if
+            title = Prairie.Catalog.episodeCardTitle(episode, fallbackSeason)
             node.title = title
+            node.description = Prairie.Catalog.episodeCardMeta(episode)
             contentId = ""
             if episode.content_id <> invalid
                 contentId = episode.content_id as string
@@ -190,6 +198,53 @@ sub onEpisodes()
         end for
     end if
     m.episodeList.content = content
+end sub
+
+' More Like This: shown under the actions on titles without a season list.
+sub onSimilar()
+    items = m.top.similar
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    if items <> invalid
+        for each entry in items
+            contentId = ""
+            if entry.content_id <> invalid
+                contentId = entry.content_id as string
+            end if
+            if contentId.len() > 0
+                node = row.createChild("ContentNode")
+                title = "Title"
+                if entry.title <> invalid
+                    title = entry.title as string
+                end if
+                node.title = title
+                if entry.poster_url <> invalid
+                    node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string, 200)
+                end if
+                node.addFields({ contentId: contentId, isExploreAll: false })
+            end if
+        end for
+    end if
+    m.similarList.content = content
+    shown = row.getChildCount() > 0 and not m.seasonList.visible
+    m.similarTitle.visible = shown
+    m.similarList.visible = shown
+end sub
+
+sub onSimilarSelected()
+    selection = m.similarList.rowItemSelected
+    if selection = invalid or selection.count() < 2
+        return
+    end if
+    row = m.similarList.content.getChild(selection[0])
+    if row = invalid
+        return
+    end if
+    item = row.getChild(selection[1])
+    if item = invalid or item.contentId = invalid
+        return
+    end if
+    m.top.similarSelected = item.contentId
 end sub
 
 sub focusDefault()
@@ -271,6 +326,18 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if key = "up" and m.seasonList.visible and m.seasonList.hasFocus()
         m.rateBg.setFocus(true)
+        return true
+    end if
+    if key = "down" and m.similarList.visible and (m.rateBg.hasFocus() or m.playBg.hasFocus())
+        m.similarList.setFocus(true)
+        return true
+    end if
+    if key = "up" and m.similarList.visible and m.similarList.hasFocus()
+        if m.playBg.visible
+            m.playBg.setFocus(true)
+        else
+            m.rateBg.setFocus(true)
+        end if
         return true
     end if
     if (key = "OK" or key = "play") and m.playBg.visible and m.playBg.isInFocusChain()
