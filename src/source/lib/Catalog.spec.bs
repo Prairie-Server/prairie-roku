@@ -85,6 +85,24 @@ namespace tests
             m.assertEqual(body.cursor, "cursor-1")
         end sub
 
+        @it("pages a Home section through source=section")
+        sub _()
+            request = Prairie.Catalog.buildCatalogRequest({
+                source: "section",
+                scope: "home",
+                sectionId: "recently_added",
+                offset: 0,
+                limit: 48
+            }, {
+                serverUrl: "https://prairie.example"
+            })
+            body = ParseJson(request.body)
+            m.assertEqual(body.source, "section")
+            m.assertEqual(body.scope, "home")
+            m.assertEqual(body.section_id, "recently_added")
+            m.assertInvalid(body.library_id)
+        end sub
+
         @it("normalizes v2 page metadata")
         sub _()
             page = Prairie.Catalog.pageFromResponse({

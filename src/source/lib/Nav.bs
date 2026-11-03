@@ -1,0 +1,107 @@
+namespace Prairie.Nav
+
+    ' Library-type tab a library belongs to: "movies", "series", "music",
+    ' "audiobooks", or "" (no tab). A mixed library appears under both Movies
+    ' and Series; matchesTab handles that case.
+    function matchesTab(tabId as string, libraryType as string) as boolean
+        kind = LCase(libraryType.trim())
+        if tabId = "movies"
+            return kind = "movie" or kind = "movies" or kind = "video" or kind = "mixed"
+        else if tabId = "series"
+            return kind = "series" or kind = "show" or kind = "shows" or kind = "tv" or kind = "tvshows" or kind = "mixed"
+        else if tabId = "music"
+            return kind = "music" or kind = "album" or kind = "albums" or kind = "artist" or kind = "artists" or kind = "audio"
+        else if tabId = "audiobooks"
+            return kind = "audiobook" or kind = "audiobooks"
+        end if
+        return false
+    end function
+
+    ' Catalog type filter a library-type tab pages when it spans several
+    ' libraries; "" when the catalog has no matching type (Music).
+    function tabCatalogType(tabId as string) as string
+        if tabId = "movies"
+            return "movie"
+        else if tabId = "series"
+            return "series"
+        else if tabId = "audiobooks"
+            return "audiobook"
+        end if
+        return ""
+    end function
+
+    ' Fixed top bar: Search, Home, one entry per library type the profile can
+    ' see, then Live TV when the server has channels. Each library-type entry
+    ' carries its matching libraries. There is no menu editor or pinning.
+    function topEntries(libraries as object, hasLiveTv as boolean) as object
+        entries = [
+            { id: "search", label: "Search", libraries: [] },
+            { id: "home", label: "Home", libraries: [] }
+        ]
+        tabs = [
+            { id: "movies", label: "Movies" },
+            { id: "series", label: "Series" },
+            { id: "music", label: "Music" },
+            { id: "audiobooks", label: "Audiobooks" }
+        ]
+        for each tabDef in tabs
+            matching = []
+            if libraries <> invalid
+                for each library in libraries
+                    if library <> invalid and library.type <> invalid and matchesTab(tabDef.id, library.type as string)
+                        matching.push(library)
+                    end if
+                end for
+            end if
+            if matching.count() > 0
+                entries.push({ id: tabDef.id, label: tabDef.label, libraries: matching })
+            end if
+        end for
+        if hasLiveTv
+            entries.push({ id: "livetv", label: "Live TV", libraries: [] })
+        end if
+        return entries
+    end function
+
+    function indexOfEntry(entries as object, entryId as string) as integer
+        if entries = invalid
+            return -1
+        end if
+        for i = 0 to entries.count() - 1
+            if entries[i].id = entryId
+                return i
+            end if
+        end for
+        return -1
+    end function
+
+    ' Profile menu rows Roku has, in the shared order (Switch Profile,
+    ' History, Requests, Settings, Switch Server, Sign Out). Roku has no
+    ' History or Requests page, and Watchlist/Favorites are not menu rows.
+    function profileMenuEntries() as object
+        return [
+            { id: "switchProfile", label: "Switch Profile" },
+            { id: "settings", label: "Settings" },
+            { id: "switchServer", label: "Switch Server" },
+            { id: "signOut", label: "Sign Out" }
+        ]
+    end function
+
+    function profileMenuLabels() as object
+        labels = []
+        for each entry in profileMenuEntries()
+            labels.push(entry.label)
+        end for
+        return labels
+    end function
+
+    ' Menu row id for a Dialog buttonSelected index; "" when out of range.
+    function profileMenuIdAt(index as integer) as string
+        entries = profileMenuEntries()
+        if index < 0 or index >= entries.count()
+            return ""
+        end if
+        return entries[index].id
+    end function
+
+end namespace

@@ -57,6 +57,12 @@ namespace Prairie.Catalog
         if query.collectionId <> invalid and (query.collectionId as string).len() > 0
             body.collection_id = query.collectionId as string
         end if
+        if query.scope <> invalid and (query.scope as string).len() > 0
+            body.scope = query.scope as string
+        end if
+        if query.sectionId <> invalid and (query.sectionId as string).len() > 0
+            body.section_id = query.sectionId as string
+        end if
         if query.offset <> invalid
             body.seek = query.offset as integer
         end if

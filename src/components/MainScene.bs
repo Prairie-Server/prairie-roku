@@ -5,6 +5,7 @@ import "pkg:/source/lib/Session.bs"
 import "pkg:/source/lib/ApiClient.bs"
 import "pkg:/source/lib/Auth.bs"
 import "pkg:/source/lib/Home.bs"
+import "pkg:/source/lib/Nav.bs"
 import "pkg:/source/lib/Libraries.bs"
 import "pkg:/source/lib/Catalog.bs"
 import "pkg:/source/lib/Collections.bs"
@@ -45,6 +46,17 @@ sub init()
     m.catalogHasMore = false
     m.browseLibrary = invalid
     m.browseCollection = invalid
+    m.browseSection = invalid
+    m.browseTab = invalid
+    m.libraryBackRoute = "libraries"
+    m.homeItemLimit = -1
+    m.navLibraries = invalid
+    m.navHasLiveTv = false
+    m.navLiveTvKnown = false
+    m.navCacheKey = ""
+    m.homeReturnFocus = invalid
+    m.profilesBackRoute = ""
+    m.profileMenuDialog = invalid
     m.collectionLibraryQueue = []
     m.libraryCollectionCards = []
     m.personalCollectionCards = []
@@ -371,8 +383,9 @@ sub finishDiscovery()
     end if
 end sub
 
-sub showProfiles()
+sub showProfiles(backRoute = "" as string)
     clearScreen()
+    m.profilesBackRoute = backRoute
     m.route = "profiles"
     screen = CreateObject("roSGNode", "ProfileSelectScreen")
     if m.auth <> invalid
@@ -389,18 +402,88 @@ end sub
 sub showHome()
     clearScreen()
     m.route = "home"
+    resetNavCacheForSession()
     screen = CreateObject("roSGNode", "HomeBrowseScreen")
     if m.session <> invalid and m.session.profileName <> invalid
         screen.profileName = m.session.profileName
     end if
+    screen.navEntries = currentNavEntries()
+    if m.homeReturnFocus <> invalid
+        screen.restoreRowItem = m.homeReturnFocus
+        m.homeReturnFocus = invalid
+    end if
     screen.observeField("selectedContentId", "onHomeItemSelected")
+    screen.observeField("exploreSection", "onHomeExploreSection")
+    screen.observeField("navRequested", "onHomeNavRequested")
     screen.observeField("openLibraries", "onOpenLibraries")
     screen.observeField("openSearch", "onOpenSearch")
     screen.observeField("openLiveTv", "onOpenLiveTv")
     screen.observeField("signOutRequested", "onSignOut")
     m.screenHost.appendChild(screen)
     m.screen = screen
-    loadHomeSections()
+    if m.homeItemLimit < 0
+        loadHomeCapabilities()
+    else
+        loadHomeSections()
+    end if
+end sub
+
+' Nav entries, the Home item_limit and Live TV presence are read once per
+' server + profile; switching either reads them again.
+sub resetNavCacheForSession()
+    key = ""
+    if m.session <> invalid
+        key = m.session.serverUrl
+        if m.session.profileId <> invalid
+            key = key + "|" + (m.session.profileId as string)
+        end if
+    end if
+    if key = m.navCacheKey
+        return
+    end if
+    m.navCacheKey = key
+    m.homeItemLimit = -1
+    m.navLibraries = invalid
+    m.navHasLiveTv = false
+    m.navLiveTvKnown = false
+    m.homeReturnFocus = invalid
+end sub
+
+function currentNavEntries() as object
+    return Prairie.Nav.topEntries(m.navLibraries, m.navHasLiveTv)
+end function
+
+sub paintHomeNav()
+    if m.route = "home" and m.screen <> invalid and m.screen.hasField("navEntries")
+        m.screen.navEntries = currentNavEntries()
+    end if
+end sub
+
+' After Home's rows: libraries for the type entries, then Live TV presence.
+sub continueHomeNavLoad()
+    if m.session = invalid or m.route <> "home"
+        return
+    end if
+    if m.navLibraries = invalid
+        m.pending = "navLibraries"
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Libraries.librariesPath(), "GET")
+        m.httpTask.control = "RUN"
+        return
+    end if
+    if not m.navLiveTvKnown
+        m.pending = "navLiveTv"
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.LiveTv.channelsPath(), "GET")
+        m.httpTask.control = "RUN"
+    end if
+end sub
+
+sub loadHomeCapabilities()
+    if m.session = invalid
+        return
+    end if
+    m.pending = "homeCapabilities"
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Home.capabilitiesPath(), "GET")
+    m.httpTask.control = "RUN"
 end sub
 
 sub showLiveTv()
@@ -584,6 +667,113 @@ sub showCollectionBrowse(collection as object)
     m.screenHost.appendChild(screen)
     m.screen = screen
     loadCatalogPage(false)
+end sub
+
+' A Home row's full page ("Explore all"), paged through
+' POST /api/v2/catalog/query source=section scope=home.
+sub showSectionBrowse(section as object)
+    clearScreen()
+    m.route = "section"
+    m.browseSection = section
+    m.catalogItems = []
+    m.catalogSnapshot = ""
+    m.catalogHasMore = false
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Home"
+    screen.titleText = section.title
+    screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("loadMoreRequested", "onCatalogLoadMore")
+    screen.observeField("backRequested", "onBrowseBackHome")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadCatalogPage(false)
+end sub
+
+' A library-type top bar entry. One library opens that library; several
+' page the catalog by type (Movies, Series, Audiobooks) or, for Music, which
+' has no catalog type, open the Libraries list.
+sub showNavTab(entry as object)
+    libraries = entry.libraries
+    if libraries = invalid or libraries.count() = 0
+        return
+    end if
+    if libraries.count() = 1
+        m.libraryBackRoute = "home"
+        showLibraryBrowse(libraries[0])
+        return
+    end if
+    catalogType = Prairie.Nav.tabCatalogType(entry.id)
+    if catalogType.len() = 0
+        showLibraries()
+        return
+    end if
+    m.browseTab = { id: entry.id, label: entry.label, catalogType: catalogType }
+    showTabBrowse()
+end sub
+
+sub showTabBrowse()
+    clearScreen()
+    m.route = "tab"
+    m.catalogItems = []
+    m.catalogSnapshot = ""
+    m.catalogHasMore = false
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Browse"
+    screen.titleText = m.browseTab.label
+    screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("loadMoreRequested", "onCatalogLoadMore")
+    screen.observeField("backRequested", "onBrowseBackHome")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    loadCatalogPage(false)
+end sub
+
+sub showProfileMenu()
+    dialog = CreateObject("roSGNode", "Dialog")
+    title = "Profile"
+    if m.session <> invalid and m.session.profileName <> invalid and (m.session.profileName as string).len() > 0
+        title = m.session.profileName as string
+    end if
+    dialog.title = title
+    dialog.buttons = Prairie.Nav.profileMenuLabels()
+    dialog.observeField("buttonSelected", "onProfileMenuButton")
+    m.profileMenuDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onProfileMenuButton()
+    if m.profileMenuDialog = invalid
+        return
+    end if
+    choice = Prairie.Nav.profileMenuIdAt(m.profileMenuDialog.buttonSelected)
+    m.profileMenuDialog.close = true
+    m.profileMenuDialog = invalid
+    if choice = "switchProfile"
+        switchProfile()
+    else if choice = "settings"
+        showSettings()
+    else if choice = "switchServer"
+        showServerList("home")
+    else if choice = "signOut"
+        onSignOut()
+    end if
+end sub
+
+' Re-open the profile picker on the signed-in account; cancelling returns home.
+sub switchProfile()
+    if m.session = invalid
+        return
+    end if
+    username = ""
+    if m.session.username <> invalid
+        username = m.session.username as string
+    end if
+    m.auth = {
+        serverUrl: m.session.serverUrl,
+        accessToken: m.session.accessToken,
+        username: username
+    }
+    showProfiles("home")
 end sub
 
 sub showMessage(title as string, message as string)
@@ -1039,8 +1229,12 @@ sub loadHomeSections()
     if m.session = invalid
         return
     end if
+    limit = m.homeItemLimit
+    if limit < 0
+        limit = 0
+    end if
     m.pending = "home"
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Home.sectionsPath(), "GET")
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Home.sectionsPath(limit), "GET")
     m.httpTask.control = "RUN"
 end sub
 
@@ -1067,7 +1261,13 @@ function buildCatalogQuery(append as boolean) as object
         query.offset = 0
     end if
 
-    if m.route = "library" and m.browseLibrary <> invalid
+    if m.route = "section" and m.browseSection <> invalid
+        query.source = "section"
+        query.scope = "home"
+        query.sectionId = m.browseSection.id
+    else if m.route = "tab" and m.browseTab <> invalid
+        query.type = m.browseTab.catalogType
+    else if m.route = "library" and m.browseLibrary <> invalid
         query.libraryId = m.browseLibrary.id
     else if m.route = "collection" and m.browseCollection <> invalid
         query.collectionId = m.browseCollection.id
@@ -1188,6 +1388,11 @@ sub finishProfile(profile as object, profileToken as dynamic)
 end sub
 
 sub onProfilesCancel()
+    if m.profilesBackRoute = "home" and m.session <> invalid
+        m.auth = invalid
+        showHome()
+        return
+    end if
     Prairie.Session.clearSession(m.store)
     if m.registry.entries.count() > 0
         showServerList("connect")
@@ -1296,7 +1501,34 @@ sub onHomeItemSelected()
     if contentId = invalid or contentId.len() = 0
         return
     end if
+    m.homeReturnFocus = m.screen.lastRowItem
     showItemDetail(contentId)
+end sub
+
+sub onHomeExploreSection()
+    section = m.screen.exploreSection
+    if section = invalid or section.id = invalid or (section.id as string).len() = 0
+        return
+    end if
+    m.homeReturnFocus = m.screen.lastRowItem
+    showSectionBrowse(section)
+end sub
+
+sub onHomeNavRequested()
+    entryId = m.screen.navRequested
+    if entryId = "search"
+        showSearch()
+    else if entryId = "livetv"
+        showLiveTv()
+    else if entryId = "profile"
+        showProfileMenu()
+    else
+        entries = currentNavEntries()
+        index = Prairie.Nav.indexOfEntry(entries, entryId)
+        if index >= 0
+            showNavTab(entries[index])
+        end if
+    end if
 end sub
 
 sub onOpenLibraries()
@@ -1464,7 +1696,11 @@ sub onBrowseBackHome()
 end sub
 
 sub onLibraryBrowseBack()
-    showLibraries()
+    if m.libraryBackRoute = "home"
+        showHome()
+    else
+        showLibraries()
+    end if
 end sub
 
 sub onCollectionsBack()
@@ -1480,6 +1716,7 @@ sub onLibraryChosen()
     if library = invalid
         return
     end if
+    m.libraryBackRoute = "libraries"
     showLibraryBrowse(library)
 end sub
 
@@ -1501,7 +1738,11 @@ end sub
 
 sub onDetailBack()
     back = m.detailBackRoute
-    if back = "library" and m.browseLibrary <> invalid
+    if back = "section" and m.browseSection <> invalid
+        showSectionBrowse(m.browseSection)
+    else if back = "tab" and m.browseTab <> invalid
+        showTabBrowse()
+    else if back = "library" and m.browseLibrary <> invalid
         showLibraryBrowse(m.browseLibrary)
     else if back = "collection" and m.browseCollection <> invalid
         showCollectionBrowse(m.browseCollection)
@@ -1919,6 +2160,35 @@ sub onHttpResponse()
             end if
             return
         end if
+        ' A failed or missing capability read means no item_limit.
+        if pending = "homeCapabilities"
+            m.homeItemLimit = 0
+            loadHomeSections()
+            return
+        end if
+        ' A server that still rejects item_limit is read without it for the session.
+        if pending = "home" and m.homeItemLimit > 0 and Prairie.Home.rejectsItemLimit(status)
+            m.homeItemLimit = 0
+            loadHomeSections()
+            return
+        end if
+        if pending = "home"
+            if m.screen <> invalid and m.screen.hasField("errorText")
+                m.screen.errorText = message
+            end if
+            continueHomeNavLoad()
+            return
+        end if
+        if pending = "navLibraries"
+            m.navLibraries = []
+            continueHomeNavLoad()
+            return
+        end if
+        if pending = "navLiveTv"
+            m.navHasLiveTv = false
+            m.navLiveTvKnown = true
+            return
+        end if
         ' Rating saved; a failed community refresh only leaves the meta line stale.
         if pending = "ratingRefresh"
             return
@@ -2055,6 +2325,9 @@ sub onHttpResponse()
             return
         end if
         finishProfile(m.pinProfile, data.profile_token)
+    else if pending = "homeCapabilities"
+        m.homeItemLimit = Prairie.Home.sectionItemLimitFromCapabilities(response.data)
+        loadHomeSections()
     else if pending = "home"
         sections = Prairie.Home.sectionsFromResponse(response.data)
         m.screen.sections = sections
@@ -2062,6 +2335,15 @@ sub onHttpResponse()
         if sections.count() = 0
             m.screen.errorText = "No home sections yet"
         end if
+        continueHomeNavLoad()
+    else if pending = "navLibraries"
+        m.navLibraries = Prairie.Libraries.librariesFromResponse(response.data)
+        paintHomeNav()
+        continueHomeNavLoad()
+    else if pending = "navLiveTv"
+        m.navHasLiveTv = Prairie.LiveTv.channelsFromResponse(response.data).count() > 0
+        m.navLiveTvKnown = true
+        paintHomeNav()
     else if pending = "libraries"
         libraries = Prairie.Libraries.librariesFromResponse(response.data)
         m.screen.libraries = libraries

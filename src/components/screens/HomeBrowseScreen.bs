@@ -1,10 +1,12 @@
 import "pkg:/source/lib/Theme.bs"
 import "pkg:/source/lib/ArtworkUrl.bs"
+import "pkg:/source/lib/Home.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
     m.top.findNode("backdrop").color = colors.bg
     m.brand = m.top.findNode("brand")
+    m.topNav = m.top.findNode("topNav")
     m.profileLabel = m.top.findNode("profileLabel")
     m.errorLabel = m.top.findNode("errorLabel")
     m.rails = m.top.findNode("rails")
@@ -15,11 +17,15 @@ sub init()
     m.profileLabel.color = colors.muted
     m.errorLabel.color = colors.danger
     m.hint.color = colors.muted
+    m.topNav.selectedId = "home"
 
     m.top.observeField("sections", "onSections")
+    m.top.observeField("navEntries", "onNavEntries")
     m.top.observeField("profileName", "onProfileName")
     m.top.observeField("errorText", "onErrorText")
     m.rails.observeField("rowItemSelected", "onItemSelected")
+    m.topNav.observeField("activatedId", "onNavActivated")
+    onNavEntries()
 end sub
 
 sub onProfileName()
@@ -29,6 +35,32 @@ sub onProfileName()
     else
         m.profileLabel.text = ""
     end if
+    onNavEntries()
+end sub
+
+' The screen's entries plus the trailing profile entry (the profile menu).
+sub onNavEntries()
+    entries = []
+    if m.top.navEntries <> invalid
+        for each entry in m.top.navEntries
+            entries.push(entry)
+        end for
+    end if
+    profileLabel = "Profile"
+    if m.top.profileName.len() > 0
+        profileLabel = m.top.profileName
+    end if
+    entries.push({ id: "profile", label: profileLabel })
+    m.topNav.entries = entries
+end sub
+
+sub onNavActivated()
+    entryId = m.topNav.activatedId
+    if entryId = "home"
+        m.rails.setFocus(true)
+        return
+    end if
+    m.top.navRequested = entryId
 end sub
 
 sub onErrorText()
@@ -65,14 +97,30 @@ sub onSections()
                     contentId = entry.content_id as string
                 end if
                 node.id = contentId
-                node.addFields({ contentId: contentId })
+                node.addFields({ contentId: contentId, isExploreAll: false })
             end for
+            if Prairie.Home.offersExploreAll(section)
+                explore = row.createChild("ContentNode")
+                explore.title = "Explore all"
+                explore.addFields({ contentId: "", isExploreAll: true, sectionId: section.id as string, sectionTitle: title })
+            end if
         end for
     end if
     m.rails.content = content
+    restore = m.top.restoreRowItem
+    if restore <> invalid and restore.count() = 2 and restore[0] < content.getChildCount()
+        row = content.getChild(restore[0])
+        if row <> invalid and restore[1] < row.getChildCount()
+            m.rails.jumpToRowItem = restore
+        end if
+    end if
 end sub
 
 sub focusDefault()
+    if m.rails.content = invalid or m.rails.content.getChildCount() = 0
+        m.topNav.callFunc("focusSelected")
+        return
+    end if
     m.rails.setFocus(true)
 end sub
 
@@ -86,9 +134,18 @@ sub onItemSelected()
         return
     end if
     item = row.getChild(selection[1])
-    if item = invalid or item.contentId = invalid or (item.contentId as string).len() = 0
+    if item = invalid
         return
     end if
+    if item.isExploreAll = true
+        m.top.lastRowItem = [selection[0], selection[1]]
+        m.top.exploreSection = { id: item.sectionId, title: item.sectionTitle }
+        return
+    end if
+    if item.contentId = invalid or (item.contentId as string).len() = 0
+        return
+    end if
+    m.top.lastRowItem = [selection[0], selection[1]]
     m.top.selectedContentId = item.contentId
 end sub
 
@@ -96,7 +153,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if not press
         return false
     end if
-    if key = "options"
+    if key = "up" and m.rails.isInFocusChain()
+        m.topNav.callFunc("focusSelected")
+        return true
+    else if key = "down" and m.topNav.isInFocusChain()
+        if m.rails.content <> invalid and m.rails.content.getChildCount() > 0
+            m.rails.setFocus(true)
+        end if
+        return true
+    else if key = "options"
         m.top.openLibraries = true
         return true
     else if key = "replay"
@@ -106,6 +171,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.top.openLiveTv = true
         return true
     else if key = "back"
+        if m.topNav.isInFocusChain() and m.rails.content <> invalid and m.rails.content.getChildCount() > 0
+            m.rails.setFocus(true)
+            return true
+        end if
         m.top.signOutRequested = true
         return true
     end if

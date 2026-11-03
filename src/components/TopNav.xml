@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Fixed top bar: Search, Home, library-type entries, Live TV, then the
+  profile entry (built by Prairie.Nav.topEntries plus the screen). Left/Right
+  move, OK activates; Down is left to the screen so it can return to content.
+-->
+<component name="TopNav" extends="Group">
+    <interface>
+        <field id="entries" type="array" onChange="onEntries" />
+        <field id="selectedId" type="string" value="home" onChange="onPaint" />
+        <field id="activatedId" type="string" value="" alwaysNotify="true" />
+        <function name="focusSelected" />
+    </interface>
+    <script type="text/brightscript" uri="TopNav.bs" />
+    <children>
+        <LayoutGroup id="row" layoutDirection="horiz" itemSpacings="[12]" />
+    </children>
+</component>
