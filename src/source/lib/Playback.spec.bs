@@ -25,6 +25,13 @@ namespace tests
                 qualityPreference: "720p"
             }))
             m.assertEqual(preferred.quality_preference, "720p")
+            m.assertInvalid(preferred.audio_track_index)
+            withAudio = ParseJson(Prairie.Playback.buildStartBody({
+                fileId: 9,
+                profileId: "p1",
+                audioTrackIndex: 2
+            }))
+            m.assertEqual(withAudio.audio_track_index, 2)
             m.assertEqual(body.client_playback_context.protocol_version, 3)
             m.assertEqual(body.client_playback_context.device.platform, "roku")
             m.assertEqual(body.start_position, 30)

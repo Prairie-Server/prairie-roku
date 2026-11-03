@@ -25,6 +25,11 @@ namespace Prairie.Persist
         return "prairie.serverRegistry"
     end function
 
+    ' Per-series audio choice (additive key; no schema bump needed).
+    function seriesTrackPrefsKey() as string
+        return "prairie.seriesTrackPrefs"
+    end function
+
     function storageSchemaVersion() as integer
         return 2
     end function

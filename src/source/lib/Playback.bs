@@ -80,6 +80,10 @@ namespace Prairie.Playback
         if input.startPosition <> invalid and (input.startPosition as float) > 0
             body.start_position = input.startPosition as float
         end if
+        ' Remembered per-series audio choice (index into the version audio_tracks).
+        if input.audioTrackIndex <> invalid and (input.audioTrackIndex as integer) >= 0
+            body.audio_track_index = input.audioTrackIndex as integer
+        end if
         return FormatJson(body)
     end function
 
