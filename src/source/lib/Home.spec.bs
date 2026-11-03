@@ -7,16 +7,65 @@ namespace tests
         sub _()
             sections = Prairie.Home.sectionsFromResponse({
                 sections: [
-                    { id: "continue", section_type: "continue", title: "Continue", items: [{ content_id: "1" }, "bad"] },
+                    { id: "continue", section_type: "continue", title: "Continue", featured: true, items: [{ content_id: "1" }, "bad"] },
                     { id: "recent", title: "Recent" }
                 ]
             })
             m.assertEqual(sections.count(), 2)
             m.assertEqual(sections[0].items.count(), 1)
+            m.assertTrue(sections[0].featured)
             m.assertEqual(sections[1].items.count(), 0)
+            m.assertFalse(sections[1].featured)
             m.assertEqual(Prairie.Home.sectionsFromResponse(invalid).count(), 0)
             m.assertEqual(Prairie.Home.sectionsFromResponse({ sections: "nope" }).count(), 0)
-            m.assertEqual(Prairie.Home.sectionsPath(), "/api/v1/home/sections")
+        end sub
+
+        @it("caps each row at 20 cards")
+        sub _()
+            items = []
+            for i = 1 to 30
+                items.push({ content_id: i.toStr() })
+            end for
+            sections = Prairie.Home.sectionsFromResponse({ sections: [{ id: "big", items: items }] })
+            m.assertEqual(sections[0].items.count(), 20)
+            m.assertEqual(sections[0].items[19].content_id, "20")
+        end sub
+
+        @describe("item_limit")
+        @it("builds the v2 sections path with and without item_limit")
+        sub _()
+            m.assertEqual(Prairie.Home.sectionsPath(), "/api/v2/home/sections")
+            m.assertEqual(Prairie.Home.sectionsPath(0), "/api/v2/home/sections")
+            m.assertEqual(Prairie.Home.sectionsPath(20), "/api/v2/home/sections?item_limit=20")
+            m.assertEqual(Prairie.Home.capabilitiesPath(), "/api/v2/home/capabilities")
+        end sub
+
+        @it("reads section_item_limit_max as min(20, max)")
+        sub _()
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities({ section_item_limit_max: 100 }), 20)
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities({ section_item_limit_max: 5 }), 5)
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities({ section_item_limit_max: 0 }), 0)
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities({ section_item_limit_max: "100" }), 0)
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities({ state: "available" }), 0)
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities(invalid), 0)
+            m.assertEqual(Prairie.Home.sectionItemLimitFromCapabilities([]), 0)
+        end sub
+
+        @it("treats 422 as a rejected item_limit")
+        sub _()
+            m.assertTrue(Prairie.Home.rejectsItemLimit(422))
+            m.assertFalse(Prairie.Home.rejectsItemLimit(500))
+        end sub
+
+        @describe("offersExploreAll")
+        @it("offers Explore all on non-featured rows with cards")
+        sub _()
+            m.assertTrue(Prairie.Home.offersExploreAll({ id: "recent", featured: false, items: [{}] }))
+            m.assertFalse(Prairie.Home.offersExploreAll({ id: "hero", featured: true, items: [{}] }))
+            m.assertFalse(Prairie.Home.offersExploreAll({ id: "empty", featured: false, items: [] }))
+            m.assertFalse(Prairie.Home.offersExploreAll({ id: "", featured: false, items: [{}] }))
+            m.assertFalse(Prairie.Home.offersExploreAll({ featured: false, items: [{}] }))
+            m.assertFalse(Prairie.Home.offersExploreAll(invalid))
         end sub
 
     end class

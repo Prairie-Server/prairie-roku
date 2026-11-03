@@ -85,6 +85,24 @@ namespace tests
             m.assertEqual(body.cursor, "cursor-1")
         end sub
 
+        @it("pages a Home section through source=section")
+        sub _()
+            request = Prairie.Catalog.buildCatalogRequest({
+                source: "section",
+                scope: "home",
+                sectionId: "recently_added",
+                offset: 0,
+                limit: 48
+            }, {
+                serverUrl: "https://prairie.example"
+            })
+            body = ParseJson(request.body)
+            m.assertEqual(body.source, "section")
+            m.assertEqual(body.scope, "home")
+            m.assertEqual(body.section_id, "recently_added")
+            m.assertInvalid(body.library_id)
+        end sub
+
         @it("normalizes v2 page metadata")
         sub _()
             page = Prairie.Catalog.pageFromResponse({
@@ -148,7 +166,45 @@ namespace tests
             m.assertEqual(del.path, "/api/v2/ratings/movie%3Aheat%201995")
             m.assertInvalid(del.body)
         end sub
+        @describe("episode cards")
+        @it("formats S01E02 codes")
+        sub _()
+            m.assertEqual(Prairie.Catalog.episodeCode(1, 2), "S01E02")
+            m.assertEqual(Prairie.Catalog.episodeCode(12, 104), "S12E104")
+            m.assertEqual(Prairie.Catalog.episodeCode(invalid, 3), "E03")
+            m.assertEqual(Prairie.Catalog.episodeCode(1, invalid), "")
+        end sub
+
+        @it("builds the card title from code and title")
+        sub _()
+            m.assertEqual(Prairie.Catalog.episodeCardTitle({ season_number: 1, episode_number: 2, title: "Pilot" }), "S01E02 · Pilot")
+            m.assertEqual(Prairie.Catalog.episodeCardTitle({ episode_number: 2, title: "Pilot" }, 3), "S03E02 · Pilot")
+            m.assertEqual(Prairie.Catalog.episodeCardTitle({ episode_number: 2 }, 3), "S03E02")
+            m.assertEqual(Prairie.Catalog.episodeCardTitle({ title: "Special" }), "Special")
+            m.assertEqual(Prairie.Catalog.episodeCardTitle({}), "Episode")
+        end sub
+
+        @it("formats air date and runtime")
+        sub _()
+            m.assertEqual(Prairie.Catalog.formatAirDate("2024-03-05"), "Mar 5, 2024")
+            m.assertEqual(Prairie.Catalog.formatAirDate("2019-12-31T00:00:00Z"), "Dec 31, 2019")
+            m.assertEqual(Prairie.Catalog.formatAirDate("2024-13-05"), "")
+            m.assertEqual(Prairie.Catalog.formatAirDate("soon"), "")
+            m.assertEqual(Prairie.Catalog.formatAirDate(invalid), "")
+            m.assertEqual(Prairie.Catalog.formatRuntime(45), "45m")
+            m.assertEqual(Prairie.Catalog.formatRuntime(60), "1h")
+            m.assertEqual(Prairie.Catalog.formatRuntime(65), "1h 5m")
+            m.assertEqual(Prairie.Catalog.formatRuntime(0), "")
+            m.assertEqual(Prairie.Catalog.formatRuntime(invalid), "")
+            m.assertEqual(Prairie.Catalog.episodeCardMeta({ air_date: "2024-03-05", runtime: 52 }), "Mar 5, 2024 · 52m")
+            m.assertEqual(Prairie.Catalog.episodeCardMeta({ runtime: 52 }), "52m")
+            m.assertEqual(Prairie.Catalog.episodeCardMeta({ air_date: "2024-03-05" }), "Mar 5, 2024")
+            m.assertEqual(Prairie.Catalog.episodeCardMeta({}), "")
+        end sub
+
+        @it("builds the More Like This path")
+        sub _()
+            m.assertEqual(Prairie.Catalog.similarPath("movie:heat 1995"), "/api/v2/recommendations/similar/movie%3Aheat%201995?limit=20")
+        end sub
     end class
 end namespace
-
-

@@ -57,6 +57,12 @@ namespace Prairie.Catalog
         if query.collectionId <> invalid and (query.collectionId as string).len() > 0
             body.collection_id = query.collectionId as string
         end if
+        if query.scope <> invalid and (query.scope as string).len() > 0
+            body.scope = query.scope as string
+        end if
+        if query.sectionId <> invalid and (query.sectionId as string).len() > 0
+            body.section_id = query.sectionId as string
+        end if
         if query.offset <> invalid
             body.seek = query.offset as integer
         end if
@@ -84,6 +90,107 @@ namespace Prairie.Catalog
 
     function episodesPath(seriesId as string, seasonNumber as integer) as string
         return "/api/v1/catalog/series/" + seriesId.encodeUriComponent() + "/seasons/" + seasonNumber.toStr() + "/episodes"
+    end function
+
+    ' GET /api/v2/recommendations/similar/{item_id} (the More Like This rail).
+    function similarPath(contentId as string) as string
+        return "/api/v2/recommendations/similar/" + contentId.encodeUriComponent() + "?limit=20"
+    end function
+
+    function twoDigits(value as integer) as string
+        if value < 10 and value >= 0
+            return "0" + value.toStr()
+        end if
+        return value.toStr()
+    end function
+
+    ' "S01E02" for an episode, "E02" without a season, "" without an episode number.
+    function episodeCode(seasonNumber as dynamic, episodeNumber as dynamic) as string
+        if not isNumber(episodeNumber)
+            return ""
+        end if
+        code = "E" + twoDigits(Int(episodeNumber))
+        if isNumber(seasonNumber)
+            code = "S" + twoDigits(Int(seasonNumber)) + code
+        end if
+        return code
+    end function
+
+    ' Episode card heading: "S01E02 · Title". fallbackSeason covers season
+    ' lists whose episodes omit season_number.
+    function episodeCardTitle(episode as object, fallbackSeason = invalid as dynamic) as string
+        title = ""
+        if episode.title <> invalid
+            title = episode.title as string
+        end if
+        season = episode.season_number
+        if not isNumber(season)
+            season = fallbackSeason
+        end if
+        code = episodeCode(season, episode.episode_number)
+        if code.len() = 0
+            if title.len() = 0
+                return "Episode"
+            end if
+            return title
+        end if
+        if title.len() = 0
+            return code
+        end if
+        return code + " · " + title
+    end function
+
+    ' "2024-03-05" (or an RFC 3339 timestamp) → "Mar 5, 2024"; "" when unparseable.
+    function formatAirDate(value as dynamic) as string
+        if value = invalid
+            return ""
+        end if
+        text = value as string
+        if text.len() < 10 or text.mid(4, 1) <> "-" or text.mid(7, 1) <> "-"
+            return ""
+        end if
+        year = text.left(4).toInt()
+        month = text.mid(5, 2).toInt()
+        day = text.mid(8, 2).toInt()
+        if year < 1 or month < 1 or month > 12 or day < 1 or day > 31
+            return ""
+        end if
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return months[month - 1] + " " + day.toStr() + ", " + year.toStr()
+    end function
+
+    ' Runtime minutes → "45m" or "1h 5m"; "" when absent.
+    function formatRuntime(minutes as dynamic) as string
+        if not isNumber(minutes)
+            return ""
+        end if
+        total = Int(minutes)
+        if total < 1
+            return ""
+        end if
+        if total < 60
+            return total.toStr() + "m"
+        end if
+        hours = total \ 60
+        rest = total mod 60
+        if rest = 0
+            return hours.toStr() + "h"
+        end if
+        return hours.toStr() + "h " + rest.toStr() + "m"
+    end function
+
+    ' Episode card second line: air date and runtime.
+    function episodeCardMeta(episode as object) as string
+        parts = []
+        airDate = formatAirDate(episode.air_date)
+        if airDate.len() > 0
+            parts.push(airDate)
+        end if
+        runtime = formatRuntime(episode.runtime)
+        if runtime.len() > 0
+            parts.push(runtime)
+        end if
+        return parts.join(" · ")
     end function
 
     function arrayFromResponse(data as dynamic, key as string) as object

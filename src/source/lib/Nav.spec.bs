@@ -1,0 +1,82 @@
+namespace tests
+    @suite("Prairie.Nav")
+    class NavSuite extends rooibos.BaseTestSuite
+
+        function ids(entries as object) as string
+            parts = []
+            for each entry in entries
+                parts.push(entry.id)
+            end for
+            return parts.join(",")
+        end function
+
+        @describe("topEntries")
+        @it("orders Search, Home, library types, then Live TV")
+        sub _()
+            libraries = [
+                { id: 4, name: "Books", type: "audiobooks" },
+                { id: 3, name: "Albums", type: "music" },
+                { id: 2, name: "Shows", type: "series" },
+                { id: 1, name: "Films", type: "movies" }
+            ]
+            entries = Prairie.Nav.topEntries(libraries, true)
+            m.assertEqual(m.ids(entries), "search,home,movies,series,music,audiobooks,livetv")
+            m.assertEqual(entries[2].label, "Movies")
+            m.assertEqual(entries[2].libraries.count(), 1)
+            m.assertEqual(entries[6].label, "Live TV")
+        end sub
+
+        @it("shows only types with a matching library and Live TV only with channels")
+        sub _()
+            entries = Prairie.Nav.topEntries([{ id: 1, type: "tv" }, { id: 2, type: "ebook" }, { id: 3 }, invalid], false)
+            m.assertEqual(m.ids(entries), "search,home,series")
+            m.assertEqual(m.ids(Prairie.Nav.topEntries(invalid, false)), "search,home")
+        end sub
+
+        @it("lists a mixed library under Movies and Series")
+        sub _()
+            entries = Prairie.Nav.topEntries([{ id: 1, type: "Mixed" }, { id: 2, type: "movie" }], false)
+            m.assertEqual(m.ids(entries), "search,home,movies,series")
+            m.assertEqual(entries[2].libraries.count(), 2)
+            m.assertEqual(entries[3].libraries.count(), 1)
+        end sub
+
+        @it("classifies library types")
+        sub _()
+            m.assertTrue(Prairie.Nav.matchesTab("movies", " Video "))
+            m.assertTrue(Prairie.Nav.matchesTab("series", "tvshows"))
+            m.assertTrue(Prairie.Nav.matchesTab("music", "audio"))
+            m.assertTrue(Prairie.Nav.matchesTab("audiobooks", "audiobook"))
+            m.assertFalse(Prairie.Nav.matchesTab("music", "audiobook"))
+            m.assertFalse(Prairie.Nav.matchesTab("unknown", "movie"))
+        end sub
+
+        @it("maps tabs to catalog types")
+        sub _()
+            m.assertEqual(Prairie.Nav.tabCatalogType("movies"), "movie")
+            m.assertEqual(Prairie.Nav.tabCatalogType("series"), "series")
+            m.assertEqual(Prairie.Nav.tabCatalogType("audiobooks"), "audiobook")
+            m.assertEqual(Prairie.Nav.tabCatalogType("music"), "")
+        end sub
+
+        @it("finds entries by id")
+        sub _()
+            entries = Prairie.Nav.topEntries([], true)
+            m.assertEqual(Prairie.Nav.indexOfEntry(entries, "home"), 1)
+            m.assertEqual(Prairie.Nav.indexOfEntry(entries, "livetv"), 2)
+            m.assertEqual(Prairie.Nav.indexOfEntry(entries, "movies"), -1)
+            m.assertEqual(Prairie.Nav.indexOfEntry(invalid, "home"), -1)
+        end sub
+
+        @describe("profile menu")
+        @it("keeps the shared order for the rows Roku has")
+        sub _()
+            m.assertEqual(Prairie.Nav.profileMenuLabels().join("|"), "Switch Profile|Settings|Switch Server|Sign Out")
+            m.assertEqual(Prairie.Nav.profileMenuIdAt(0), "switchProfile")
+            m.assertEqual(Prairie.Nav.profileMenuIdAt(3), "signOut")
+            m.assertEqual(Prairie.Nav.profileMenuIdAt(4), "")
+            m.assertEqual(Prairie.Nav.profileMenuIdAt(-1), "")
+        end sub
+
+    end class
+end namespace

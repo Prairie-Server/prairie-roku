@@ -1,7 +1,60 @@
 namespace Prairie.Home
 
-    function sectionsPath() as string
-        return "/api/v1/home/sections"
+    ' Cards a Home row shows before its trailing "Explore all" card.
+    function rowMaxItems() as integer
+        return 20
+    end function
+
+    ' GET /api/v2/home/sections; item_limit only when the server advertised it.
+    function sectionsPath(itemLimit = 0 as integer) as string
+        if itemLimit > 0
+            return "/api/v2/home/sections?item_limit=" + itemLimit.toStr()
+        end if
+        return "/api/v2/home/sections"
+    end function
+
+    function capabilitiesPath() as string
+        return "/api/v2/home/capabilities"
+    end function
+
+    ' The item_limit the Home section list carries, from the capability's
+    ' section_item_limit_max: min(20, max), or 0 (send nothing) when the
+    ' server does not advertise it.
+    function sectionItemLimitFromCapabilities(data as dynamic) as integer
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return 0
+        end if
+        advertised = data.section_item_limit_max
+        kind = LCase(type(advertised))
+        if kind <> "integer" and kind <> "rointeger" and kind <> "longinteger" and kind <> "rolonginteger" and kind <> "float" and kind <> "rofloat" and kind <> "double" and kind <> "rodouble"
+            return 0
+        end if
+        limit = Int(advertised)
+        if limit < 1
+            return 0
+        end if
+        if limit > rowMaxItems()
+            return rowMaxItems()
+        end if
+        return limit
+    end function
+
+    ' A server that predates item_limit answers it with 422 unknown_parameter.
+    function rejectsItemLimit(status as integer) as boolean
+        return status = 422
+    end function
+
+    ' Every non-featured row with cards ends in "Explore all", not only rows
+    ' whose total exceeds what they show: Home drops titles another row
+    ' already shows, so a row can look complete while its page holds more.
+    function offersExploreAll(section as object) as boolean
+        if section = invalid or section.featured = true
+            return false
+        end if
+        if section.id = invalid or (section.id as string).len() = 0
+            return false
+        end if
+        return type(section.items) = "roArray" and section.items.count() > 0
     end function
 
     function sectionsFromResponse(data as dynamic) as object
@@ -18,6 +71,7 @@ namespace Prairie.Home
                     id: "",
                     section_type: "",
                     title: "",
+                    featured: false,
                     items: []
                 }
                 if section.id <> invalid
@@ -29,10 +83,13 @@ namespace Prairie.Home
                 if section.title <> invalid
                     item.title = section.title as string
                 end if
+                if section.featured = true
+                    item.featured = true
+                end if
                 if type(section.items) = "roArray"
                     filtered = []
                     for each entry in section.items
-                        if type(entry) = "roAssociativeArray"
+                        if type(entry) = "roAssociativeArray" and filtered.count() < rowMaxItems()
                             filtered.push(entry)
                         end if
                     end for

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  RowList item for poster rails and grids. Focus draws a white outline, lifts
+  the poster ~5% with a drop shadow, and leaves the caption weight unchanged.
+  itemContent.isExploreAll draws the row's trailing "Explore all" card.
+-->
+<component name="PosterCard" extends="Group">
+    <interface>
+        <field id="itemContent" type="node" onChange="onItemContent" />
+        <field id="width" type="float" onChange="onLayout" />
+        <field id="height" type="float" onChange="onLayout" />
+        <field id="focusPercent" type="float" onChange="onFocusChange" />
+        <field id="rowFocusPercent" type="float" onChange="onFocusChange" />
+        <field id="rowListHasFocus" type="bool" onChange="onFocusChange" />
+    </interface>
+    <script type="text/brightscript" uri="PosterCard.bs" />
+    <children>
+        <Group id="lift">
+            <Rectangle id="shadow" color="0x000000FF" opacity="0" />
+            <Rectangle id="outline" color="0xFFFFFFFF" opacity="0" />
+            <Rectangle id="tile" color="0x222B38FF" />
+            <Poster id="poster" loadDisplayMode="scaleToZoom" />
+            <Label
+                id="exploreLabel"
+                text="Explore all  ›"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumBoldSystemFont"
+                visible="false"
+            />
+        </Group>
+        <Label
+            id="caption"
+            text=""
+            horizAlign="left"
+            vertAlign="top"
+            color="0xF3EFE6FF"
+            font="font:SmallSystemFont"
+        />
+    </children>
+</component>

@@ -66,14 +66,15 @@
         />
         <RowList
             id="results"
-            translation="[40, 390]"
-            itemSize="[1840, 300]"
-            rowItemSize="[[200, 280]]"
+            translation="[60, 400]"
+            itemComponentName="PosterCard"
+            itemSize="[1800, 300]"
+            rowItemSize="[[160, 280]]"
             numRows="2"
-            itemSpacing="[20, 20]"
-            rowItemSpacing="[[20, 0]]"
+            itemSpacing="[0, 24]"
+            rowItemSpacing="[[32, 0]]"
             showRowLabel="[false]"
-            drawFocusFeedback="true"
+            drawFocusFeedback="false"
         />
     </children>
 </component>
