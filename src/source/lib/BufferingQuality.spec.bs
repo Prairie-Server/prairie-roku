@@ -1,0 +1,83 @@
+namespace tests
+    @suite("Prairie.BufferingQuality")
+    class BufferingQualitySuite extends rooibos.BaseTestSuite
+
+        @describe("stall counting")
+        @it("ignores startup, seek and pre-play buffering")
+        sub _()
+            s = Prairie.BufferingQuality.create(0)
+            m.assertFalse(Prairie.BufferingQuality.onBuffering(s, 1000))
+            Prairie.BufferingQuality.onPlaying(s, 2000)
+            m.assertFalse(Prairie.BufferingQuality.onBuffering(s, 5000))
+            m.assertTrue(Prairie.BufferingQuality.onBuffering(s, 12000))
+            ' Still in the same stall.
+            m.assertFalse(Prairie.BufferingQuality.onBuffering(s, 12500))
+            Prairie.BufferingQuality.onPlaying(s, 13000)
+            Prairie.BufferingQuality.onSeek(s, 20000)
+            m.assertFalse(Prairie.BufferingQuality.onBuffering(s, 21000))
+            m.assertTrue(Prairie.BufferingQuality.onBuffering(s, 25000))
+            m.assertEqual(s.stallTimes.count(), 2)
+        end sub
+
+        @it("lowers after three stalls in the window, only with Auto in charge")
+        sub _()
+            s = Prairie.BufferingQuality.create(0)
+            Prairie.BufferingQuality.onPlaying(s, 0)
+            for each t in [20000, 40000, 60000]
+                Prairie.BufferingQuality.onBuffering(s, t)
+                Prairie.BufferingQuality.onPlaying(s, t + 1000)
+            end for
+            m.assertTrue(Prairie.BufferingQuality.shouldLower(s, 61000, true))
+            m.assertFalse(Prairie.BufferingQuality.shouldLower(s, 61000, false))
+            ' Old stalls fall out of the window.
+            m.assertFalse(Prairie.BufferingQuality.shouldLower(s, 150000, true))
+            Prairie.BufferingQuality.onBuffering(s, 200000)
+            m.assertEqual(s.stallTimes.count(), 1)
+        end sub
+
+        @it("lowers on one long stall and then cools down")
+        sub _()
+            s = Prairie.BufferingQuality.create(0)
+            Prairie.BufferingQuality.onPlaying(s, 0)
+            Prairie.BufferingQuality.onBuffering(s, 30000)
+            m.assertFalse(Prairie.BufferingQuality.shouldLower(s, 35000, true))
+            m.assertTrue(Prairie.BufferingQuality.shouldLower(s, 40000, true))
+            Prairie.BufferingQuality.onQualityChanged(s, 40000)
+            m.assertFalse(s.hasPlayed)
+            m.assertEqual(s.stallStartMs, -1)
+            Prairie.BufferingQuality.onPlaying(s, 41000)
+            Prairie.BufferingQuality.onBuffering(s, 60000)
+            m.assertFalse(Prairie.BufferingQuality.shouldLower(s, 75000, true))
+            m.assertTrue(Prairie.BufferingQuality.shouldLower(s, 170000, true))
+            Prairie.BufferingQuality.onSourceStart(s, 170000)
+            m.assertEqual(s.stallTimes.count(), 0)
+        end sub
+
+        @describe("nextLowerQualityId")
+        @it("steps one rung down the ladder")
+        sub _()
+            options = Prairie.QualityLadder.buildQualityOptions({ ladder: Prairie.QualityLadder.fallbackLadder(), nativeHeight: 2160 })
+            m.assertInvalid(Prairie.BufferingQuality.nextLowerQualityId(invalid, "auto", 0))
+            m.assertInvalid(Prairie.BufferingQuality.nextLowerQualityId([{ id: "auto", isAuto: true }], "auto", 0))
+            m.assertEqual(Prairie.BufferingQuality.nextLowerQualityId(options, "auto", 1080), "720p-high")
+            m.assertEqual(Prairie.BufferingQuality.nextLowerQualityId(options, "AUTO", 0), "1080p")
+            m.assertEqual(Prairie.BufferingQuality.nextLowerQualityId(options, "1080p-high", 0), "1080p")
+            m.assertEqual(Prairie.BufferingQuality.nextLowerQualityId(options, "480p", 0), "420p")
+            m.assertInvalid(Prairie.BufferingQuality.nextLowerQualityId(options, "420p", 0))
+            m.assertInvalid(Prairie.BufferingQuality.nextLowerQualityId(options, "original", 0))
+            m.assertInvalid(Prairie.BufferingQuality.nextLowerQualityId(options, "auto", 420))
+            single = [{ id: "720p", resolution: "720p" }]
+            m.assertEqual(Prairie.BufferingQuality.nextLowerQualityId(single, "auto", 0), "720p")
+        end sub
+
+        @it("parses rung heights")
+        sub _()
+            m.assertEqual(Prairie.BufferingQuality.heightOf(invalid), 0)
+            m.assertEqual(Prairie.BufferingQuality.heightOf("4K"), 2160)
+            m.assertEqual(Prairie.BufferingQuality.heightOf(" 720p "), 720)
+            m.assertEqual(Prairie.BufferingQuality.heightOf("480"), 480)
+            m.assertEqual(Prairie.BufferingQuality.heightOf(""), 0)
+        end sub
+
+    end class
+end namespace

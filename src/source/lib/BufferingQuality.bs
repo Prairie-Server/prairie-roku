@@ -1,0 +1,167 @@
+namespace Prairie.BufferingQuality
+
+    ' Minimal port of the buffering-quality controller (android #636): when
+    ' Auto playback keeps stalling, step down one ladder rung through a
+    ' quality_change replan and offer Restore. Startup buffering, seeks and
+    ' stream restarts are not counted as stalls. State is mutated in place.
+
+    function startupGraceMs() as integer
+        return 10000
+    end function
+
+    function seekGraceMs() as integer
+        return 4000
+    end function
+
+    function stallWindowMs() as integer
+        return 120000
+    end function
+
+    function stallCountToLower() as integer
+        return 3
+    end function
+
+    function longStallMs() as integer
+        return 10000
+    end function
+
+    function cooldownMs() as integer
+        return 120000
+    end function
+
+    function create(nowMs as integer) as object
+        return {
+            stallTimes: [],
+            stallStartMs: -1,
+            hasPlayed: false,
+            graceUntilMs: nowMs + startupGraceMs(),
+            ignoreUntilMs: -1,
+            cooldownUntilMs: -1
+        }
+    end function
+
+    ' A new stream (start, replan, quality change) begins: forget stalls.
+    sub onSourceStart(state as object, nowMs as integer)
+        state.stallTimes = []
+        state.stallStartMs = -1
+        state.hasPlayed = false
+        state.graceUntilMs = nowMs + startupGraceMs()
+    end sub
+
+    sub onPlaying(state as object, nowMs as integer)
+        if not state.hasPlayed
+            ' Startup grace runs from the first frame, not from the request.
+            state.graceUntilMs = nowMs + startupGraceMs()
+        end if
+        state.hasPlayed = true
+        state.stallStartMs = -1
+    end sub
+
+    sub onSeek(state as object, nowMs as integer)
+        state.ignoreUntilMs = nowMs + seekGraceMs()
+        state.stallStartMs = -1
+    end sub
+
+    ' Returns true when this buffering event counted as a stall.
+    function onBuffering(state as object, nowMs as integer) as boolean
+        if not state.hasPlayed or nowMs < state.graceUntilMs or nowMs < state.ignoreUntilMs
+            return false
+        end if
+        if state.stallStartMs >= 0
+            return false
+        end if
+        state.stallStartMs = nowMs
+        kept = []
+        for each t in state.stallTimes
+            if nowMs - t < stallWindowMs()
+                kept.push(t)
+            end if
+        end for
+        kept.push(nowMs)
+        state.stallTimes = kept
+        return true
+    end function
+
+    ' Should playback step down now? Only while Auto is in charge (Auto, or a
+    ' rung this controller chose), outside the cooldown.
+    function shouldLower(state as object, nowMs as integer, autoInCharge as boolean) as boolean
+        if not autoInCharge
+            return false
+        end if
+        if state.cooldownUntilMs >= 0 and nowMs < state.cooldownUntilMs
+            return false
+        end if
+        recent = 0
+        for each t in state.stallTimes
+            if nowMs - t < stallWindowMs()
+                recent = recent + 1
+            end if
+        end for
+        if recent >= stallCountToLower()
+            return true
+        end if
+        return state.stallStartMs >= 0 and nowMs - state.stallStartMs >= longStallMs()
+    end function
+
+    ' After a lower or a Restore: no further automatic change for a while.
+    sub onQualityChanged(state as object, nowMs as integer)
+        state.cooldownUntilMs = nowMs + cooldownMs()
+        onSourceStart(state, nowMs)
+    end sub
+
+    function heightOf(resolution as dynamic) as integer
+        if resolution = invalid
+            return 0
+        end if
+        text = LCase((resolution as string).trim())
+        if text = "4k"
+            return 2160
+        end if
+        if text.right(1) = "p"
+            text = text.left(text.len() - 1)
+        end if
+        return text.toInt()
+    end function
+
+    ' Next rung below the current one. currentId is "auto" (use the plan's
+    ' effective height when known) or a rung id this controller chose before.
+    ' Options are Auto, Original, then rungs highest first. invalid = none.
+    function nextLowerQualityId(options as dynamic, currentId as string, effectiveHeight as integer) as dynamic
+        if options = invalid or type(options) <> "roArray"
+            return invalid
+        end if
+        rungs = []
+        for each opt in options
+            if opt <> invalid and opt.isAuto <> true and opt.isOriginal <> true and heightOf(opt.resolution) > 0
+                rungs.push(opt)
+            end if
+        end for
+        if rungs.count() = 0
+            return invalid
+        end if
+        if LCase(currentId) <> "auto"
+            ' A rung chosen earlier: the next one down the ladder.
+            for i = 0 to rungs.count() - 2
+                if (rungs[i].id as string) = currentId
+                    return rungs[i + 1].id
+                end if
+            end for
+            return invalid
+        end if
+        ceiling = effectiveHeight
+        if ceiling <= 0
+            ' Auto with an unknown height: drop below the top rung.
+            if rungs.count() > 1
+                return rungs[1].id
+            end if
+            return rungs[0].id
+        end if
+        for each opt in rungs
+            if heightOf(opt.resolution) < ceiling
+                return opt.id
+            end if
+        end for
+        return invalid
+    end function
+
+end namespace
