@@ -1,0 +1,92 @@
+import "pkg:/source/lib/ServerRegistry.bs"
+import "pkg:/source/lib/Session.bs"
+import "pkg:/source/lib/Persist.bs"
+
+' Sign Out's choice and outcome, as on Android TV / Apple TV: keep the server
+' and open its sign-in screen, or forget it too.
+namespace Prairie.SignOut
+
+    function logoutPath() as string
+        return "/api/v1/auth/logout"
+    end function
+
+    function logoutTimeoutMs() as integer
+        return 5000
+    end function
+
+    function dialogTitle() as string
+        return "Sign Out"
+    end function
+
+    function dialogMessage() as string
+        return "Choose whether to keep or remove this server from this TV."
+    end function
+
+    function dialogEntries() as object
+        return [
+            { id: "cancel", label: "Cancel" },
+            { id: "keep", label: "Sign Out" },
+            { id: "remove", label: "Sign Out & Remove Server" }
+        ]
+    end function
+
+    function dialogLabels() as object
+        labels = []
+        for each entry in dialogEntries()
+            labels.push(entry.label)
+        end for
+        return labels
+    end function
+
+    ' Choice id for a Dialog buttonSelected index; "cancel" when out of range.
+    function choiceAt(index as integer) as string
+        entries = dialogEntries()
+        if index < 0 or index >= entries.count()
+            return "cancel"
+        end if
+        return entries[index].id
+    end function
+
+    function removeServerFailedMessage() as string
+        return "Prairie couldn't remove the saved server. Please try again."
+    end function
+
+    function sessionChangedMessage() as string
+        return "The active session changed. Try signing out again."
+    end function
+
+    ' Clear the signed-out login locally and, with removeServer, forget the
+    ' server. Returns { registry, prefillUrl, notice }: the sign-in screen to
+    ' open next (the kept server, the next saved one, or blank) and what
+    ' didn't work, when something didn't.
+    function finish(registry as object, store as object, serverUrl as string, removeServer as boolean) as object
+        serverId = Prairie.ServerRegistry.entryIdFromUrl(serverUrl)
+        registry = Prairie.ServerRegistry.clearTokens(registry, serverId)
+        Prairie.Session.clearSession(store)
+        result = {
+            registry: registry,
+            prefillUrl: serverUrl,
+            notice: ""
+        }
+        if not removeServer or Prairie.ServerRegistry.findIndex(registry, serverId) < 0
+            Prairie.ServerRegistry.save(registry, store)
+            return result
+        end if
+        removed = Prairie.ServerRegistry.remove(registry, serverId)
+        if not Prairie.ServerRegistry.save(removed, store)
+            ' Signed out, but the server is still saved: its sign-in screen.
+            result.registry = Prairie.ServerRegistry.load(store)
+            result.notice = removeServerFailedMessage()
+            return result
+        end if
+        result.registry = removed
+        result.prefillUrl = ""
+        idx = Prairie.ServerRegistry.findIndex(removed, removed.activeServerId)
+        if idx >= 0
+            result.prefillUrl = removed.entries[idx].url
+        end if
+        Prairie.Persist.forgetLastServerUrl(serverUrl, result.prefillUrl, store)
+        return result
+    end function
+
+end namespace
