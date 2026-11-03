@@ -1,0 +1,74 @@
+import "pkg:/source/lib/ApiClient.bs"
+
+' Mark as Watched / Mark as Unwatched (Android TV card and detail actions):
+' POST or DELETE /api/v2/watched/{id} for the acting profile.
+namespace Prairie.WatchedState
+
+    function path(contentId as string) as string
+        return "/api/v2/watched/" + contentId.encodeUriComponent()
+    end function
+
+    ' The viewer's watched flag on a catalog, Home or detail item.
+    function isWatched(item as dynamic) as boolean
+        if item = invalid or type(item) <> "roAssociativeArray"
+            return false
+        end if
+        if type(item.user_state) = "roAssociativeArray" and item.user_state.played = true
+            return true
+        end if
+        return item.played = true or item.watched = true
+    end function
+
+    ' The item with its watched flag set (a shallow copy).
+    function withWatched(item as object, watched as boolean) as object
+        copy = {}
+        copy.append(item)
+        state = {}
+        if type(item.user_state) = "roAssociativeArray"
+            state.append(item.user_state)
+        end if
+        state.played = watched
+        copy.user_state = state
+        if copy.doesExist("played")
+            copy.played = watched
+        end if
+        if copy.doesExist("watched")
+            copy.watched = watched
+        end if
+        return copy
+    end function
+
+    function buildRequest(options as object, contentId as string, watched as boolean) as object
+        method = "DELETE"
+        if watched
+            method = "POST"
+        end if
+        return Prairie.Api.buildRequest(options, path(contentId), method)
+    end function
+
+    ' The action that flips the current state.
+    function actionLabel(currentlyWatched as boolean) as string
+        if currentlyWatched
+            return "Mark as Unwatched"
+        end if
+        return "Mark as Watched"
+    end function
+
+    function dialogButtons(currentlyWatched as boolean) as object
+        return [actionLabel(currentlyWatched), "Cancel"]
+    end function
+
+    ' "Couldn't mark as watched." plus the server's reason, or "Try again.".
+    function failureMessage(targetWatched as boolean, errorInfo as dynamic) as string
+        action = "unwatched"
+        if targetWatched
+            action = "watched"
+        end if
+        reason = Prairie.Api.serverMessage(errorInfo)
+        if reason.len() = 0
+            reason = "Try again."
+        end if
+        return "Couldn't mark as " + action + ". " + reason
+    end function
+
+end namespace

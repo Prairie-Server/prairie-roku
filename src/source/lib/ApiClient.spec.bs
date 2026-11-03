@@ -120,5 +120,15 @@ namespace tests
             m.assertEqual(err.code, "code")
         end sub
 
+        @describe("serverMessage")
+        @it("reads the first text field of an error body")
+        sub _()
+            m.assertEqual(Prairie.Api.serverMessage({ body: { message: " Nope " } }), "Nope")
+            m.assertEqual(Prairie.Api.serverMessage({ body: { message: "", detail: "Gone" } }), "Gone")
+            m.assertEqual(Prairie.Api.serverMessage({ body: { error: 5 } }), "")
+            m.assertEqual(Prairie.Api.serverMessage({ body: "text" }), "")
+            m.assertEqual(Prairie.Api.serverMessage(invalid), "")
+        end sub
+
     end class
 end namespace
