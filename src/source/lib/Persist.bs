@@ -51,6 +51,19 @@ namespace Prairie.Persist
         return Prairie.Url.normalizeServerUrl(parsed.serverUrl as string)
     end function
 
+    ' After a server is forgotten: stop remembering it as the last server
+    ' (so a restart doesn't bring it back), pointing at nextUrl instead.
+    sub forgetLastServerUrl(removedUrl as string, nextUrl as string, store as object)
+        if loadLastServerUrl(store) <> Prairie.Url.normalizeServerUrl(removedUrl)
+            return
+        end if
+        if Prairie.Url.normalizeServerUrl(nextUrl).len() > 0
+            saveLastServerUrl(nextUrl, store)
+        else
+            store.removeItem(lastServerUrlKey())
+        end if
+    end sub
+
     sub saveLastServerUrl(url as string, store as object)
         normalized = Prairie.Url.normalizeServerUrl(url)
         if normalized.len() > 0

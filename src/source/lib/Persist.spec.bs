@@ -67,5 +67,18 @@ namespace tests
             m.assertEqual(Prairie.Persist.loadLastServerUrl(m.store), "https://keep.example.com")
         end sub
 
+        @describe("forgetLastServerUrl")
+        @it("moves the last server to the next one or clears it")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            Prairie.Persist.saveLastServerUrl("https://a.example", store)
+            Prairie.Persist.forgetLastServerUrl("https://other.example", "", store)
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(store), "https://a.example")
+            Prairie.Persist.forgetLastServerUrl("https://a.example/", "https://b.example", store)
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(store), "https://b.example")
+            Prairie.Persist.forgetLastServerUrl("https://b.example", "", store)
+            m.assertEqual(store.getItem(Prairie.Persist.lastServerUrlKey()), invalid)
+        end sub
+
     end class
 end namespace

@@ -1,0 +1,133 @@
+' Sign-in screen wording and layout shared with Android TV / Apple TV.
+namespace Prairie.SignIn
+
+    function fallbackDeviceName() as string
+        return "Roku"
+    end function
+
+    ' The name this TV gives itself when it asks to sign in: the Roku's own
+    ' device name (Settings > System > About), trimmed and kept short enough
+    ' for an approval card. Falls back to "Roku" when the device has none.
+    function deviceName(friendlyName as dynamic) as string
+        if friendlyName = invalid
+            return fallbackDeviceName()
+        end if
+        name = (friendlyName as string).trim()
+        if name.len() > 63
+            name = name.left(63).trim()
+        end if
+        if name.len() = 0
+            return fallbackDeviceName()
+        end if
+        return name
+    end function
+
+    ' "Scan…" guidance under the code; activate is the server's /activate URL.
+    function scanHint(activate as string) as string
+        target = activate.trim()
+        if target.len() = 0
+            target = "your server's /activate page"
+        end if
+        return "Scan the code with your phone's camera, or go to " + target + " and enter it. Approve on your phone and this TV signs in by itself."
+    end function
+
+    ' Copy for a device sign-in state: { status, hint, action, showsCode }.
+    ' States: gettingCode, waiting, newCode, declined, failed.
+    function stateCopy(state as string, activate = "" as string) as object
+        copy = {
+            status: "Waiting for approval",
+            hint: scanHint(activate),
+            action: "Show a new code",
+            showsCode: true
+        }
+        if state = "gettingCode"
+            copy.status = "Getting a sign-in code…"
+            copy.showsCode = false
+        else if state = "newCode"
+            copy.status = "New code. Waiting for approval."
+        else if state = "declined"
+            ' A decline withdraws the code, so there is nothing left to scan.
+            copy.status = "Sign-in was declined."
+            copy.hint = "Show a new code to try again."
+            copy.showsCode = false
+        else if state = "failed"
+            copy.status = "Couldn't get a sign-in code."
+            copy.action = "Try again"
+            copy.showsCode = false
+        end if
+        return copy
+    end function
+
+    ' Characters of a sign-in code with group separators (- or space) turned
+    ' into one gap: "ABCD-EFGH" → ["A","B","C","D"," ","E","F","G","H"].
+    function codeCharacters(code as string) as object
+        chars = []
+        trimmed = UCase(code.trim())
+        for i = 0 to trimmed.len() - 1
+            ch = trimmed.mid(i, 1)
+            if ch = "-" or ch = " "
+                if chars.count() > 0 and chars[chars.count() - 1] <> " "
+                    chars.push(" ")
+                end if
+            else
+                chars.push(ch)
+            end if
+        end for
+        if chars.count() > 0 and chars[chars.count() - 1] = " "
+            chars.pop()
+        end if
+        return chars
+    end function
+
+    ' One monospaced line: each character in an equal-width cell (a gap is half
+    ' a cell), scaled down from maxCell so the line fits maxWidth.
+    ' Returns { cells: [{ text, x }], cellWidth, width }.
+    function codeLayout(code as string, maxWidth as integer, maxCell as integer) as object
+        chars = codeCharacters(code)
+        units = 0
+        for each ch in chars
+            if ch = " "
+                units = units + 1
+            else
+                units = units + 2
+            end if
+        end for
+        cellWidth = maxCell
+        if units > 0 and cellWidth * units > maxWidth * 2
+            cellWidth = Int((maxWidth * 2) / units)
+        end if
+        cells = []
+        x = 0
+        for each ch in chars
+            if ch = " "
+                x = x + Int(cellWidth / 2)
+            else
+                cells.push({ text: ch, x: x })
+                x = x + cellWidth
+            end if
+        end for
+        return {
+            cells: cells,
+            cellWidth: cellWidth,
+            width: x
+        }
+    end function
+
+    ' Password sign-in failure wording; a 401 is a wrong username or password.
+    function loginFailureMessage(status as integer, message as string) as string
+        if status = 401
+            return "Incorrect username or password."
+        end if
+        if status = 429
+            return "Too many attempts. Wait a moment, then try again."
+        end if
+        if status <= 0 or status = 408
+            return "Network error. Check your connection."
+        end if
+        if message.trim().len() = 0
+            return "Login failed"
+        end if
+        return message
+    end function
+
+end namespace

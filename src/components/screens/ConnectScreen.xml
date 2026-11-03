@@ -6,13 +6,16 @@
         <field id="errorText" type="string" value="" />
         <field id="submitRequest" type="assocarray" />
         <field id="quickConnectStartRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="quickConnectState" type="string" value="" alwaysNotify="true" />
+        <field id="quickConnectActivate" type="string" value="" />
         <field id="quickConnectUserCode" type="string" value="" />
         <field id="quickConnectMatchCode" type="string" value="" />
         <field id="quickConnectVerificationUri" type="string" value="" />
-        <field id="quickConnectStatus" type="string" value="" />
+        <field id="quickConnectStatus" type="string" value="" alwaysNotify="true" />
         <field id="openServers" type="boolean" value="false" alwaysNotify="true" />
         <field id="scanRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
+        <function name="serverCandidates" />
     </interface>
     <script type="text/brightscript" uri="ConnectScreen.bs" />
     <children>
@@ -25,7 +28,7 @@
         <Label
             id="eyebrow"
             text="ROKU"
-            translation="[120, 160]"
+            translation="[120, 110]"
             width="800"
             font="font:SmallBoldSystemFont"
             color="0xE0A84AFF"
@@ -33,16 +36,16 @@
         <Label
             id="brand"
             text="Prairie"
-            translation="[120, 200]"
+            translation="[120, 145]"
             width="1200"
-            height="140"
+            height="110"
             font="font:LargeBoldSystemFont"
             color="0xF3EFE6FF"
         />
         <Label
             id="lede"
-            text="Connect with a password, or scan Quick Connect from another signed-in device."
-            translation="[120, 360]"
+            text="Sign in with a password, or approve this Roku from your phone."
+            translation="[120, 265]"
             width="700"
             height="80"
             wrap="true"
@@ -50,30 +53,79 @@
             color="0x9AA3B2FF"
         />
 
-        <Label text="Server URL" translation="[120, 470]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+        <Label id="serverUrlLabel" text="Server address" translation="[120, 360]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
         <TextEditBox
             id="serverUrl"
-            translation="[120, 510]"
+            translation="[120, 400]"
             width="700"
-            hintText="https://prairie.example.com"
+            hintText="prairie.example.com or 192.168.1.10"
             maxTextLength="200"
             showKeyboardOnFocus="true"
         />
 
-        <Label text="Username" translation="[120, 600]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+        <Rectangle
+            id="advancedBg"
+            translation="[120, 478]"
+            width="300"
+            height="56"
+            color="0x222B38FF"
+            focusable="true"
+        >
+            <Label
+                id="advancedLabel"
+                text="Advanced options"
+                width="300"
+                height="56"
+                horizAlign="center"
+                vertAlign="center"
+                font="font:SmallSystemFont"
+                color="0xF3EFE6FF"
+            />
+        </Rectangle>
+        <Rectangle
+            id="protocolBg"
+            translation="[440, 478]"
+            width="200"
+            height="56"
+            color="0x222B38FF"
+            focusable="true"
+            visible="false"
+        >
+            <Label
+                id="protocolLabel"
+                text="Protocol: Auto"
+                width="200"
+                height="56"
+                horizAlign="center"
+                vertAlign="center"
+                font="font:SmallSystemFont"
+                color="0xF3EFE6FF"
+            />
+        </Rectangle>
+        <TextEditBox
+            id="port"
+            translation="[660, 476]"
+            width="160"
+            hintText="Port: auto"
+            maxTextLength="5"
+            showKeyboardOnFocus="true"
+            visible="false"
+        />
+
+        <Label id="usernameLabel" text="Username" translation="[120, 560]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
         <TextEditBox
             id="username"
-            translation="[120, 640]"
+            translation="[120, 600]"
             width="700"
             hintText="Username"
             maxTextLength="120"
             showKeyboardOnFocus="true"
         />
 
-        <Label text="Password" translation="[120, 730]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
+        <Label id="passwordLabel" text="Password" translation="[120, 680]" color="0x9AA3B2FF" font="font:SmallSystemFont" />
         <TextEditBox
             id="password"
-            translation="[120, 770]"
+            translation="[120, 720]"
             width="700"
             hintText="Password"
             maxTextLength="120"
@@ -84,9 +136,9 @@
         <Label
             id="errorLabel"
             text=""
-            translation="[120, 860]"
+            translation="[120, 800]"
             width="700"
-            height="60"
+            height="120"
             wrap="true"
             font="font:SmallSystemFont"
             color="0xE07070FF"
@@ -94,9 +146,9 @@
 
         <Rectangle
             id="quickConnectPanel"
-            translation="[920, 340]"
+            translation="[920, 300]"
             width="860"
-            height="560"
+            height="600"
             color="0x1C2430FF"
         >
             <Label
@@ -119,17 +171,17 @@
             />
             <Label
                 id="quickConnectHint"
-                text="Scan the QR code to approve this Roku, or enter the text code in Settings → Quick Connect."
+                text=""
                 translation="[40, 124]"
                 width="780"
-                height="70"
+                height="100"
                 wrap="true"
                 font="font:SmallSystemFont"
                 color="0x9AA3B2FF"
             />
             <Rectangle
                 id="quickConnectQrFrame"
-                translation="[40, 210]"
+                translation="[40, 240]"
                 width="236"
                 height="236"
                 color="0xFFFFFFFF"
@@ -148,48 +200,40 @@
                 />
             </Rectangle>
             <Label
+                id="quickConnectCodeLabel"
+                text="SIGN-IN CODE"
+                translation="[310, 250]"
+                width="510"
+                font="font:SmallBoldSystemFont"
+                color="0x9AA3B2FF"
+            />
+            <Group id="quickConnectCodeRow" translation="[310, 286]" />
+            <Label
                 id="quickConnectMatchLabel"
                 text="MATCH"
-                translation="[310, 220]"
-                width="500"
+                translation="[310, 380]"
+                width="510"
                 font="font:SmallBoldSystemFont"
                 color="0x9AA3B2FF"
             />
             <Label
                 id="quickConnectMatch"
                 text=""
-                translation="[310, 256]"
-                width="500"
+                translation="[310, 416]"
+                width="510"
                 height="50"
                 font="font:MediumBoldSystemFont"
                 color="0xF3EFE6FF"
             />
             <Label
-                id="quickConnectCodeLabel"
-                text="CODE"
-                translation="[310, 330]"
-                width="500"
-                font="font:SmallBoldSystemFont"
-                color="0x9AA3B2FF"
-            />
-            <Label
-                id="quickConnectCode"
-                text=""
-                translation="[310, 366]"
-                width="500"
-                height="70"
-                font="font:LargeBoldSystemFont"
-                color="0xE0A84AFF"
-            />
-            <Label
                 id="quickConnectStatusLabel"
                 text=""
-                translation="[40, 470]"
+                translation="[40, 500]"
                 width="780"
-                height="50"
+                height="80"
                 wrap="true"
-                font="font:SmallSystemFont"
-                color="0x9AA3B2FF"
+                font="font:SmallBoldSystemFont"
+                color="0xF3EFE6FF"
             />
         </Rectangle>
 
@@ -212,7 +256,7 @@
         >
             <Label
                 id="connectLabel"
-                text="▶ Connect"
+                text="▶ Sign in"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -231,7 +275,7 @@
         >
             <Label
                 id="serversLabel"
-                text="☰ Servers"
+                text="Change server"
                 width="280"
                 height="64"
                 horizAlign="center"
@@ -269,7 +313,7 @@
         >
             <Label
                 id="quickConnectLabel"
-                text="↻ Refresh code"
+                text="Show a new code"
                 width="320"
                 height="64"
                 horizAlign="center"

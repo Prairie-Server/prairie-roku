@@ -21,7 +21,9 @@ import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
 import "pkg:/source/lib/ServerUrl.bs"
 import "pkg:/source/lib/ServerRegistry.bs"
-import "pkg:/source/lib/ServerUrl.bs"
+import "pkg:/source/lib/ServerAddress.bs"
+import "pkg:/source/lib/SignIn.bs"
+import "pkg:/source/lib/SignOut.bs"
 import "pkg:/source/lib/Discover.bs"
 import "pkg:/source/lib/AppUpdate.bs"
 
@@ -92,8 +94,13 @@ sub init()
     m.discoverDeep = false
     m.serverListBackRoute = "connect"
     m.connectPrefillUrl = ""
-    m.pendingLoginRequest = invalid
+    m.connectNotice = ""
+    m.serverProbe = invalid
+    m.signOutTask = invalid
+    m.signOutTarget = invalid
+    m.signOutDialog = invalid
     m.quickConnectDeviceCode = ""
+    m.quickConnectRenewed = false
     m.quickConnectServerUrl = ""
     m.quickConnectInterval = 3
     m.playbackRoute = "v2"
@@ -130,8 +137,8 @@ sub clearScreen()
         m.httpTask.control = "STOP"
     end if
     m.pending = ""
-    ' Drop any cached login POST (password body) when leaving the connect flow.
-    m.pendingLoginRequest = invalid
+    ' Drop any cached login body (password) when leaving the connect flow.
+    m.serverProbe = invalid
     m.pinProfile = invalid
     while m.screenHost.getChildCount() > 0
         m.screenHost.removeChildIndex(0)
@@ -143,6 +150,7 @@ sub stopQuickConnect()
     m.quickConnectDeviceCode = ""
     m.quickConnectServerUrl = ""
     m.quickConnectInterval = 3
+    m.quickConnectRenewed = false
     if m.quickConnectTimer <> invalid
         m.quickConnectTimer.control = "stop"
     end if
@@ -160,14 +168,31 @@ sub showConnect()
         prefill = Prairie.Persist.loadLastServerUrl(m.store)
     end if
     m.connectPrefillUrl = ""
-    screen.initialServerUrl = prefill
     screen.observeField("submitRequest", "onConnectSubmit")
     screen.observeField("quickConnectStartRequested", "onQuickConnectStartRequested")
     screen.observeField("openServers", "onOpenServers")
     screen.observeField("scanRequested", "onConnectScanRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
+    screen.initialServerUrl = prefill
+    if m.connectNotice.len() > 0
+        screen.errorText = m.connectNotice
+        m.connectNotice = ""
+    end if
     screen.callFunc("focusDefault")
+end sub
+
+sub paintSignInState(state as string, activate = "" as string)
+    if m.route <> "connect" or m.screen = invalid
+        return
+    end if
+    m.screen.quickConnectActivate = activate
+    m.screen.quickConnectState = state
+    if state <> "waiting" and state <> "newCode"
+        m.screen.quickConnectUserCode = ""
+        m.screen.quickConnectMatchCode = ""
+        m.screen.quickConnectVerificationUri = ""
+    end if
 end sub
 
 sub onQuickConnectStartRequested()
@@ -177,33 +202,201 @@ sub onQuickConnectStartRequested()
     if m.screen.busy = true
         return
     end if
-    serverNode = m.screen.findNode("serverUrl")
-    rawUrl = ""
-    if serverNode <> invalid
-        rawUrl = serverNode.text
-    end if
-    if rawUrl.trim().len() = 0
-        rawUrl = m.screen.initialServerUrl
-    end if
-    validated = Prairie.ServerUrl.validate(rawUrl)
-    if validated.ok <> true
-        m.screen.quickConnectStatus = validated.message
-        m.screen.quickConnectUserCode = ""
-        m.screen.quickConnectMatchCode = ""
-        m.screen.quickConnectVerificationUri = ""
+    resolved = m.screen.callFunc("serverCandidates")
+    stopQuickConnect()
+    if resolved = invalid or resolved.ok <> true
+        paintSignInState("failed")
+        if resolved <> invalid
+            m.screen.quickConnectStatus = resolved.message
+        end if
         return
     end if
-    stopQuickConnect()
-    m.quickConnectServerUrl = validated.url
-    m.screen.quickConnectStatus = "Generating code…"
-    m.screen.quickConnectUserCode = ""
-    m.screen.quickConnectMatchCode = ""
-    m.screen.quickConnectVerificationUri = ""
+    paintSignInState("gettingCode")
+    startServerProbe("quickConnect", resolved.urls, "")
+end sub
+
+' Try each candidate address in turn (Auto: HTTPS, HTTP, then port 8090)
+' with GET /auth/setup; the first that answers as Prairie is used for
+' purpose "login" (loginBody is then posted) or "quickConnect".
+sub startServerProbe(purpose as string, urls as object, loginBody as string)
+    m.serverProbe = {
+        purpose: purpose,
+        urls: urls,
+        index: 0,
+        currentUrl: "",
+        loginBody: loginBody,
+        lastError: invalid
+    }
+    probeNextServerCandidate()
+end sub
+
+sub probeNextServerCandidate()
+    probe = m.serverProbe
+    if probe = invalid
+        return
+    end if
+    if probe.index >= probe.urls.count()
+        finishServerProbeFailure(Prairie.ServerAddress.probeFailureMessage(probe.lastError))
+        return
+    end if
+    url = probe.urls[probe.index]
+    probe.index = probe.index + 1
+    probe.currentUrl = url
+    m.pending = "serverProbe"
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: url,
+        timeoutMs: 10000
+    }, Prairie.Auth.setupStatusPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub onServerProbeResponse(response as object)
+    probe = m.serverProbe
+    if probe = invalid or m.route <> "connect"
+        return
+    end if
+    if response.ok <> true
+        probe.lastError = response.error
+        probeNextServerCandidate()
+        return
+    end if
+    setup = Prairie.Auth.parseSetupStatus(response.data)
+    if setup.ok <> true
+        ' Something answered, but not as Prairie: try the next address.
+        probe.lastError = {
+            status: 200,
+            code: invalid,
+            body: invalid
+        }
+        probeNextServerCandidate()
+        return
+    end if
+    if setup.needsSetup = true
+        finishServerProbeFailure("This server needs setup in a browser on another device. Create the first account there, then try again.")
+        return
+    end if
+    url = probe.currentUrl as string
+    m.serverProbe = invalid
+    if probe.purpose = "quickConnect"
+        m.quickConnectServerUrl = url
+        requestDeviceCode(false)
+        return
+    end if
+    m.loginServerUrl = url
+    m.pending = "login"
+    if m.screen <> invalid and m.screen.hasField("busy")
+        m.screen.busy = true
+    end if
+    m.httpTask.request = Prairie.Api.buildRequest({
+        serverUrl: url
+    }, Prairie.Auth.loginPath(), "POST", probe.loginBody)
+    m.httpTask.control = "RUN"
+end sub
+
+sub finishServerProbeFailure(message as string)
+    probe = m.serverProbe
+    m.serverProbe = invalid
+    if m.screen = invalid or m.route <> "connect" or probe = invalid
+        return
+    end if
+    if probe.purpose = "quickConnect"
+        paintSignInState("failed")
+        m.screen.quickConnectStatus = message
+        return
+    end if
+    m.screen.busy = false
+    m.screen.errorText = message
+end sub
+
+' The name the person gave this Roku (Settings > System > About).
+function deviceFriendlyName() as dynamic
+    info = CreateObject("roDeviceInfo")
+    if info = invalid
+        return invalid
+    end if
+    return info.GetFriendlyName()
+end function
+
+' Ask for a sign-in code on the resolved server; renewed marks a code that
+' replaces an expired one ("New code. Waiting for approval.").
+sub requestDeviceCode(renewed as boolean)
+    if m.quickConnectServerUrl.len() = 0
+        return
+    end if
+    m.quickConnectDeviceCode = ""
+    m.quickConnectRenewed = renewed
+    if m.quickConnectTimer <> invalid
+        m.quickConnectTimer.control = "stop"
+    end if
+    if not renewed
+        paintSignInState("gettingCode")
+    end if
     m.pending = "deviceStart"
     m.httpTask.request = Prairie.Api.buildRequest({
         serverUrl: m.quickConnectServerUrl
-    }, Prairie.Auth.deviceStartPath(), "POST", Prairie.Auth.buildDeviceStartBody(Prairie.Theme.deviceNameHeader(), Prairie.Theme.devicePlatformHeader()))
+    }, Prairie.Auth.deviceStartPath(), "POST", Prairie.Auth.buildDeviceStartBody(Prairie.SignIn.deviceName(deviceFriendlyName()), Prairie.Theme.devicePlatformHeader()))
     m.httpTask.control = "RUN"
+end sub
+
+sub applyDeviceSignInResponse(pending as string, response as object)
+    if m.route <> "connect" or m.screen = invalid
+        return
+    end if
+    if response.ok <> true
+        status = 0
+        if response.error <> invalid and response.error.status <> invalid
+            status = response.error.status as integer
+        end if
+        if pending = "deviceStart"
+            paintSignInState("failed")
+            return
+        end if
+        if status = 404 or status = 410
+            ' The code is gone on the server: show a new one.
+            requestDeviceCode(true)
+            return
+        end if
+        scheduleQuickConnectPoll(m.quickConnectInterval)
+        return
+    end if
+    if pending = "deviceStart"
+        started = Prairie.Auth.parseDeviceStart(response.data)
+        if started.ok <> true
+            paintSignInState("failed")
+            return
+        end if
+        m.quickConnectDeviceCode = started.deviceCode
+        m.quickConnectInterval = started.interval
+        state = "waiting"
+        if m.quickConnectRenewed
+            state = "newCode"
+        end if
+        paintSignInState(state, started.verificationUri)
+        m.screen.quickConnectUserCode = started.userCode
+        m.screen.quickConnectMatchCode = started.matchCode
+        m.screen.quickConnectVerificationUri = started.verificationUriComplete
+        scheduleQuickConnectPoll(m.quickConnectInterval)
+        return
+    end if
+    polled = Prairie.Auth.parseDevicePoll(response.data)
+    if polled.ok <> true
+        scheduleQuickConnectPoll(m.quickConnectInterval)
+        return
+    end if
+    if polled.status = "approved" and polled.accessToken <> invalid and polled.user <> invalid
+        applyQuickConnectLogin(polled)
+        return
+    end if
+    if polled.status = "denied"
+        m.quickConnectDeviceCode = ""
+        paintSignInState("declined")
+        return
+    end if
+    if polled.status = "expired" or polled.status = "consumed"
+        requestDeviceCode(true)
+        return
+    end if
+    scheduleQuickConnectPoll(polled.pollAfter)
 end sub
 
 sub scheduleQuickConnectPoll(seconds as integer)
@@ -1283,27 +1476,12 @@ end function
 
 sub onConnectSubmit()
     req = m.screen.submitRequest
-    if req = invalid
+    if req = invalid or type(req.urls) <> "roArray" or req.urls.count() = 0
         return
     end if
     stopQuickConnect()
-    m.pendingLoginRequest = req
-    m.loginServerUrl = serverBaseFromRequestUrl(req.url)
-    m.pending = "authSetup"
-    m.httpTask.request = Prairie.Api.buildRequest({
-        serverUrl: m.loginServerUrl
-    }, Prairie.Auth.setupStatusPath(), "GET")
-    m.httpTask.control = "RUN"
+    startServerProbe("login", req.urls, req.loginBody as string)
 end sub
-
-function serverBaseFromRequestUrl(url as string) as string
-    marker = "/api/v1/auth/login"
-    idx = LCase(url).instr(marker)
-    if idx >= 0
-        return url.left(idx)
-    end if
-    return Prairie.Url.normalizeServerUrl(url)
-end function
 
 sub loadProfiles()
     if m.auth = invalid
@@ -1494,22 +1672,103 @@ sub onProfilesCancel()
     end if
 end sub
 
+' Sign Out asks first, as on Android TV / Apple TV: Cancel, Sign Out (keep
+' the server and open its sign-in), or Sign Out & Remove Server.
 sub onSignOut()
-    if m.registry <> invalid and m.registry.activeServerId <> invalid and m.registry.activeServerId.len() > 0
-        m.registry = Prairie.ServerRegistry.clearTokens(m.registry, m.registry.activeServerId)
-        Prairie.ServerRegistry.save(m.registry, m.store)
+    if m.signOutTask <> invalid or m.session = invalid
+        return
     end if
-    Prairie.Session.clearSession(m.store)
-    m.session = invalid
-    m.auth = invalid
-    if m.registry.entries.count() > 0
-        showServerList("connect")
-    else
-        showConnect()
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = Prairie.SignOut.dialogTitle()
+    dialog.message = Prairie.SignOut.dialogMessage()
+    dialog.buttons = Prairie.SignOut.dialogLabels()
+    dialog.observeField("buttonSelected", "onSignOutDialogButton")
+    m.signOutDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onSignOutDialogButton()
+    if m.signOutDialog = invalid
+        return
+    end if
+    choice = Prairie.SignOut.choiceAt(m.signOutDialog.buttonSelected)
+    m.signOutDialog.close = true
+    m.signOutDialog = invalid
+    if choice = "keep"
+        startSignOut(false)
+    else if choice = "remove"
+        startSignOut(true)
     end if
 end sub
 
+' Revoke the login on the server (best effort, bounded), then sign out here.
+' Runs on its own task so leaving the screen can't stop it halfway; a second
+' request while one runs is ignored.
+sub startSignOut(removeServer as boolean)
+    if m.signOutTask <> invalid or m.session = invalid
+        return
+    end if
+    m.signOutTarget = {
+        serverUrl: m.session.serverUrl as string,
+        accessToken: m.session.accessToken,
+        removeServer: removeServer
+    }
+    task = CreateObject("roSGNode", "HttpTask")
+    task.observeField("response", "onSignOutResponse")
+    m.signOutTask = task
+    task.request = Prairie.Api.buildRequest({
+        serverUrl: m.signOutTarget.serverUrl,
+        accessToken: m.signOutTarget.accessToken,
+        timeoutMs: Prairie.SignOut.logoutTimeoutMs()
+    }, Prairie.SignOut.logoutPath(), "POST", "{}")
+    task.control = "RUN"
+end sub
+
+sub onSignOutResponse()
+    target = m.signOutTarget
+    if m.signOutTask <> invalid
+        m.signOutTask.unobserveField("response")
+        m.signOutTask.control = "STOP"
+    end if
+    m.signOutTask = invalid
+    m.signOutTarget = invalid
+    if target = invalid
+        return
+    end if
+    ' The account that leaves is the one active when Sign Out was chosen.
+    if m.session = invalid or (m.session.serverUrl as string) <> target.serverUrl or m.session.accessToken <> target.accessToken
+        showMessage("Sign Out", Prairie.SignOut.sessionChangedMessage())
+        return
+    end if
+    result = Prairie.SignOut.finish(m.registry, m.store, target.serverUrl, target.removeServer = true)
+    m.registry = result.registry
+    m.session = invalid
+    m.auth = invalid
+    m.connectPrefillUrl = result.prefillUrl
+    m.connectNotice = result.notice
+    showConnect()
+end sub
+
+' "Change server" on the sign-in screen: a server this TV never signed in to
+' is forgotten first, so it stops coming back as the server to sign in to.
+' Ignored while a sign-in is running.
 sub onOpenServers()
+    if m.route = "connect" and m.screen <> invalid
+        if m.screen.busy = true or m.pending = "login"
+            return
+        end if
+        url = m.screen.initialServerUrl
+        if url <> invalid and (url as string).trim().len() > 0
+            stopQuickConnect()
+            forgotten = Prairie.ServerRegistry.forgetIfNeverSignedIn(m.registry, m.store, url as string)
+            if forgotten.saved
+                m.registry = forgotten.registry
+            else
+                ' A failed write keeps the server; leave anyway, as before.
+                m.registry = Prairie.ServerRegistry.load(m.store)
+            end if
+        end if
+    end if
     showServerList("connect")
 end sub
 
@@ -1583,9 +1842,14 @@ sub onServerRemoveRequested()
     if entry = invalid or entry.id = invalid
         return
     end if
-    m.registry = Prairie.ServerRegistry.remove(m.registry, entry.id)
-    Prairie.ServerRegistry.save(m.registry, m.store)
+    removed = Prairie.ServerRegistry.remove(m.registry, entry.id)
+    saved = Prairie.ServerRegistry.save(removed, m.store)
     paintServerList()
+    if not saved
+        m.screen.errorText = Prairie.SignOut.removeServerFailedMessage()
+    else
+        m.screen.errorText = ""
+    end if
     m.screen.callFunc("focusDefault")
 end sub
 
@@ -2150,7 +2414,7 @@ sub onHttpResponse()
 
     chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
     chainingDiscover = pending = "discoverProbe"
-    chainingAuth = pending = "authSetup" or pending = "deviceStart" or pending = "devicePoll"
+    chainingAuth = pending = "serverProbe" or pending = "deviceStart" or pending = "devicePoll"
     chainingQuality = pending = "qualityLadder"
     if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover and not chainingAuth and not chainingQuality
         m.screen.busy = false
@@ -2190,80 +2454,13 @@ sub onHttpResponse()
         return
     end if
 
+    if pending = "serverProbe"
+        onServerProbeResponse(response)
+        return
+    end if
+
     if pending = "deviceStart" or pending = "devicePoll"
-        if response.ok <> true
-            message = "Quick Connect failed"
-            if response.error <> invalid and response.error.message <> invalid
-                message = response.error.message
-            end if
-            status = 0
-            if response.error <> invalid and response.error.status <> invalid
-                status = response.error.status as integer
-            end if
-            if pending = "devicePoll" and status <> 404
-                scheduleQuickConnectPoll(m.quickConnectInterval)
-                return
-            end if
-            if m.screen <> invalid
-                m.screen.quickConnectStatus = message
-                if status = 404
-                    m.screen.quickConnectUserCode = ""
-                    m.screen.quickConnectMatchCode = ""
-                    m.screen.quickConnectVerificationUri = ""
-                    m.quickConnectDeviceCode = ""
-                end if
-            end if
-            return
-        end if
-        if pending = "deviceStart"
-            started = Prairie.Auth.parseDeviceStart(response.data)
-            if started.ok <> true
-                if m.screen <> invalid
-                    m.screen.quickConnectStatus = "Could not start Quick Connect"
-                end if
-                return
-            end if
-            m.quickConnectDeviceCode = started.deviceCode
-            m.quickConnectInterval = started.interval
-            if m.screen <> invalid
-                m.screen.quickConnectUserCode = started.userCode
-                m.screen.quickConnectMatchCode = started.matchCode
-                m.screen.quickConnectVerificationUri = started.verificationUriComplete
-                m.screen.quickConnectStatus = "Waiting for approval…"
-            end if
-            scheduleQuickConnectPoll(m.quickConnectInterval)
-            return
-        end if
-        polled = Prairie.Auth.parseDevicePoll(response.data)
-        if polled.ok <> true
-            scheduleQuickConnectPoll(m.quickConnectInterval)
-            return
-        end if
-        if polled.status = "approved" and polled.accessToken <> invalid and polled.user <> invalid
-            applyQuickConnectLogin(polled)
-            return
-        end if
-        if polled.status = "denied"
-            if m.screen <> invalid
-                m.screen.quickConnectStatus = "Sign-in was denied"
-                m.screen.quickConnectUserCode = ""
-                m.screen.quickConnectMatchCode = ""
-                m.screen.quickConnectVerificationUri = ""
-            end if
-            m.quickConnectDeviceCode = ""
-            return
-        end if
-        if polled.status = "expired" or polled.status = "consumed"
-            if m.screen <> invalid
-                m.screen.quickConnectStatus = "Code expired — press Refresh code"
-                m.screen.quickConnectUserCode = ""
-                m.screen.quickConnectMatchCode = ""
-                m.screen.quickConnectVerificationUri = ""
-            end if
-            m.quickConnectDeviceCode = ""
-            return
-        end if
-        scheduleQuickConnectPoll(polled.pollAfter)
+        applyDeviceSignInResponse(pending, response)
         return
     end if
 
@@ -2377,13 +2574,9 @@ sub onHttpResponse()
                 m.screen.busy = false
             end if
         end if
-        if pending = "authSetup"
-            m.pendingLoginRequest = invalid
-            if m.screen <> invalid and m.screen.hasField("busy")
-                m.screen.busy = false
-            end if
+        if pending = "login"
             if m.screen <> invalid and m.screen.hasField("errorText")
-                m.screen.errorText = "Could not verify server setup status"
+                m.screen.errorText = Prairie.SignIn.loginFailureMessage(status, message)
             end if
             return
         end if
@@ -2431,35 +2624,6 @@ sub onHttpResponse()
         }
         Prairie.Persist.saveLastServerUrl(m.loginServerUrl, m.store)
         showProfiles()
-    else if pending = "authSetup"
-        setup = Prairie.Auth.parseSetupStatus(response.data)
-        if setup.ok <> true
-            if m.screen <> invalid
-                m.screen.busy = false
-                m.screen.errorText = "Could not verify server setup status"
-            end if
-            m.pendingLoginRequest = invalid
-            return
-        end if
-        if setup.needsSetup = true
-            if m.screen <> invalid
-                m.screen.busy = false
-                m.screen.errorText = "This server needs setup in a browser on another device. Create the first account there, then try again."
-            end if
-            m.pendingLoginRequest = invalid
-            return
-        end if
-        loginReq = m.pendingLoginRequest
-        m.pendingLoginRequest = invalid
-        if loginReq = invalid
-            return
-        end if
-        m.pending = "login"
-        if m.screen <> invalid and m.screen.hasField("busy")
-            m.screen.busy = true
-        end if
-        m.httpTask.request = loginReq
-        m.httpTask.control = "RUN"
     else if pending = "profiles"
         profiles = Prairie.Auth.profilesFromResponse(response.data)
         m.screen.profiles = profiles

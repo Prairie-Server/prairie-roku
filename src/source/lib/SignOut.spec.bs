@@ -1,0 +1,82 @@
+namespace tests
+    @suite("Prairie.SignOut")
+    class SignOutSuite extends rooibos.BaseTestSuite
+
+        function seededRegistry(store as object) as object
+            registry = Prairie.ServerRegistry.emptyRegistry()
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, { url: "https://a.example", username: "jo", profileId: "p1", lastUsedAt: 10 })
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, { url: "https://b.example", username: "jo", lastUsedAt: 5 })
+            registry.activeServerId = Prairie.ServerRegistry.entryIdFromUrl("https://a.example")
+            Prairie.ServerRegistry.save(registry, store)
+            Prairie.Persist.saveLastServerUrl("https://a.example", store)
+            store.setItem(Prairie.Persist.sessionKey(), "{}")
+            return registry
+        end function
+
+        @describe("dialog")
+        @it("offers Cancel, Sign Out and Sign Out & Remove Server")
+        sub _()
+            labels = Prairie.SignOut.dialogLabels()
+            m.assertEqual(labels.count(), 3)
+            m.assertEqual(labels[0], "Cancel")
+            m.assertEqual(labels[1], "Sign Out")
+            m.assertEqual(labels[2], "Sign Out & Remove Server")
+            m.assertEqual(Prairie.SignOut.choiceAt(1), "keep")
+            m.assertEqual(Prairie.SignOut.choiceAt(2), "remove")
+            m.assertEqual(Prairie.SignOut.choiceAt(9), "cancel")
+            m.assertEqual(Prairie.SignOut.choiceAt(-1), "cancel")
+            m.assertEqual(Prairie.SignOut.dialogTitle(), "Sign Out")
+            m.assertTrue(Prairie.SignOut.dialogMessage().len() > 0)
+            m.assertEqual(Prairie.SignOut.logoutPath(), "/api/v1/auth/logout")
+            m.assertEqual(Prairie.SignOut.logoutTimeoutMs(), 5000)
+            m.assertTrue(Prairie.SignOut.sessionChangedMessage().len() > 0)
+        end sub
+
+        @describe("finish")
+        @it("keeps the server and reopens its sign-in")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            registry = m.seededRegistry(store)
+            result = Prairie.SignOut.finish(registry, store, "https://a.example", false)
+            m.assertEqual(result.prefillUrl, "https://a.example")
+            m.assertEqual(result.notice, "")
+            m.assertEqual(result.registry.entries.count(), 2)
+            m.assertEqual(store.getItem(Prairie.Persist.sessionKey()), invalid)
+            m.assertEqual(Prairie.ServerRegistry.load(store).entries.count(), 2)
+        end sub
+
+        @it("removes the server and opens the next saved one")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            registry = m.seededRegistry(store)
+            result = Prairie.SignOut.finish(registry, store, "https://a.example", true)
+            m.assertEqual(result.notice, "")
+            m.assertEqual(result.prefillUrl, "https://b.example")
+            m.assertEqual(Prairie.ServerRegistry.load(store).entries.count(), 1)
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(store), "https://b.example")
+            result = Prairie.SignOut.finish(result.registry, store, "https://b.example", true)
+            m.assertEqual(result.prefillUrl, "")
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(store), "")
+        end sub
+
+        @it("reports a removal that can't be saved")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            registry = m.seededRegistry(store)
+            store.failWrites = true
+            result = Prairie.SignOut.finish(registry, store, "https://a.example", true)
+            m.assertEqual(result.notice, "Prairie couldn't remove the saved server. Please try again.")
+            m.assertEqual(result.prefillUrl, "https://a.example")
+            m.assertEqual(result.registry.entries.count(), 2)
+        end sub
+
+        @it("signs out of a server that isn't saved")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            result = Prairie.SignOut.finish(Prairie.ServerRegistry.emptyRegistry(), store, "https://z.example", true)
+            m.assertEqual(result.prefillUrl, "https://z.example")
+            m.assertEqual(result.notice, "")
+        end sub
+
+    end class
+end namespace

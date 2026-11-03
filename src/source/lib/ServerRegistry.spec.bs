@@ -214,5 +214,43 @@ namespace tests
             m.assertEqual(fromUrl.entries[0].url, "https://url-only.example.com")
         end sub
 
+        @describe("forgetIfNeverSignedIn")
+        @it("forgets a server this TV never signed in to and keeps signed-in ones")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            registry = Prairie.ServerRegistry.emptyRegistry()
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, { url: "https://kept.example", username: "jo", lastUsedAt: 5 })
+            registry = Prairie.ServerRegistry.addOrUpdate(registry, { url: "https://new.example", fetchedName: "New", lastUsedAt: 9 })
+            registry.activeServerId = Prairie.ServerRegistry.entryIdFromUrl("https://new.example")
+            Prairie.Persist.saveLastServerUrl("https://new.example", store)
+            m.assertTrue(Prairie.ServerRegistry.wasSignedIn(registry.entries[0]))
+            m.assertFalse(Prairie.ServerRegistry.wasSignedIn(registry.entries[1]))
+            m.assertFalse(Prairie.ServerRegistry.wasSignedIn(invalid))
+
+            kept = Prairie.ServerRegistry.forgetIfNeverSignedIn(registry, store, "https://kept.example")
+            m.assertFalse(kept.removed)
+            missing = Prairie.ServerRegistry.forgetIfNeverSignedIn(registry, store, "https://other.example")
+            m.assertFalse(missing.removed)
+
+            result = Prairie.ServerRegistry.forgetIfNeverSignedIn(registry, store, "https://new.example/")
+            m.assertTrue(result.removed)
+            m.assertTrue(result.saved)
+            m.assertEqual(result.registry.entries.count(), 1)
+            m.assertEqual(Prairie.ServerRegistry.load(store).entries.count(), 1)
+            m.assertEqual(Prairie.Persist.loadLastServerUrl(store), "https://kept.example")
+        end sub
+
+        @it("reports a registry that can't be saved")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            registry = Prairie.ServerRegistry.addOrUpdate(Prairie.ServerRegistry.emptyRegistry(), { url: "https://new.example" })
+            m.assertTrue(Prairie.ServerRegistry.save(registry, store))
+            store.failWrites = true
+            m.assertFalse(Prairie.ServerRegistry.save(registry, store))
+            result = Prairie.ServerRegistry.forgetIfNeverSignedIn(registry, store, "https://new.example")
+            m.assertTrue(result.removed)
+            m.assertFalse(result.saved)
+        end sub
+
     end class
 end namespace

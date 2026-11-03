@@ -1,0 +1,268 @@
+import "pkg:/source/lib/ServerUrl.bs"
+import "pkg:/source/lib/UrlUtils.bs"
+
+' The typed server address on the sign-in screen with the protocol and port
+' from Advanced options, as Android TV / Apple TV build it: Auto tries HTTPS,
+' then HTTP, then HTTP on Prairie's default port 8090.
+namespace Prairie.ServerAddress
+
+    function defaultPort() as integer
+        return 8090
+    end function
+
+    function schemeIds() as object
+        return ["auto", "https", "http"]
+    end function
+
+    function schemeLabel(scheme as string) as string
+        if scheme = "https"
+            return "HTTPS"
+        else if scheme = "http"
+            return "HTTP"
+        end if
+        return "Auto"
+    end function
+
+    ' The protocol after scheme in the Auto → HTTPS → HTTP cycle.
+    function nextScheme(scheme as string) as string
+        ids = schemeIds()
+        for i = 0 to ids.count() - 1
+            if ids[i] = scheme
+                return ids[(i + 1) mod ids.count()]
+            end if
+        end for
+        return ids[0]
+    end function
+
+    function networkErrorMessage() as string
+        return "Could not reach a Prairie server at that address."
+    end function
+
+    function portErrorMessage() as string
+        return "Port must be a number between 1 and 65535."
+    end function
+
+    function failure(message as string, field = "address" as string) as object
+        return {
+            ok: false,
+            urls: [],
+            message: message,
+            field: field
+        }
+    end function
+
+    ' Port text to an integer: 0 when blank, -1 when not a port.
+    function parsePort(text as string) as integer
+        trimmed = text.trim()
+        if trimmed.len() = 0
+            return 0
+        end if
+        if not Prairie.ServerUrl.isDigits(trimmed) or trimmed.len() > 5
+            return -1
+        end if
+        value = trimmed.toInt()
+        if value < 1 or value > 65535
+            return -1
+        end if
+        return value
+    end function
+
+    ' Split a typed address into { ok, scheme, host, port, path, message, field }.
+    ' host keeps IPv6 brackets; port is 0 when none was typed.
+    function parseInput(input as string) as object
+        parsed = {
+            ok: false,
+            scheme: "",
+            host: "",
+            port: 0,
+            path: "",
+            message: "Enter a valid server address.",
+            field: "address"
+        }
+        rest = input
+        sep = input.instr("://")
+        if sep >= 0
+            parsed.scheme = LCase(input.left(sep))
+            if parsed.scheme <> "http" and parsed.scheme <> "https"
+                parsed.message = "Server address must use http or https."
+                return parsed
+            end if
+            rest = input.mid(sep + 3)
+        end if
+        authority = rest
+        slash = rest.instr("/")
+        if slash >= 0
+            authority = rest.left(slash)
+            path = rest.mid(slash)
+            while path.len() > 0 and path.right(1) = "/"
+                path = path.left(path.len() - 1)
+            end while
+            parsed.path = path
+        end if
+        if authority.instr("@") >= 0
+            parsed.message = "Server address must not include credentials."
+            return parsed
+        end if
+        if not Prairie.ServerUrl.hasUsableHost(authority) or authority.instr(" ") >= 0
+            return parsed
+        end if
+        host = authority
+        portText = ""
+        if authority.left(1) = "["
+            close = authority.instr("]")
+            host = authority.left(close + 1)
+            after = authority.mid(close + 1)
+            if after.len() > 0
+                if after.left(1) <> ":"
+                    return parsed
+                end if
+                portText = after.mid(1)
+            end if
+        else
+            colon = authority.instr(":")
+            if colon >= 0
+                if authority.mid(colon + 1).instr(":") >= 0
+                    ' A bare IPv6 literal: bracket it for the URL.
+                    host = "[" + authority + "]"
+                else
+                    host = authority.left(colon)
+                    portText = authority.mid(colon + 1)
+                end if
+            end if
+        end if
+        if host.len() = 0 or host = "[]"
+            return parsed
+        end if
+        if authority.right(1) = ":" and portText.len() = 0
+            parsed.message = portErrorMessage()
+            parsed.field = "port"
+            return parsed
+        end if
+        if portText.len() > 0
+            port = parsePort(portText)
+            if port < 0
+                parsed.message = portErrorMessage()
+                parsed.field = "port"
+                return parsed
+            end if
+            parsed.port = port
+        end if
+        parsed.host = host
+        parsed.ok = true
+        parsed.message = ""
+        return parsed
+    end function
+
+    function buildUrl(scheme as string, host as string, port as integer, path as string) as string
+        url = scheme + "://" + host
+        if port > 0
+            url = url + ":" + port.toStr()
+        end if
+        return Prairie.Url.normalizeServerUrl(url + path)
+    end function
+
+    ' The URLs to try, in order, for a typed address, the Advanced options
+    ' protocol (auto / https / http) and port text. Returns
+    ' { ok, urls, message, field } where field is "address" or "port".
+    ' Plain HTTP is only tried for a local / LAN host.
+    function candidates(raw as string, scheme as string, portText as string) as object
+        input = raw.trim()
+        if input.len() = 0
+            return failure("Please enter a server host.")
+        end if
+        parsed = parseInput(input)
+        if parsed.ok <> true
+            return failure(parsed.message, parsed.field)
+        end if
+        port = parsed.port
+        if port = 0
+            port = parsePort(portText)
+            if port < 0
+                return failure(portErrorMessage(), "port")
+            end if
+        end if
+
+        schemes = []
+        if scheme = "https" or scheme = "http"
+            schemes.push(scheme)
+        else if parsed.scheme.len() > 0
+            schemes.push(parsed.scheme)
+        else
+            schemes = ["https", "http"]
+        end if
+
+        hostPart = parsed.host
+        if port > 0
+            hostPart = hostPart + ":" + port.toStr()
+        end if
+        allowsHttp = Prairie.ServerUrl.isPrivateOrLocalHost(hostPart)
+        urls = []
+        for each candidateScheme in schemes
+            if candidateScheme = "https" or allowsHttp
+                urls.push(buildUrl(candidateScheme, parsed.host, port, parsed.path))
+            end if
+        end for
+        if allowsHttp and scheme <> "https" and scheme <> "http" and parsed.scheme.len() = 0 and port = 0
+            urls.push(buildUrl("http", parsed.host, defaultPort(), parsed.path))
+        end if
+        if urls.count() = 0
+            return failure("Use HTTPS, or HTTP only for a local/LAN server.")
+        end if
+        return {
+            ok: true,
+            urls: urls,
+            message: "",
+            field: ""
+        }
+    end function
+
+    ' True when an HTTP task error never reached a server (no connection,
+    ' TLS failure, timeout) rather than an HTTP error status.
+    function isNetworkFailure(errorInfo as dynamic) as boolean
+        if errorInfo = invalid
+            return true
+        end if
+        if errorInfo.code <> invalid
+            code = errorInfo.code as string
+            if code = "timeout" or code = "send_failed" or code = "bad_event" or code = "invalid_request"
+                return true
+            end if
+        end if
+        if errorInfo.status = invalid
+            return true
+        end if
+        return (errorInfo.status as integer) <= 0
+    end function
+
+    ' The message a server put in an error body, or "" when it sent none.
+    function serverMessage(errorInfo as dynamic) as string
+        if errorInfo = invalid or errorInfo.body = invalid or type(errorInfo.body) <> "roAssociativeArray"
+            return ""
+        end if
+        body = errorInfo.body
+        for each key in ["message", "error", "detail", "title"]
+            value = body[key]
+            if value <> invalid and (type(value) = "roString" or type(value) = "String")
+                text = (value as string).trim()
+                if text.len() > 0
+                    return text
+                end if
+            end if
+        end for
+        return ""
+    end function
+
+    ' The address screen's wording when the last candidate failed. A bare HTTP
+    ' error (a 404 from something that isn't Prairie) has no message of its own.
+    function probeFailureMessage(errorInfo as dynamic) as string
+        if isNetworkFailure(errorInfo)
+            return networkErrorMessage()
+        end if
+        message = serverMessage(errorInfo)
+        if message.len() = 0
+            return networkErrorMessage()
+        end if
+        return "Could not reach server: " + message
+    end function
+
+end namespace
