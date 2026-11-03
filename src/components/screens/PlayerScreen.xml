@@ -22,6 +22,9 @@
         <field id="statsPlayMethod" type="string" value="" />
         <field id="statsStreamUrl" type="string" value="" />
         <field id="statsResolution" type="string" value="" />
+        <field id="markerSegments" type="array" />
+        <field id="effectiveHeight" type="int" value="0" />
+        <field id="autoQualityRequested" type="string" value="" alwaysNotify="true" />
         <function name="focusDefault" />
         <function name="stopPlayback" />
     </interface>
@@ -108,8 +111,46 @@
             color="0xE07070FF"
             font="font:SmallSystemFont"
         />
+        <!-- Skip intro / recap / credits (one per marker occurrence) -->
+        <Group id="skipGroup" visible="false" translation="[1520, 780]">
+            <Rectangle id="skipBg" width="320" height="80" color="0xF3EFE6FF" />
+            <Label
+                id="skipLabel"
+                text=""
+                translation="[0, 0]"
+                width="320"
+                height="80"
+                horizAlign="center"
+                vertAlign="center"
+                color="0x141820FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Group>
+
+        <!-- Buffering quality: Auto stepped down, Down restores -->
+        <Group id="qualityPill" visible="false" translation="[460, 48]">
+            <Rectangle id="qualityPillBg" width="1000" height="64" color="0x141820E6" />
+            <Label
+                id="qualityPillLabel"
+                text=""
+                translation="[24, 0]"
+                width="952"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:SmallSystemFont"
+            />
+        </Group>
+
+        <!-- The one loading spinner (shown after 500 ms, kept up at least 500 ms) -->
+        <BusySpinner id="spinner" visible="false" translation="[912, 492]" spinInterval="1" />
+
         <Timer id="progressTimer" repeat="true" duration="10" />
         <Timer id="seekPreviewTimer" repeat="false" duration="1.2" />
         <Timer id="statsTimer" repeat="true" duration="1" />
+        <Timer id="spinnerTimer" repeat="false" duration="0.5" />
+        <Timer id="stallTimer" repeat="true" duration="1" />
+        <Timer id="qualityPillTimer" repeat="false" duration="10" />
     </children>
 </component>

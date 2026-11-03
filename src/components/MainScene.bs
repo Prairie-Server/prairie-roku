@@ -14,6 +14,8 @@ import "pkg:/source/lib/Watch.bs"
 import "pkg:/source/lib/Playback.bs"
 import "pkg:/source/lib/QualityLadder.bs"
 import "pkg:/source/lib/Trickplay.bs"
+import "pkg:/source/lib/Markers.bs"
+import "pkg:/source/lib/TrackMemory.bs"
 import "pkg:/source/lib/LiveTv.bs"
 import "pkg:/source/lib/PlaybackSettings.bs"
 import "pkg:/source/lib/UrlUtils.bs"
@@ -35,6 +37,9 @@ sub init()
     m.httpTask.observeField("response", "onHttpResponse")
     m.progressTask = m.top.findNode("progressTask")
     m.progressTask.observeField("response", "onProgressResponse")
+    m.markersTask = m.top.findNode("markersTask")
+    m.markersTask.observeField("response", "onMarkersResponse")
+    m.markersFileId = -1
     m.quickConnectTimer = m.top.findNode("quickConnectTimer")
     m.quickConnectTimer.observeField("fire", "onQuickConnectTimerFire")
 
@@ -836,9 +841,11 @@ sub showPlayer(launch as object)
     screen.observeField("seekDelta", "onPlayerSeek")
     screen.observeField("audioCycleRequested", "onPlayerAudioCycle")
     screen.observeField("qualityChangeRequested", "onPlayerQualityChange")
+    screen.observeField("autoQualityRequested", "onPlayerAutoQuality")
     applyPlayerTrickplay(screen)
     m.screenHost.appendChild(screen)
     m.screen = screen
+    applyPlayerMarkers()
     if m.qualityLadder = invalid
         fetchQualityLadderThenPlay()
     else
@@ -907,6 +914,45 @@ sub applyPlayerTrickplay(screen as object)
     end for
     trickplay.sheets = sheets
     screen.trickplay = trickplay
+end sub
+
+' Skip markers: start from the v1 watch version's first-occurrence fields,
+' then upgrade to every occurrence from GET /api/v2/markers/files/{id}.
+sub applyPlayerMarkers()
+    if m.screen = invalid
+        return
+    end if
+    timeline = Prairie.Markers.timelineFrom(activeWatchVersion())
+    if timeline.count() = 0 and m.playLaunch <> invalid
+        timeline = Prairie.Markers.timelineFrom(m.playLaunch.watch)
+    end if
+    m.screen.markerSegments = timeline
+    m.markersFileId = -1
+    if m.session = invalid or m.playLaunch = invalid or m.playLaunch.fileId = invalid
+        return
+    end if
+    m.markersFileId = m.playLaunch.fileId as integer
+    m.markersTask.control = "STOP"
+    m.markersTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Markers.filesPath(m.markersFileId), "GET")
+    m.markersTask.control = "RUN"
+end sub
+
+sub onMarkersResponse()
+    response = m.markersTask.response
+    if response = invalid or response.ok <> true or response.data = invalid
+        return
+    end if
+    if m.route <> "player" or m.screen = invalid or m.markersFileId < 0
+        return
+    end if
+    ' Drop a late answer for another file (file_id is an opaque string in v2).
+    if response.data.file_id <> invalid and Str(m.markersFileId).trim() <> (response.data.file_id as string)
+        return
+    end if
+    timeline = Prairie.Markers.timelineFrom(response.data)
+    if timeline.count() > 0
+        m.screen.markerSegments = timeline
+    end if
 end sub
 
 sub refreshPlayerQualityOptions()
@@ -1059,7 +1105,8 @@ sub startPlaybackSession()
         profileId: m.session.profileId,
         forcedPlayMethod: forced,
         qualityPreference: settings.preferredQuality,
-        startPosition: m.playLaunch.startPosition
+        startPosition: m.playLaunch.startPosition,
+        audioTrackIndex: rememberedAudioIndex()
     })
     requestBody = ParseJson(body)
     if requestBody <> invalid and requestBody.playback_attempt_id <> invalid
@@ -1071,6 +1118,31 @@ sub startPlaybackSession()
     m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/start", "POST", body)
     m.httpTask.control = "RUN"
 end sub
+
+' Series the playing episode belongs to ("" for movies and unknown).
+function playLaunchSeriesId() as string
+    if m.playLaunch = invalid or m.playLaunch.watch = invalid
+        return ""
+    end if
+    seriesId = m.playLaunch.watch.series_id
+    if seriesId = invalid
+        return ""
+    end if
+    return seriesId as string
+end function
+
+' Audio index remembered for this series, matched by language (android #680).
+function rememberedAudioIndex() as dynamic
+    seriesId = playLaunchSeriesId()
+    if seriesId.len() = 0
+        return invalid
+    end if
+    version = activeWatchVersion()
+    if version = invalid
+        return invalid
+    end if
+    return Prairie.TrackMemory.resolveAudioIndex(Prairie.TrackMemory.recall(m.store, seriesId), version.audio_tracks)
+end function
 
 sub startPlaybackTranscode(seekSeconds as dynamic, qualityId = invalid as dynamic)
     if m.session = invalid or m.playbackSession = invalid
@@ -1160,6 +1232,9 @@ sub applyPlayerStream(playback as object)
     streamUrl = Prairie.Playback.resolveStreamUrl(m.session.serverUrl, playback, m.session.accessToken)
     m.screen.streamFormat = Prairie.Playback.detectStreamFormat(playback)
     m.screen.busy = false
+    if playback.effective_height <> invalid
+        m.screen.effectiveHeight = playback.effective_height as integer
+    end if
     m.screen.streamUrl = streamUrl
     m.screen.activeQualityId = m.activeQualityId
     refreshPlayerQualityOptions()
@@ -1870,11 +1945,10 @@ sub onPlayerAudioCycle()
     if m.playLaunch = invalid or m.playLaunch.watch = invalid
         return
     end if
-    versions = m.playLaunch.watch.versions
-    if versions = invalid or versions.count() = 0
+    version = activeWatchVersion()
+    if version = invalid
         return
     end if
-    version = versions[0]
     tracks = version.audio_tracks
     if tracks = invalid or tracks.count() < 2
         m.screen.errorText = "No alternate audio tracks"
@@ -1892,18 +1966,48 @@ sub onPlayerAudioCycle()
     m.httpTask.control = "RUN"
 end sub
 
+sub rememberPlayerAudio()
+    seriesId = playLaunchSeriesId()
+    version = activeWatchVersion()
+    if seriesId.len() = 0 or version = invalid or version.audio_tracks = invalid
+        return
+    end if
+    tracks = version.audio_tracks
+    if m.audioTrackIndex < 0 or m.audioTrackIndex >= tracks.count()
+        return
+    end if
+    Prairie.TrackMemory.rememberAudio(m.store, seriesId, tracks[m.audioTrackIndex], m.audioTrackIndex)
+end sub
+
 sub onPlayerQualityChange()
+    if m.screen = invalid
+        return
+    end if
+    applyPlayerQuality(m.screen.qualityChangeRequested, true)
+end sub
+
+' Buffering step-down / Restore from the player: same switch, but the
+' temporary rung is never saved as the preferred quality (android #636).
+sub onPlayerAutoQuality()
+    if m.screen = invalid
+        return
+    end if
+    applyPlayerQuality(m.screen.autoQualityRequested, false)
+end sub
+
+sub applyPlayerQuality(requested as dynamic, persist as boolean)
     if m.session = invalid or m.playbackSession = invalid or m.screen = invalid
         return
     end if
-    qualityId = m.screen.qualityChangeRequested
-    if qualityId = invalid or (qualityId as string).len() = 0
+    if requested = invalid or (requested as string).len() = 0
         return
     end if
-    qualityId = qualityId as string
-    settings = Prairie.PlaybackSettings.load(m.store)
-    settings.preferredQuality = qualityId
-    Prairie.PlaybackSettings.save(settings, m.store)
+    qualityId = requested as string
+    if persist
+        settings = Prairie.PlaybackSettings.load(m.store)
+        settings.preferredQuality = qualityId
+        Prairie.PlaybackSettings.save(settings, m.store)
+    end if
 
     playMethod = ""
     if m.playbackSession.play_method <> invalid
@@ -2559,6 +2663,7 @@ sub onHttpResponse()
         if updated.audio_track_index <> invalid
             m.audioTrackIndex = updated.audio_track_index as integer
         end if
+        rememberPlayerAudio()
         resumeAt = m.screen.positionSeconds
         if updated.player_start_seconds <> invalid
             resumeAt = updated.player_start_seconds
