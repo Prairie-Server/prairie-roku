@@ -1,0 +1,56 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.lift = m.top.findNode("lift")
+    m.shadow = m.top.findNode("shadow")
+    m.outline = m.top.findNode("outline")
+    m.tile = m.top.findNode("tile")
+    m.heading = m.top.findNode("heading")
+    m.meta = m.top.findNode("meta")
+    m.tile.color = colors.bgElevated
+    m.heading.color = colors.ink
+    m.meta.color = colors.muted
+    m.outlineWidth = 4
+    onLayout()
+end sub
+
+sub onLayout()
+    width = m.top.width
+    height = m.top.height
+    if width <= 0 or height <= 0
+        return
+    end if
+    border = m.outlineWidth
+    m.lift.scaleRotateCenter = [width / 2, height / 2]
+    m.shadow.translation = [6, 12]
+    m.shadow.width = width
+    m.shadow.height = height
+    m.outline.translation = [-border, -border]
+    m.outline.width = width + border * 2
+    m.outline.height = height + border * 2
+    m.tile.width = width
+    m.tile.height = height
+    m.heading.width = width - 40
+    m.meta.width = width - 40
+end sub
+
+sub onItemContent()
+    content = m.top.itemContent
+    if content = invalid
+        return
+    end if
+    m.heading.text = content.title
+    m.meta.text = content.description
+end sub
+
+sub onFocusChange()
+    amount = m.top.focusPercent * m.top.rowFocusPercent
+    if not m.top.rowListHasFocus
+        amount = 0
+    end if
+    scale = 1 + 0.05 * amount
+    m.lift.scale = [scale, scale]
+    m.outline.opacity = amount
+    m.shadow.opacity = 0.5 * amount
+end sub

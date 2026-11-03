@@ -48,14 +48,15 @@
         />
         <RowList
             id="grid"
-            translation="[40, 280]"
-            itemSize="[1840, 300]"
-            rowItemSize="[[200, 280]]"
-            numRows="3"
-            itemSpacing="[20, 20]"
-            rowItemSpacing="[[20, 0]]"
+            translation="[60, 290]"
+            itemComponentName="PosterCard"
+            itemSize="[1800, 330]"
+            rowItemSize="[[180, 310]]"
+            numRows="2"
+            itemSpacing="[0, 30]"
+            rowItemSpacing="[[32, 0]]"
             showRowLabel="[false]"
-            drawFocusFeedback="true"
+            drawFocusFeedback="false"
         />
         <Rectangle id="moreBg" translation="[80, 980]" width="240" height="56" color="0xE0A84AFF" focusable="true" visible="false">
             <Label

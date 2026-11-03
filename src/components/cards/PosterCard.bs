@@ -1,0 +1,77 @@
+import "pkg:/source/lib/Theme.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.lift = m.top.findNode("lift")
+    m.shadow = m.top.findNode("shadow")
+    m.outline = m.top.findNode("outline")
+    m.tile = m.top.findNode("tile")
+    m.poster = m.top.findNode("poster")
+    m.exploreLabel = m.top.findNode("exploreLabel")
+    m.caption = m.top.findNode("caption")
+    m.tile.color = colors.bgSoft
+    m.exploreLabel.color = colors.ink
+    m.caption.color = colors.ink
+    m.captionHeight = 40
+    m.outlineWidth = 4
+    onLayout()
+end sub
+
+sub onLayout()
+    width = m.top.width
+    height = m.top.height
+    if width <= 0 or height <= 0
+        return
+    end if
+    posterHeight = height - m.captionHeight
+    if posterHeight < 1
+        posterHeight = height
+    end if
+    border = m.outlineWidth
+    m.lift.scaleRotateCenter = [width / 2, posterHeight / 2]
+    m.shadow.translation = [6, 12]
+    m.shadow.width = width
+    m.shadow.height = posterHeight
+    m.outline.translation = [-border, -border]
+    m.outline.width = width + border * 2
+    m.outline.height = posterHeight + border * 2
+    m.tile.width = width
+    m.tile.height = posterHeight
+    m.poster.width = width
+    m.poster.height = posterHeight
+    m.exploreLabel.width = width
+    m.exploreLabel.height = posterHeight
+    m.caption.translation = [0, posterHeight + 8]
+    m.caption.width = width
+    m.caption.height = m.captionHeight - 8
+end sub
+
+sub onItemContent()
+    content = m.top.itemContent
+    if content = invalid
+        return
+    end if
+    exploreAll = content.hasField("isExploreAll") and content.isExploreAll = true
+    m.exploreLabel.visible = exploreAll
+    m.poster.visible = not exploreAll
+    if exploreAll
+        m.poster.uri = ""
+        m.caption.text = ""
+    else
+        m.poster.uri = content.hdPosterUrl
+        m.caption.text = content.title
+    end if
+end sub
+
+' Focus amount 0..1 for this card: its own focus within the row times the
+' row's focus, only while the list itself holds focus.
+sub onFocusChange()
+    amount = m.top.focusPercent * m.top.rowFocusPercent
+    if not m.top.rowListHasFocus
+        amount = 0
+    end if
+    scale = 1 + 0.05 * amount
+    m.lift.scale = [scale, scale]
+    m.outline.opacity = amount
+    m.shadow.opacity = 0.5 * amount
+end sub

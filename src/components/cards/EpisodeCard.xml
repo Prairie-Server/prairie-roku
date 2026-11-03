@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  RowList item for a season's episodes: "S01E02 · Title" over air date and
+  runtime. Focus matches PosterCard (white outline, ~5% lift, shadow).
+-->
+<component name="EpisodeCard" extends="Group">
+    <interface>
+        <field id="itemContent" type="node" onChange="onItemContent" />
+        <field id="width" type="float" onChange="onLayout" />
+        <field id="height" type="float" onChange="onLayout" />
+        <field id="focusPercent" type="float" onChange="onFocusChange" />
+        <field id="rowFocusPercent" type="float" onChange="onFocusChange" />
+        <field id="rowListHasFocus" type="bool" onChange="onFocusChange" />
+    </interface>
+    <script type="text/brightscript" uri="EpisodeCard.bs" />
+    <children>
+        <Group id="lift">
+            <Rectangle id="shadow" color="0x000000FF" opacity="0" />
+            <Rectangle id="outline" color="0xFFFFFFFF" opacity="0" />
+            <Rectangle id="tile" color="0x1C2430FF" />
+            <Label
+                id="heading"
+                text=""
+                translation="[20, 24]"
+                wrap="false"
+                color="0xF3EFE6FF"
+                font="font:MediumBoldSystemFont"
+            />
+            <Label
+                id="meta"
+                text=""
+                translation="[20, 80]"
+                wrap="false"
+                color="0x9AA3B2FF"
+                font="font:SmallSystemFont"
+            />
+        </Group>
+    </children>
+</component>
