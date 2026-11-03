@@ -1,0 +1,71 @@
+namespace tests
+    @suite("Prairie.LoadingSpinner")
+    class LoadingSpinnerSuite extends rooibos.BaseTestSuite
+
+        @describe("isLoading")
+        @it("treats busy or a buffering Video as loading")
+        sub _()
+            m.assertTrue(Prairie.LoadingSpinner.isLoading(true, "playing"))
+            m.assertTrue(Prairie.LoadingSpinner.isLoading(false, "buffering"))
+            m.assertFalse(Prairie.LoadingSpinner.isLoading(false, "playing"))
+            m.assertFalse(Prairie.LoadingSpinner.isLoading(false, ""))
+        end sub
+
+        @describe("update")
+        @it("waits 500 ms before showing")
+        sub _()
+            s = Prairie.LoadingSpinner.create()
+            s = Prairie.LoadingSpinner.update(s, true, 1000)
+            m.assertFalse(s.visible)
+            m.assertEqual(s.nextCheckMs, 1500)
+            s = Prairie.LoadingSpinner.update(s, true, 1499)
+            m.assertFalse(s.visible)
+            m.assertEqual(s.loadingSinceMs, 1000)
+            s = Prairie.LoadingSpinner.update(s, true, 1500)
+            m.assertTrue(s.visible)
+            m.assertEqual(s.shownAtMs, 1500)
+            m.assertEqual(s.nextCheckMs, -1)
+            s = Prairie.LoadingSpinner.update(s, true, 1800)
+            m.assertTrue(s.visible)
+            m.assertEqual(s.shownAtMs, 1500)
+        end sub
+
+        @it("never shows for loading shorter than 500 ms")
+        sub _()
+            s = Prairie.LoadingSpinner.create()
+            s = Prairie.LoadingSpinner.update(s, true, 0)
+            s = Prairie.LoadingSpinner.update(s, false, 300)
+            m.assertFalse(s.visible)
+            m.assertEqual(s.nextCheckMs, -1)
+            m.assertEqual(s.loadingSinceMs, -1)
+            ' A new stall restarts the delay.
+            s = Prairie.LoadingSpinner.update(s, true, 400)
+            m.assertEqual(s.nextCheckMs, 900)
+        end sub
+
+        @it("stays up at least 500 ms once shown")
+        sub _()
+            s = Prairie.LoadingSpinner.create()
+            s = Prairie.LoadingSpinner.update(s, true, 0)
+            s = Prairie.LoadingSpinner.update(s, true, 600)
+            m.assertTrue(s.visible)
+            s = Prairie.LoadingSpinner.update(s, false, 700)
+            m.assertTrue(s.visible)
+            m.assertEqual(s.nextCheckMs, 1100)
+            s = Prairie.LoadingSpinner.update(s, false, 1100)
+            m.assertFalse(s.visible)
+            m.assertEqual(s.shownAtMs, -1)
+            m.assertEqual(s.nextCheckMs, -1)
+        end sub
+
+        @it("hides immediately when it has already been up 500 ms")
+        sub _()
+            s = Prairie.LoadingSpinner.create()
+            s = Prairie.LoadingSpinner.update(s, true, 0)
+            s = Prairie.LoadingSpinner.update(s, true, 500)
+            s = Prairie.LoadingSpinner.update(s, false, 2000)
+            m.assertFalse(s.visible)
+        end sub
+
+    end class
+end namespace

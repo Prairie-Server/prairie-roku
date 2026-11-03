@@ -1,0 +1,75 @@
+namespace Prairie.LoadingSpinner
+
+    ' One centered player spinner (android #696): it appears only once loading
+    ' has lasted showDelayMs, and once shown it stays up for at least
+    ' minVisibleMs so a short stall never flashes it on and off.
+
+    function showDelayMs() as integer
+        return 500
+    end function
+
+    function minVisibleMs() as integer
+        return 500
+    end function
+
+    function create() as object
+        return {
+            loading: false,
+            loadingSinceMs: -1,
+            visible: false,
+            shownAtMs: -1,
+            nextCheckMs: -1
+        }
+    end function
+
+    ' Player states that count as loading: the session request is in flight
+    ' (busy) or the Video node is buffering (startup or a stall).
+    function isLoading(busy as boolean, videoState as string) as boolean
+        if busy
+            return true
+        end if
+        return LCase(videoState) = "buffering"
+    end function
+
+    ' Advance the state for the current loading flag at nowMs. nextCheckMs is
+    ' the time the caller should call update again (-1 = nothing pending).
+    function update(state as object, loading as boolean, nowMs as integer) as object
+        nextState = {
+            loading: loading,
+            loadingSinceMs: state.loadingSinceMs,
+            visible: state.visible,
+            shownAtMs: state.shownAtMs,
+            nextCheckMs: -1
+        }
+        if loading
+            if not state.loading or nextState.loadingSinceMs < 0
+                nextState.loadingSinceMs = nowMs
+            end if
+            if nextState.visible
+                return nextState
+            end if
+            showAt = nextState.loadingSinceMs + showDelayMs()
+            if nowMs >= showAt
+                nextState.visible = true
+                nextState.shownAtMs = nowMs
+            else
+                nextState.nextCheckMs = showAt
+            end if
+            return nextState
+        end if
+
+        nextState.loadingSinceMs = -1
+        if not nextState.visible
+            return nextState
+        end if
+        hideAt = nextState.shownAtMs + minVisibleMs()
+        if nowMs >= hideAt
+            nextState.visible = false
+            nextState.shownAtMs = -1
+        else
+            nextState.nextCheckMs = hideAt
+        end if
+        return nextState
+    end function
+
+end namespace
