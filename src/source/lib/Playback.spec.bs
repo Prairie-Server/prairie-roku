@@ -25,6 +25,13 @@ namespace tests
                 qualityPreference: "720p"
             }))
             m.assertEqual(preferred.quality_preference, "720p")
+            m.assertInvalid(preferred.audio_track_index)
+            withAudio = ParseJson(Prairie.Playback.buildStartBody({
+                fileId: 9,
+                profileId: "p1",
+                audioTrackIndex: 2
+            }))
+            m.assertEqual(withAudio.audio_track_index, 2)
             m.assertEqual(body.client_playback_context.protocol_version, 3)
             m.assertEqual(body.client_playback_context.device.platform, "roku")
             m.assertEqual(body.start_position, 30)
@@ -192,6 +199,7 @@ namespace tests
             m.assertTrue(playback.is_protocol_v3)
             m.assertEqual(playback.plan_id, "plan-12345678")
             m.assertEqual(playback.plan_attempt_key, "v3:plan-12345678")
+            m.assertEqual(playback.effective_height, 0)
 
             playback.playback_attempt_id = "attempt-12345678"
             replan = ParseJson(Prairie.Playback.buildReplanBody(playback, "720p", 120.0))
@@ -213,12 +221,13 @@ namespace tests
                     stream: { url: "/api/v2/playback/transcode/s1/master.m3u8", protocol: "hls" },
                     timeline: { player_start_seconds: 120, stream_origin_seconds: 0, can_seek_anywhere: true },
                     selected_tracks: { audio: { id: "a1", index: 2 } },
-                    effective_recipe: { video_codec: "h264", audio_codec: "aac" },
+                    effective_recipe: { video_codec: "h264", audio_codec: "aac", height: 720 },
                     source: { duration_seconds: 3600 },
                     effective_media_file_id: 9
                 }
             })
             m.assertEqual(updated.plan_id, "plan-87654321")
+            m.assertEqual(updated.effective_height, 720)
             m.assertEqual(updated.play_method, "transcode")
             m.assertEqual(updated.attempted_plan_keys.count(), 2)
         end sub

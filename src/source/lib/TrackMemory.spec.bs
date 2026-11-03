@@ -1,0 +1,67 @@
+namespace tests
+    @suite("Prairie.TrackMemory")
+    class TrackMemorySuite extends rooibos.BaseTestSuite
+
+        @describe("remember and recall")
+        @it("stores the audio choice per series")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            m.assertInvalid(Prairie.TrackMemory.recall(store, "s1"))
+            m.assertInvalid(Prairie.TrackMemory.recall(store, ""))
+            Prairie.TrackMemory.rememberAudio(store, "s1", { language: "JPN" }, 2)
+            Prairie.TrackMemory.rememberAudio(store, "s2", invalid, 1)
+            Prairie.TrackMemory.rememberAudio(store, "", { language: "eng" }, 0)
+            Prairie.TrackMemory.rememberAudio(store, "s3", { language: "eng" }, -1)
+            first = Prairie.TrackMemory.recall(store, "s1")
+            m.assertEqual(first.language, "jpn")
+            m.assertEqual(first.index, 2)
+            m.assertEqual(Prairie.TrackMemory.recall(store, "s2").language, "")
+            m.assertInvalid(Prairie.TrackMemory.recall(store, "s3"))
+            Prairie.TrackMemory.rememberAudio(store, "s1", { language: "eng" }, 0)
+            m.assertEqual(Prairie.TrackMemory.recall(store, "s1").language, "eng")
+            m.assertEqual(Prairie.TrackMemory.loadAll(store).order.count(), 2)
+        end sub
+
+        @it("drops the oldest series past the cap")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            for i = 0 to Prairie.TrackMemory.maxEntries()
+                Prairie.TrackMemory.rememberAudio(store, "s" + i.toStr(), { language: "eng" }, 0)
+            end for
+            all = Prairie.TrackMemory.loadAll(store)
+            m.assertEqual(all.order.count(), Prairie.TrackMemory.maxEntries())
+            m.assertInvalid(Prairie.TrackMemory.recall(store, "s0"))
+            m.assertNotInvalid(Prairie.TrackMemory.recall(store, "s1"))
+        end sub
+
+        @it("ignores corrupt stored values")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            store.setItem(Prairie.Persist.seriesTrackPrefsKey(), "not json")
+            m.assertEqual(Prairie.TrackMemory.loadAll(store).order.count(), 0)
+            store.setItem(Prairie.Persist.seriesTrackPrefsKey(), "[1]")
+            m.assertEqual(Prairie.TrackMemory.loadAll(store).order.count(), 0)
+            store.setItem(Prairie.Persist.seriesTrackPrefsKey(), "{""order"":{}}")
+            m.assertEqual(Prairie.TrackMemory.loadAll(store).order.count(), 0)
+        end sub
+
+        @describe("resolveAudioIndex")
+        @it("matches the remembered language")
+        sub _()
+            tracks = [{ language: "eng" }, { language: "jpn" }, { language: "JPN" }]
+            m.assertInvalid(Prairie.TrackMemory.resolveAudioIndex(invalid, tracks))
+            m.assertInvalid(Prairie.TrackMemory.resolveAudioIndex({ index: 0 }, invalid))
+            m.assertInvalid(Prairie.TrackMemory.resolveAudioIndex({ index: 0 }, []))
+            m.assertEqual(Prairie.TrackMemory.resolveAudioIndex({ language: "jpn", index: 2 }, tracks), 2)
+            m.assertEqual(Prairie.TrackMemory.resolveAudioIndex({ language: "jpn", index: 0 }, tracks), 1)
+            m.assertEqual(Prairie.TrackMemory.resolveAudioIndex({ language: "jpn", index: 9 }, tracks), 1)
+            m.assertInvalid(Prairie.TrackMemory.resolveAudioIndex({ language: "fra", index: 0 }, tracks))
+            m.assertEqual(Prairie.TrackMemory.resolveAudioIndex({ language: "", index: 1 }, tracks), 1)
+            m.assertEqual(Prairie.TrackMemory.resolveAudioIndex({ index: 1 }, tracks), 1)
+            m.assertInvalid(Prairie.TrackMemory.resolveAudioIndex({ language: "" }, tracks))
+            m.assertInvalid(Prairie.TrackMemory.resolveAudioIndex({ language: "", index: 7 }, [{}, invalid]))
+            m.assertEqual(Prairie.TrackMemory.resolveAudioIndex({ language: "eng" }, [invalid, { language: "eng" }]), 1)
+        end sub
+
+    end class
+end namespace

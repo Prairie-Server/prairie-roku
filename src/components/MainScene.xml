@@ -5,6 +5,7 @@
         <Group id="screenHost" />
         <HttpTask id="httpTask" />
         <HttpTask id="progressTask" />
+        <HttpTask id="markersTask" />
         <Timer id="quickConnectTimer" repeat="false" duration="3" />
     </children>
 </component>

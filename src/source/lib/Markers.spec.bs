@@ -1,0 +1,88 @@
+namespace tests
+    @suite("Prairie.Markers")
+    class MarkersSuite extends rooibos.BaseTestSuite
+
+        @describe("filesPath")
+        @it("builds the v2 file markers path")
+        sub _()
+            m.assertEqual(Prairie.Markers.filesPath(42), "/api/v2/markers/files/42")
+        end sub
+
+        @describe("timelineFrom")
+        @it("returns an empty timeline for missing sources")
+        sub _()
+            m.assertEqual(Prairie.Markers.timelineFrom(invalid).count(), 0)
+            m.assertEqual(Prairie.Markers.timelineFrom("x").count(), 0)
+            m.assertEqual(Prairie.Markers.timelineFrom({}).count(), 0)
+        end sub
+
+        @it("reads every occurrence from marker_segments in time order")
+        sub _()
+            timeline = Prairie.Markers.timelineFrom({
+                marker_segments: [
+                    { kind: "credits", start_seconds: 2500, end_seconds: 2560 },
+                    { kind: "intro", start_seconds: 30, end_seconds: 90 },
+                    { kind: "preview", start_seconds: 2600, end_seconds: 2650 },
+                    { kind: "credits", start_seconds: 2400, end_seconds: 2450 },
+                    { kind: "recap", start_seconds: 0, end_seconds: 0 },
+                    { kind: "recap" },
+                    "bogus"
+                ],
+                credits: { start_seconds: 2400, end_seconds: 2450 }
+            })
+            m.assertEqual(timeline.count(), 3)
+            m.assertEqual(timeline[0].kind, "intro")
+            m.assertEqual(timeline[1].start, 2400)
+            m.assertEqual(timeline[2].start, 2500)
+            m.assertEqual(timeline[2]["end"], 2560)
+        end sub
+
+        @it("falls back per kind to the singular v1 and v2 fields")
+        sub _()
+            timeline = Prairie.Markers.timelineFrom({
+                marker_segments: [{ kind: "credits", start_seconds: 2400, end_seconds: 2450 }],
+                intro: { start: 10, "end": 70 },
+                recap: { start_seconds: 0, end_seconds: 8 },
+                credits: { start: 1, "end": 2 }
+            })
+            m.assertEqual(timeline.count(), 3)
+            m.assertEqual(timeline[0].kind, "recap")
+            m.assertEqual(timeline[1].kind, "intro")
+            m.assertEqual(timeline[1]["end"], 70)
+            m.assertEqual(timeline[2].kind, "credits")
+            m.assertEqual(timeline[2].start, 2400)
+        end sub
+
+        @describe("activeSegment")
+        @it("finds the range at a position, not in its last second")
+        sub _()
+            timeline = Prairie.Markers.timelineFrom({
+                marker_segments: [
+                    { kind: "intro", start_seconds: 30, end_seconds: 90 },
+                    { kind: "credits", start_seconds: 2400, end_seconds: 2450 }
+                ]
+            })
+            m.assertInvalid(Prairie.Markers.activeSegment(invalid, 40))
+            m.assertInvalid(Prairie.Markers.activeSegment(timeline, 29.5))
+            m.assertEqual(Prairie.Markers.activeSegment(timeline, 30).kind, "intro")
+            m.assertEqual(Prairie.Markers.activeSegment(timeline, 88.9).kind, "intro")
+            m.assertInvalid(Prairie.Markers.activeSegment(timeline, 89.2))
+            m.assertEqual(Prairie.Markers.activeSegment(timeline, 2420).kind, "credits")
+        end sub
+
+        @describe("labels and targets")
+        @it("labels each kind and clamps the skip to the duration")
+        sub _()
+            m.assertEqual(Prairie.Markers.skipLabel("intro"), "Skip intro")
+            m.assertEqual(Prairie.Markers.skipLabel("recap"), "Skip recap")
+            m.assertEqual(Prairie.Markers.skipLabel("credits"), "Skip credits")
+            seg = { kind: "credits", start: 2400.0, "end": 2460.0 }
+            m.assertEqual(Prairie.Markers.skipTarget(seg, 2450), 2450.0)
+            m.assertEqual(Prairie.Markers.skipTarget(seg, 3000), 2460.0)
+            m.assertEqual(Prairie.Markers.skipTarget(seg, 0), 2460.0)
+            m.assertEqual(Prairie.Markers.segmentKey(invalid), "")
+            m.assertEqual(Prairie.Markers.segmentKey(seg), "credits@2400")
+        end sub
+
+    end class
+end namespace

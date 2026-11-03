@@ -1,0 +1,156 @@
+namespace Prairie.Markers
+
+    ' Skip offered for every intro/recap/credits occurrence (android #694).
+    ' Source of truth is the server's marker_segments; the singular
+    ' intro/recap/credits fields (first occurrence only) are the fallback,
+    ' per kind, for servers or payloads that send no segments.
+
+    function filesPath(fileId as integer) as string
+        return "/api/v2/markers/files/" + fileId.toStr()
+    end function
+
+    function skippableKinds() as object
+        return ["intro", "recap", "credits"]
+    end function
+
+    function isSkippableKind(kind as string) as boolean
+        for each k in skippableKinds()
+            if k = kind
+                return true
+            end if
+        end for
+        return false
+    end function
+
+    ' Build a sorted [{kind, start, end}] timeline from a v2 FileMarkers /
+    ' WatchFileVersion (marker_segments) or a v1 watch version (singular
+    ' {start, end} markers).
+    function timelineFrom(source as dynamic) as object
+        timeline = []
+        if source = invalid or type(source) <> "roAssociativeArray"
+            return timeline
+        end if
+        present = {}
+        segments = source.marker_segments
+        if segments <> invalid and type(segments) = "roArray"
+            for each raw in segments
+                segment = segmentFrom(raw, invalid)
+                if segment <> invalid
+                    timeline.push(segment)
+                    present[segment.kind] = true
+                end if
+            end for
+        end if
+        for each kind in skippableKinds()
+            if not present.doesExist(kind)
+                segment = segmentFrom(source[kind], kind)
+                if segment <> invalid
+                    timeline.push(segment)
+                end if
+            end if
+        end for
+        return sortByStart(timeline)
+    end function
+
+    function sortByStart(segments as object) as object
+        sorted = []
+        for each segment in segments
+            inserted = false
+            for i = 0 to sorted.count() - 1
+                if (segment.start as float) < (sorted[i].start as float)
+                    sorted = insertAt(sorted, i, segment)
+                    inserted = true
+                    exit for
+                end if
+            end for
+            if not inserted
+                sorted.push(segment)
+            end if
+        end for
+        return sorted
+    end function
+
+    function insertAt(items as object, index as integer, value as object) as object
+        result = []
+        for i = 0 to items.count() - 1
+            if i = index
+                result.push(value)
+            end if
+            result.push(items[i])
+        end for
+        return result
+    end function
+
+    function segmentFrom(raw as dynamic, kindOverride as dynamic) as dynamic
+        if raw = invalid or type(raw) <> "roAssociativeArray"
+            return invalid
+        end if
+        kind = ""
+        if kindOverride <> invalid
+            kind = kindOverride as string
+        else if raw.kind <> invalid
+            kind = LCase(raw.kind as string)
+        end if
+        if not isSkippableKind(kind)
+            return invalid
+        end if
+        startValue = raw.start_seconds
+        if startValue = invalid
+            startValue = raw.start
+        end if
+        endValue = raw.end_seconds
+        if endValue = invalid
+            endValue = raw["end"]
+        end if
+        if startValue = invalid or endValue = invalid
+            return invalid
+        end if
+        startSeconds = startValue as float
+        endSeconds = endValue as float
+        if startSeconds < 0 or endSeconds <= startSeconds
+            return invalid
+        end if
+        return { kind: kind, start: startSeconds, "end": endSeconds }
+    end function
+
+    ' The segment playing at positionSeconds, or invalid. The skip is not
+    ' offered in the final second of a range (it would land on the same frame).
+    function activeSegment(timeline as dynamic, positionSeconds as float) as dynamic
+        if timeline = invalid
+            return invalid
+        end if
+        for each segment in timeline
+            if positionSeconds >= (segment.start as float) and positionSeconds < (segment["end"] as float) - 1
+                return segment
+            end if
+        end for
+        return invalid
+    end function
+
+    function skipLabel(kind as string) as string
+        if kind = "intro"
+            return "Skip intro"
+        else if kind = "recap"
+            return "Skip recap"
+        end if
+        return "Skip credits"
+    end function
+
+    ' Where a skip lands: the end of its own range, kept inside the file.
+    function skipTarget(segment as object, durationSeconds as float) as float
+        target = segment["end"] as float
+        if durationSeconds > 0 and target > durationSeconds
+            target = durationSeconds
+        end if
+        return target
+    end function
+
+    ' Stable key so the player only repaints when the active range changes.
+    function segmentKey(segment as dynamic) as string
+        if segment = invalid
+            return ""
+        end if
+        return (segment.kind as string) + "@" + Str(segment.start as float).trim()
+    end function
+
+end namespace

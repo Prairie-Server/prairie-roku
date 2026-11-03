@@ -80,6 +80,10 @@ namespace Prairie.Playback
         if input.startPosition <> invalid and (input.startPosition as float) > 0
             body.start_position = input.startPosition as float
         end if
+        ' Remembered per-series audio choice (index into the version audio_tracks).
+        if input.audioTrackIndex <> invalid and (input.audioTrackIndex as integer) >= 0
+            body.audio_track_index = input.audioTrackIndex as integer
+        end if
         return FormatJson(body)
     end function
 
@@ -215,6 +219,7 @@ namespace Prairie.Playback
         canSeekAnywhere = false
         videoCodec = invalid
         audioCodec = invalid
+        effectiveHeight = 0
         if plan.timeline <> invalid and plan.timeline.can_seek_anywhere = true
             canSeekAnywhere = true
         end if
@@ -224,6 +229,9 @@ namespace Prairie.Playback
             end if
             if plan.effective_recipe.audio_codec <> invalid
                 audioCodec = plan.effective_recipe.audio_codec
+            end if
+            if plan.effective_recipe.height <> invalid
+                effectiveHeight = plan.effective_recipe.height as integer
             end if
         end if
         return {
@@ -235,6 +243,7 @@ namespace Prairie.Playback
             stream_url: streamUrl,
             audio_track_index: audioIndex,
             duration_seconds: duration,
+            effective_height: effectiveHeight,
             playback_info: {
                 stream_type: streamProtocol,
                 can_seek_anywhere: canSeekAnywhere,

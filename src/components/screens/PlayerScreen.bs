@@ -1,6 +1,9 @@
 import "pkg:/source/lib/Theme.bs"
 import "pkg:/source/lib/Trickplay.bs"
 import "pkg:/source/lib/ArtworkUrl.bs"
+import "pkg:/source/lib/LoadingSpinner.bs"
+import "pkg:/source/lib/Markers.bs"
+import "pkg:/source/lib/BufferingQuality.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -34,11 +37,37 @@ sub init()
     m.qualityTitle.color = colors.amber
     m.qualityList.color = colors.ink
 
+    m.skipGroup = m.top.findNode("skipGroup")
+    m.skipLabel = m.top.findNode("skipLabel")
+    m.qualityPill = m.top.findNode("qualityPill")
+    m.qualityPillLabel = m.top.findNode("qualityPillLabel")
+    m.spinner = m.top.findNode("spinner")
+    m.spinnerTimer = m.top.findNode("spinnerTimer")
+    m.stallTimer = m.top.findNode("stallTimer")
+    m.qualityPillTimer = m.top.findNode("qualityPillTimer")
+    m.skipBg = m.top.findNode("skipBg")
+    m.skipBg.color = colors.ink
+    m.skipLabel.color = colors.bg
+    m.qualityPillLabel.color = colors.ink
+
+    ' Our spinner is the only loading indicator: hide the Video node's own bars.
+    m.video.retrievingBarVisibilityAuto = false
+    m.video.bufferingBarVisibilityAuto = false
+    m.spinner.poster.uri = "pkg:/images/spinner.png"
+    m.spinner.poster.width = 96
+    m.spinner.poster.height = 96
+
     m.started = false
     m.showStats = false
     m.qualityMenuOpen = false
     m.qualityIndex = 0
     m.previewScale = 1.0
+    m.clock = CreateObject("roTimespan")
+    m.spinnerState = Prairie.LoadingSpinner.create()
+    m.buffering = Prairie.BufferingQuality.create(nowMs())
+    m.autoLowered = false
+    m.activeSkip = invalid
+    m.activeSkipKey = ""
 
     m.top.observeField("streamUrl", "onStreamUrl")
     m.top.observeField("titleText", "onTitleText")
@@ -56,7 +85,148 @@ sub init()
     m.progressTimer.observeField("fire", "onProgressFire")
     m.seekPreviewTimer.observeField("fire", "onSeekPreviewHide")
     m.statsTimer.observeField("fire", "refreshStats")
+    m.top.observeField("markerSegments", "refreshSkip")
+    m.spinnerTimer.observeField("fire", "refreshSpinner")
+    m.stallTimer.observeField("fire", "onStallTick")
+    m.qualityPillTimer.observeField("fire", "onQualityPillHide")
 end sub
+
+function nowMs() as integer
+    return m.clock.TotalMilliseconds()
+end function
+
+' ---- Loading spinner -------------------------------------------------------
+
+sub refreshSpinner()
+    videoState = ""
+    if m.video <> invalid and m.video.state <> invalid
+        videoState = m.video.state
+    end if
+    now = nowMs()
+    loading = Prairie.LoadingSpinner.isLoading(m.top.busy, videoState)
+    m.spinnerState = Prairie.LoadingSpinner.update(m.spinnerState, loading, now)
+    if m.spinnerState.visible <> m.spinner.visible
+        m.spinner.visible = m.spinnerState.visible
+        if m.spinnerState.visible
+            m.spinner.control = "start"
+        else
+            m.spinner.control = "stop"
+        end if
+    end if
+    m.spinnerTimer.control = "stop"
+    if m.spinnerState.nextCheckMs >= 0
+        waitMs = m.spinnerState.nextCheckMs - now
+        if waitMs < 1
+            waitMs = 1
+        end if
+        m.spinnerTimer.duration = waitMs / 1000.0
+        m.spinnerTimer.control = "start"
+    end if
+end sub
+
+' ---- Skip intro / recap / credits ------------------------------------------
+
+sub refreshSkip()
+    segment = Prairie.Markers.activeSegment(m.top.markerSegments, m.top.positionSeconds)
+    key = Prairie.Markers.segmentKey(segment)
+    if key = m.activeSkipKey
+        return
+    end if
+    m.activeSkipKey = key
+    m.activeSkip = segment
+    if segment = invalid
+        m.skipGroup.visible = false
+        return
+    end if
+    m.skipLabel.text = Prairie.Markers.skipLabel(segment.kind as string) + "  ·  OK"
+    m.skipGroup.visible = true
+end sub
+
+sub skipActiveSegment()
+    if m.activeSkip = invalid
+        return
+    end if
+    target = Prairie.Markers.skipTarget(m.activeSkip, m.video.duration)
+    m.activeSkip = invalid
+    m.skipGroup.visible = false
+    Prairie.BufferingQuality.onSeek(m.buffering, nowMs())
+    m.video.seek = target
+    m.top.seekDelta = CInt(target - m.top.positionSeconds)
+end sub
+
+' ---- Buffering quality (Auto steps down after repeated stalls) -------------
+
+sub onBufferingState(videoState as string)
+    now = nowMs()
+    if videoState = "playing"
+        Prairie.BufferingQuality.onPlaying(m.buffering, now)
+        m.stallTimer.control = "stop"
+    else if videoState = "buffering"
+        if Prairie.BufferingQuality.onBuffering(m.buffering, now)
+            m.stallTimer.control = "start"
+            evaluateQualityStepDown()
+        end if
+    else
+        m.stallTimer.control = "stop"
+    end if
+end sub
+
+sub onStallTick()
+    if m.video.state <> "buffering"
+        m.stallTimer.control = "stop"
+        return
+    end if
+    evaluateQualityStepDown()
+end sub
+
+sub evaluateQualityStepDown()
+    autoInCharge = LCase(m.top.activeQualityId) = "auto" or m.autoLowered
+    now = nowMs()
+    if not Prairie.BufferingQuality.shouldLower(m.buffering, now, autoInCharge)
+        return
+    end if
+    nextId = Prairie.BufferingQuality.nextLowerQualityId(m.top.qualityOptions, m.top.activeQualityId, m.top.effectiveHeight)
+    if nextId = invalid
+        return
+    end if
+    m.autoLowered = true
+    m.stallTimer.control = "stop"
+    Prairie.BufferingQuality.onQualityChanged(m.buffering, now)
+    m.qualityPillLabel.text = "Buffering · lowered quality to " + qualityLabel(nextId as string) + " · ▼ Restore"
+    m.qualityPill.visible = true
+    m.qualityPillTimer.control = "stop"
+    m.qualityPillTimer.control = "start"
+    m.top.autoQualityRequested = nextId as string
+end sub
+
+sub restoreAutoQuality()
+    m.autoLowered = false
+    Prairie.BufferingQuality.onQualityChanged(m.buffering, nowMs())
+    hideQualityPill()
+    m.top.autoQualityRequested = "auto"
+end sub
+
+sub hideQualityPill()
+    m.qualityPillTimer.control = "stop"
+    m.qualityPill.visible = false
+end sub
+
+sub onQualityPillHide()
+    m.qualityPill.visible = false
+    refreshStatus()
+end sub
+
+function qualityLabel(qualityId as string) as string
+    options = m.top.qualityOptions
+    if options <> invalid
+        for each opt in options
+            if opt <> invalid and (opt.id as string) = qualityId
+                return opt.label as string
+            end if
+        end for
+    end if
+    return qualityId
+end function
 
 sub onTitleText()
     m.title.text = m.top.titleText
@@ -71,6 +241,7 @@ sub onBusy()
     if m.top.busy
         m.status.text = "Starting playback…"
     end if
+    refreshSpinner()
 end sub
 
 sub onStreamUrl()
@@ -87,6 +258,7 @@ sub onStreamUrl()
     m.video.content = content
     m.video.control = "play"
     m.started = true
+    Prairie.BufferingQuality.onSourceStart(m.buffering, nowMs())
     m.progressTimer.control = "start"
     m.top.isPaused = false
     refreshStatus()
@@ -135,6 +307,10 @@ sub stopPlayback()
     m.progressTimer.control = "stop"
     m.statsTimer.control = "stop"
     m.seekPreviewTimer.control = "stop"
+    m.spinnerTimer.control = "stop"
+    m.stallTimer.control = "stop"
+    m.qualityPillTimer.control = "stop"
+    m.spinner.control = "stop"
     if m.video <> invalid
         m.video.control = "stop"
     end if
@@ -142,6 +318,7 @@ end sub
 
 sub onPosition()
     m.top.positionSeconds = m.video.position
+    refreshSkip()
     refreshStatus()
 end sub
 
@@ -157,6 +334,7 @@ sub onVideoState()
         if m.top.startPosition > 0 and m.started
             ' Seek once after start when resume is requested.
             if m.video.position < 1 and m.top.startPosition > 1
+                Prairie.BufferingQuality.onSeek(m.buffering, nowMs())
                 m.video.seek = m.top.startPosition
             end if
         end if
@@ -165,6 +343,8 @@ sub onVideoState()
     else if state = "finished" or state = "error"
         m.top.exitRequested = true
     end if
+    onBufferingState(state)
+    refreshSpinner()
     refreshStatus()
     refreshStats()
 end sub
@@ -183,7 +363,11 @@ sub refreshStatus()
     if qualityHint.len() = 0
         qualityHint = "—"
     end if
-    m.status.text = pauseLabel + " · " + positionSec.toStr() + "s / " + durationSec.toStr() + "s · ↑ quality · ★ audio · replay stats · ←/→ ±15s · Back exits · " + qualityHint
+    restoreHint = ""
+    if m.autoLowered
+        restoreHint = " · ▼ restore Auto"
+    end if
+    m.status.text = pauseLabel + " · " + positionSec.toStr() + "s / " + durationSec.toStr() + "s · ↑ quality · ★ audio · replay stats · ←/→ ±15s · Back exits · " + qualityHint + restoreHint
 end sub
 
 sub onProgressFire()
@@ -199,6 +383,7 @@ sub seekBy(delta as integer)
     if duration > 0 and nextPos > duration
         nextPos = duration
     end if
+    Prairie.BufferingQuality.onSeek(m.buffering, nowMs())
     m.video.seek = nextPos
     m.top.seekDelta = delta
     showSeekPreview(nextPos)
@@ -367,6 +552,10 @@ sub selectQualityAtIndex()
     if opt = invalid or opt.id = invalid
         return
     end if
+    ' A manual pick takes over from the buffering step-down.
+    m.autoLowered = false
+    hideQualityPill()
+    Prairie.BufferingQuality.onQualityChanged(m.buffering, nowMs())
     m.top.qualityChangeRequested = opt.id as string
     closeQualityMenu()
 end sub
@@ -413,6 +602,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if key = "replay" or key = "info"
         toggleStats()
+        return true
+    end if
+    if key = "OK" and m.activeSkip <> invalid
+        skipActiveSegment()
+        return true
+    end if
+    if key = "down" and m.autoLowered
+        restoreAutoQuality()
+        refreshStatus()
         return true
     end if
     if key = "OK" or key = "play"

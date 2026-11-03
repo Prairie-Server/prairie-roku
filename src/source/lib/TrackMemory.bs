@@ -1,0 +1,105 @@
+import "pkg:/source/lib/Persist.bs"
+
+namespace Prairie.TrackMemory
+
+    ' Remember the audio track picked while watching a series so the next
+    ' episode starts on the same language (android #680). Stored in the
+    ' registry as { order: [seriesId…], entries: { seriesId: {language, index} } },
+    ' capped so the 16 KB channel registry never fills up.
+
+    function maxEntries() as integer
+        return 50
+    end function
+
+    function loadAll(store as object) as object
+        empty = { order: [], entries: {} }
+        raw = store.getItem(Prairie.Persist.seriesTrackPrefsKey())
+        if raw = invalid
+            return empty
+        end if
+        parsed = ParseJson(raw as string)
+        if parsed = invalid or type(parsed) <> "roAssociativeArray"
+            return empty
+        end if
+        if type(parsed.order) <> "roArray" or type(parsed.entries) <> "roAssociativeArray"
+            return empty
+        end if
+        return parsed
+    end function
+
+    function recall(store as object, seriesId as string) as dynamic
+        if seriesId.len() = 0
+            return invalid
+        end if
+        all = loadAll(store)
+        if not all.entries.doesExist(seriesId)
+            return invalid
+        end if
+        return all.entries[seriesId]
+    end function
+
+    sub rememberAudio(store as object, seriesId as string, track as dynamic, index as integer)
+        if seriesId.len() = 0 or index < 0
+            return
+        end if
+        language = ""
+        if track <> invalid and track.language <> invalid
+            language = LCase(track.language as string)
+        end if
+        all = loadAll(store)
+        order = []
+        for each id in all.order
+            if id <> seriesId
+                order.push(id)
+            end if
+        end for
+        order.push(seriesId)
+        entries = all.entries
+        entries[seriesId] = { language: language, index: index }
+        while order.count() > maxEntries()
+            dropped = order.shift()
+            entries.delete(dropped)
+        end while
+        store.setItem(Prairie.Persist.seriesTrackPrefsKey(), FormatJson({ order: order, entries: entries }))
+    end sub
+
+    ' Pick the audio index for a remembered choice: the same language (the
+    ' remembered index first when it still has that language), otherwise the
+    ' remembered index when the language is unknown. invalid = server default.
+    function resolveAudioIndex(remembered as dynamic, tracks as dynamic) as dynamic
+        if remembered = invalid or tracks = invalid or type(tracks) <> "roArray" or tracks.count() = 0
+            return invalid
+        end if
+        index = -1
+        if remembered.index <> invalid
+            index = remembered.index as integer
+        end if
+        language = ""
+        if remembered.language <> invalid
+            language = LCase(remembered.language as string)
+        end if
+        if language.len() = 0
+            if index >= 0 and index < tracks.count()
+                return index
+            end if
+            return invalid
+        end if
+        if index >= 0 and index < tracks.count() and trackLanguage(tracks[index]) = language
+            return index
+        end if
+        for i = 0 to tracks.count() - 1
+            if trackLanguage(tracks[i]) = language
+                return i
+            end if
+        end for
+        return invalid
+    end function
+
+    function trackLanguage(track as dynamic) as string
+        if track = invalid or track.language = invalid
+            return ""
+        end if
+        return LCase(track.language as string)
+    end function
+
+end namespace
