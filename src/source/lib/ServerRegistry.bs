@@ -131,7 +131,8 @@ namespace Prairie.ServerRegistry
         return registry
     end function
 
-    sub save(registry as object, store as object)
+    ' Returns false when the store could not save the registry.
+    function save(registry as object, store as object) as boolean
         payload = {
             activeServerId: "",
             entries: [],
@@ -154,8 +155,9 @@ namespace Prairie.ServerRegistry
         if type(registry.scanCidrs) = "roArray"
             payload.scanCidrs = registry.scanCidrs
         end if
-        store.setItem(registryKey(), FormatJson(payload))
-    end sub
+        saved = store.setItem(registryKey(), FormatJson(payload))
+        return saved = true
+    end function
 
     function findIndex(registry as object, serverId as string) as integer
         if registry = invalid or type(registry.entries) <> "roArray"
@@ -274,6 +276,42 @@ namespace Prairie.ServerRegistry
             end if
         end if
         return registry
+    end function
+
+    ' True when this TV once finished a sign-in on the entry (a profile was
+    ' remembered for it); discovered or typed servers carry no username.
+    function wasSignedIn(entry as dynamic) as boolean
+        if entry = invalid or entry.username = invalid
+            return false
+        end if
+        return (entry.username as string).trim().len() > 0
+    end function
+
+    ' "Change server" on the sign-in screen: forget the server at url when
+    ' this TV never signed in to it, so it stops reopening as the active one.
+    ' Returns { registry, removed, saved }.
+    function forgetIfNeverSignedIn(registry as object, store as object, url as string) as object
+        result = {
+            registry: registry,
+            removed: false,
+            saved: true
+        }
+        entry = findByUrl(registry, url)
+        if entry = invalid or wasSignedIn(entry)
+            return result
+        end if
+        result.registry = remove(registry, entry.id)
+        result.removed = true
+        result.saved = save(result.registry, store)
+        if result.saved
+            nextUrl = ""
+            idx = findIndex(result.registry, result.registry.activeServerId)
+            if idx >= 0
+                nextUrl = result.registry.entries[idx].url
+            end if
+            Prairie.Persist.forgetLastServerUrl(entry.url, nextUrl, store)
+        end if
+        return result
     end function
 
     function switchTo(registry as object, serverId as string) as object

@@ -1,18 +1,25 @@
 namespace Prairie.Store
 
     ' In-memory store for unit tests (and any non-registry callers).
+    ' Set failWrites to true to make setItem report a failed save.
     function createMemoryStore() as object
         return {
             values: {},
+            failWrites: false,
             getItem: function(key as string) as dynamic
                 if m.values.doesExist(key)
                     return m.values[key]
                 end if
                 return invalid
             end function,
-            setItem: sub(key as string, value as string)
+            ' True when the value was saved.
+            setItem: function(key as string, value as string) as boolean
+                if m.failWrites = true
+                    return false
+                end if
                 m.values[key] = value
-            end sub,
+                return true
+            end function,
             removeItem: sub(key as string)
                 if m.values.doesExist(key)
                     m.values.delete(key)
@@ -32,10 +39,13 @@ namespace Prairie.Store
                 end if
                 return invalid
             end function,
-            setItem: sub(key as string, value as string)
-                m.section.write(key, value)
-                m.section.flush()
-            end sub,
+            ' True when the value was written and flushed to the registry.
+            setItem: function(key as string, value as string) as boolean
+                if not m.section.write(key, value)
+                    return false
+                end if
+                return m.section.flush()
+            end function,
             removeItem: sub(key as string)
                 if m.section.exists(key)
                     m.section.delete(key)
