@@ -1,0 +1,64 @@
+namespace tests
+    @suite("Prairie.WatchedState")
+    class WatchedStateSuite extends rooibos.BaseTestSuite
+
+        @describe("isWatched")
+        @it("reads user_state, played and watched")
+        sub _()
+            m.assertTrue(Prairie.WatchedState.isWatched({ user_state: { played: true } }))
+            m.assertFalse(Prairie.WatchedState.isWatched({ user_state: { played: false } }))
+            m.assertTrue(Prairie.WatchedState.isWatched({ played: true }))
+            m.assertTrue(Prairie.WatchedState.isWatched({ watched: true }))
+            m.assertFalse(Prairie.WatchedState.isWatched({}))
+            m.assertFalse(Prairie.WatchedState.isWatched(invalid))
+            m.assertFalse(Prairie.WatchedState.isWatched("x"))
+        end sub
+
+        @it("sets the flag on a copy")
+        sub _()
+            item = { id: "m1", user_state: { played: false, is_favorite: true }, watched: false }
+            updated = Prairie.WatchedState.withWatched(item, true)
+            m.assertTrue(updated.user_state.played)
+            m.assertTrue(updated.user_state.is_favorite)
+            m.assertTrue(updated.watched)
+            m.assertFalse(item.user_state.played)
+            m.assertFalse(updated.doesExist("played"))
+            plain = Prairie.WatchedState.withWatched({ id: "m2", played: true }, false)
+            m.assertFalse(plain.played)
+            m.assertFalse(plain.user_state.played)
+        end sub
+
+        @describe("request")
+        @it("POSTs to mark watched and DELETEs to mark unwatched")
+        sub _()
+            options = { serverUrl: "https://a.example", accessToken: "at", profileId: "p1" }
+            req = Prairie.WatchedState.buildRequest(options, "m 1", true)
+            m.assertEqual(req.method, "POST")
+            m.assertEqual(req.url, "https://a.example/api/v2/watched/m%201")
+            m.assertEqual(req.headers["X-Profile-Id"], "p1")
+            m.assertEqual(Prairie.WatchedState.buildRequest(options, "m1", false).method, "DELETE")
+        end sub
+
+        @describe("copy")
+        @it("labels the action and the failure")
+        sub _()
+            m.assertEqual(Prairie.WatchedState.actionLabel(false), "Mark as Watched")
+            m.assertEqual(Prairie.WatchedState.actionLabel(true), "Mark as Unwatched")
+            actions = Prairie.WatchedState.cardActions(true, false)
+            labels = Prairie.WatchedState.cardActionLabels(actions)
+            m.assertEqual(labels.count(), 2)
+            m.assertEqual(labels[0], "Mark as Unwatched")
+            m.assertEqual(labels[1], "Cancel")
+            home = Prairie.WatchedState.cardActions(false, true)
+            m.assertEqual(Prairie.WatchedState.cardActionLabels(home)[1], "Libraries")
+            m.assertEqual(Prairie.WatchedState.cardActionAt(home, 0), "watched")
+            m.assertEqual(Prairie.WatchedState.cardActionAt(home, 1), "libraries")
+            m.assertEqual(Prairie.WatchedState.cardActionAt(home, 2), "cancel")
+            m.assertEqual(Prairie.WatchedState.cardActionAt(home, 3), "cancel")
+            m.assertEqual(Prairie.WatchedState.cardActionAt(home, -1), "cancel")
+            m.assertEqual(Prairie.WatchedState.failureMessage(true, { body: { message: "Item not found" } }), "Couldn't mark as watched. Item not found")
+            m.assertEqual(Prairie.WatchedState.failureMessage(false, { status: 0 }), "Couldn't mark as unwatched. Try again.")
+        end sub
+
+    end class
+end namespace

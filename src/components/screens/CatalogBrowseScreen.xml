@@ -9,6 +9,7 @@
         <field id="errorText" type="string" value="" />
         <field id="selectedContentId" type="string" value="" alwaysNotify="true" />
         <field id="loadMoreRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="cardOptionsRequested" type="assocarray" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>

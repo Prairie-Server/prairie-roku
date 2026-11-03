@@ -29,6 +29,12 @@ sub init()
     m.changelogBg = m.top.findNode("changelogBg")
     m.changelogLabel = m.top.findNode("changelogLabel")
     m.changelogHint = m.top.findNode("changelogHint")
+    m.profileSelectionLabel = m.top.findNode("profileSelectionLabel")
+    m.profileAutoBg = m.top.findNode("profileAutoBg")
+    m.profileAutoLabel = m.top.findNode("profileAutoLabel")
+    m.profileEveryBg = m.top.findNode("profileEveryBg")
+    m.profileEveryLabel = m.top.findNode("profileEveryLabel")
+    m.profileSelectionHint = m.top.findNode("profileSelectionHint")
 
     m.colors = colors
     m.eyebrow.color = colors.amber
@@ -50,6 +56,8 @@ sub init()
     m.changelogBg.color = colors.bgSoft
     m.changelogLabel.color = colors.ink
     m.changelogHint.color = colors.muted
+    m.profileSelectionLabel.color = colors.amber
+    m.profileSelectionHint.color = colors.muted
 
     m.top.observeField("forceDirectPlay", "refreshMethodChrome")
     m.top.observeField("forceTranscode", "refreshMethodChrome")
@@ -58,8 +66,20 @@ sub init()
     m.top.observeField("updateLabel", "onAboutFields")
     m.top.observeField("latestVersionLabel", "onAboutFields")
     m.top.observeField("changelogUrl", "onAboutFields")
+    m.top.observeField("profileSelection", "refreshProfileSelection")
+    m.top.observeField("profileSelectionDescription", "refreshProfileSelection")
     refreshMethodChrome()
+    refreshProfileSelection()
     onAboutFields()
+end sub
+
+' Automatic opens the last profile picked on this Roku; Every Time shows
+' Who's Watching at each start. MainScene saves the choice right away.
+sub refreshProfileSelection()
+    automatic = m.top.profileSelection <> "askEveryLaunch"
+    paintOption(m.profileAutoBg, m.profileAutoLabel, automatic)
+    paintOption(m.profileEveryBg, m.profileEveryLabel, not automatic)
+    m.profileSelectionHint.text = m.top.profileSelectionDescription
 end sub
 
 sub onPreferredLang()
@@ -180,6 +200,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.changelogBg.isInFocusChain()
             showChangelogUrl()
             return true
+        else if m.profileAutoBg.isInFocusChain()
+            m.top.profileSelectionChosen = "automatic"
+            return true
+        else if m.profileEveryBg.isInFocusChain()
+            m.top.profileSelectionChosen = "askEveryLaunch"
+            return true
         end if
     end if
     if key = "right"
@@ -189,12 +215,24 @@ function onKeyEvent(key as string, press as boolean) as boolean
         else if m.directBg.isInFocusChain()
             m.transcodeBg.setFocus(true)
             return true
+        else if m.transcodeBg.isInFocusChain()
+            m.profileAutoBg.setFocus(true)
+            return true
+        else if m.profileAutoBg.isInFocusChain()
+            m.profileEveryBg.setFocus(true)
+            return true
         else if m.saveBg.isInFocusChain()
             m.serversBg.setFocus(true)
             return true
         end if
     else if key = "left"
-        if m.transcodeBg.isInFocusChain()
+        if m.profileEveryBg.isInFocusChain()
+            m.profileAutoBg.setFocus(true)
+            return true
+        else if m.profileAutoBg.isInFocusChain()
+            m.transcodeBg.setFocus(true)
+            return true
+        else if m.transcodeBg.isInFocusChain()
             m.directBg.setFocus(true)
             return true
         else if m.directBg.isInFocusChain()
@@ -205,7 +243,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     else if key = "down"
-        if m.autoBg.isInFocusChain() or m.directBg.isInFocusChain() or m.transcodeBg.isInFocusChain()
+        if m.autoBg.isInFocusChain() or m.directBg.isInFocusChain() or m.transcodeBg.isInFocusChain() or m.profileAutoBg.isInFocusChain() or m.profileEveryBg.isInFocusChain()
             m.subtitleInput.setFocus(true)
             return true
         else if m.subtitleInput.isInFocusChain()

@@ -78,5 +78,19 @@ namespace tests
             m.assertEqual(result.notice, "")
         end sub
 
+        @describe("saved session")
+        @it("both choices forget the saved session for that server only")
+        sub _()
+            for each removeServer in [false, true]
+                store = Prairie.Store.createMemoryStore()
+                registry = m.seededRegistry(store)
+                Prairie.Credentials.remember(store, "https://a.example", "rt-a", "jo")
+                Prairie.Credentials.remember(store, "https://b.example", "rt-b", "jo")
+                Prairie.SignOut.finish(registry, store, "https://a.example", removeServer)
+                m.assertInvalid(Prairie.Credentials.forServer(store, "https://a.example"))
+                m.assertNotInvalid(Prairie.Credentials.forServer(store, "https://b.example"))
+            end for
+        end sub
+
     end class
 end namespace

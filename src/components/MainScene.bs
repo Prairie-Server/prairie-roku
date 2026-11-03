@@ -24,6 +24,9 @@ import "pkg:/source/lib/ServerRegistry.bs"
 import "pkg:/source/lib/ServerAddress.bs"
 import "pkg:/source/lib/SignIn.bs"
 import "pkg:/source/lib/SignOut.bs"
+import "pkg:/source/lib/Credentials.bs"
+import "pkg:/source/lib/ProfileLaunch.bs"
+import "pkg:/source/lib/WatchedState.bs"
 import "pkg:/source/lib/Discover.bs"
 import "pkg:/source/lib/AppUpdate.bs"
 
@@ -104,6 +107,14 @@ sub init()
     m.quickConnectServerUrl = ""
     m.quickConnectInterval = 3
     m.playbackRoute = "v2"
+    m.profileLaunch = Prairie.ProfileLaunch.load(m.store)
+    m.resume = invalid
+    m.rememberOfferDialog = invalid
+    m.watchedWrites = {}
+    m.watchedGeneration = 0
+    m.cardOptions = invalid
+    m.cardOptionsDialog = invalid
+    m.cardActions = []
 
     ' If the persisted session blob exists but tokens are missing, treat the
     ' user as logged out and route to the login/connect flow.
@@ -118,9 +129,111 @@ sub init()
 
     if m.session <> invalid and Prairie.Session.hasAccessToken(m.session)
         showHome()
-    else
+    else if not resumeSavedSession(startupServerUrl())
         showConnect()
     end if
+end sub
+
+' The server this TV last used: the active saved server, else the last URL.
+function startupServerUrl() as string
+    idx = Prairie.ServerRegistry.findIndex(m.registry, m.registry.activeServerId)
+    if idx >= 0
+        return m.registry.entries[idx].url as string
+    end if
+    return Prairie.Persist.loadLastServerUrl(m.store)
+end function
+
+function serverDisplayName(url as string) as string
+    entry = Prairie.ServerRegistry.findByUrl(m.registry, url)
+    if entry <> invalid and entry.fetchedName <> invalid and (entry.fetchedName as string).trim().len() > 0
+        return (entry.fetchedName as string).trim()
+    end if
+    return url
+end function
+
+' A saved session for url skips sign-in, as on Android TV / Apple TV: renew
+' it with the refresh token, then Who's Watching (or the remembered profile).
+' False when this TV has no saved session for url.
+function resumeSavedSession(url as string) as boolean
+    if url.len() = 0
+        return false
+    end if
+    saved = Prairie.Credentials.forServer(m.store, url)
+    if saved = invalid
+        return false
+    end if
+    m.session = invalid
+    m.auth = invalid
+    showProfiles("")
+    m.resume = {
+        serverUrl: url,
+        username: saved.username
+    }
+    m.screen.username = saved.username
+    m.screen.busy = true
+    m.pending = "sessionRefresh"
+    m.httpTask.request = Prairie.Api.buildRequest({ serverUrl: url }, Prairie.Credentials.refreshPath(), "POST", Prairie.Credentials.buildRefreshBody(saved.refreshToken))
+    m.httpTask.control = "RUN"
+    return true
+end function
+
+' A renewed session loads the profiles. A session the server rejects is
+' forgotten; one that can't be checked (network) is kept for the next try.
+' Either way the sign-in screen explains what happened.
+sub onSessionRefreshResponse(response as object)
+    target = m.resume
+    if target = invalid
+        return
+    end if
+    if response.ok = true
+        renewed = Prairie.Credentials.parseRefresh(response.data)
+        if renewed.ok
+            ' The server rotates the refresh token: keep the new one at once.
+            if renewed.refreshToken.len() > 0
+                Prairie.Credentials.remember(m.store, target.serverUrl, renewed.refreshToken, target.username)
+            end if
+            m.auth = {
+                serverUrl: target.serverUrl,
+                accessToken: renewed.accessToken,
+                username: target.username,
+                refreshToken: renewed.refreshToken
+            }
+            Prairie.Persist.saveLastServerUrl(target.serverUrl, m.store)
+            loadProfiles()
+            return
+        end if
+    end if
+    status = 0
+    if response.ok <> true and response.error <> invalid and response.error.status <> invalid
+        status = response.error.status as integer
+    end if
+    rejected = Prairie.Credentials.isSessionRejected(status)
+    if rejected
+        Prairie.Credentials.forget(m.store, target.serverUrl)
+    end if
+    m.resume = invalid
+    m.connectPrefillUrl = target.serverUrl
+    m.connectNotice = Prairie.Credentials.resumeFailedMessage(serverDisplayName(target.serverUrl), rejected)
+    showConnect()
+end sub
+
+' After a resumed session's profiles load: Automatic opens the profile last
+' picked on this server. A profile with a PIN still asks for it.
+sub autoOpenRememberedProfile(url as string, profiles as object)
+    remembered = ""
+    entry = Prairie.ServerRegistry.findByUrl(m.registry, url)
+    if entry <> invalid and entry.profileId <> invalid
+        remembered = entry.profileId as string
+    end if
+    pick = Prairie.ProfileLaunch.autoOpen(m.profileLaunch, profiles, remembered)
+    if pick = invalid
+        return
+    end if
+    if pick.needsPin
+        askProfilePin(pick.profile)
+        return
+    end if
+    finishProfile(pick.profile, invalid)
 end sub
 
 function sessionFromActiveRegistry() as dynamic
@@ -140,6 +253,7 @@ sub clearScreen()
     ' Drop any cached login body (password) when leaving the connect flow.
     m.serverProbe = invalid
     m.pinProfile = invalid
+    m.resume = invalid
     while m.screenHost.getChildCount() > 0
         m.screenHost.removeChildIndex(0)
     end while
@@ -439,7 +553,8 @@ sub applyQuickConnectLogin(data as object)
     m.auth = {
         serverUrl: m.quickConnectServerUrl,
         accessToken: data.accessToken as string,
-        username: username
+        username: username,
+        refreshToken: data.refreshToken
     }
     Prairie.Persist.saveLastServerUrl(m.quickConnectServerUrl, m.store)
     stopQuickConnect()
@@ -614,6 +729,7 @@ sub showHome()
         m.homeReturnFocus = invalid
     end if
     screen.observeField("selectedContentId", "onHomeItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("exploreSection", "onHomeExploreSection")
     screen.observeField("navRequested", "onHomeNavRequested")
     screen.observeField("openLibraries", "onOpenLibraries")
@@ -723,6 +839,9 @@ sub showSettings()
     screen.appVersion = appVersion
     checking = Prairie.AppUpdate.checkingStatus()
     paintAppUpdateStatus(screen, checking)
+    screen.profileSelection = m.profileLaunch.behavior
+    screen.profileSelectionDescription = Prairie.ProfileLaunch.behaviorDescription(m.profileLaunch.behavior)
+    screen.observeField("profileSelectionChosen", "onSettingsProfileSelection")
     screen.observeField("saveRequested", "onSettingsSave")
     screen.observeField("switchServerRequested", "onSettingsSwitchServer")
     screen.observeField("backRequested", "onSettingsBack")
@@ -817,6 +936,7 @@ sub showLibraryBrowse(library as object)
     screen.eyebrow = "Library"
     screen.titleText = library.name
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onLibraryBrowseBack")
     m.screenHost.appendChild(screen)
@@ -830,6 +950,7 @@ sub showSearch()
     screen = CreateObject("roSGNode", "SearchScreen")
     screen.observeField("submitQuery", "onSearchSubmit")
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
     m.screen = screen
@@ -863,6 +984,7 @@ sub showCollectionBrowse(collection as object)
     screen.eyebrow = "Collection"
     screen.titleText = collection.title
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onCollectionBrowseBack")
     m.screenHost.appendChild(screen)
@@ -883,6 +1005,7 @@ sub showSectionBrowse(section as object)
     screen.eyebrow = "Home"
     screen.titleText = section.title
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
@@ -922,6 +1045,7 @@ sub showTabBrowse()
     screen.eyebrow = "Browse"
     screen.titleText = m.browseTab.label
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
@@ -1010,6 +1134,7 @@ sub showItemDetail(contentId as string, backRoute = "" as string)
     screen.observeField("similarSelected", "onDetailSimilarSelected")
     screen.observeField("backRequested", "onDetailBack")
     screen.observeField("rateRequested", "onDetailRateRequested")
+    screen.observeField("watchedRequested", "onDetailWatchedRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
     loadItemDetail()
@@ -1612,12 +1737,16 @@ sub onProfileChosen()
         return
     end if
     if profile.has_pin = true
-        m.pinProfile = profile
-        m.screen.pinProfileName = profile.name
-        m.screen.pinMode = true
+        askProfilePin(profile)
         return
     end if
     finishProfile(profile, invalid)
+end sub
+
+sub askProfilePin(profile as object)
+    m.pinProfile = profile
+    m.screen.pinProfileName = profile.name
+    m.screen.pinMode = true
 end sub
 
 sub onPinSubmit()
@@ -1654,8 +1783,62 @@ sub finishProfile(profile as object, profileToken as dynamic)
     m.registry = Prairie.ServerRegistry.rememberSession(m.registry, m.session, "")
     Prairie.ServerRegistry.save(m.registry, m.store)
     Prairie.Persist.saveLastServerUrl(m.session.serverUrl, m.store)
+    ' A new sign-in (or a renewed one) is kept so the next launch skips it.
+    if m.auth.refreshToken <> invalid and (m.auth.refreshToken as string).len() > 0
+        Prairie.Credentials.remember(m.store, m.auth.serverUrl, m.auth.refreshToken, m.auth.username)
+    end if
     m.pinProfile = invalid
+    if m.profileLaunch.rememberOfferPending = true
+        showRememberOffer(session.profileName)
+        return
+    end if
     showHome()
+end sub
+
+' First profile picked on this TV: offer to open it automatically from now
+' on (Apple TV / Android TV). Remember has focus; Back is Ask Every Time.
+' Shown over Who's Watching, which waits idle until it is answered.
+sub showRememberOffer(profileName as dynamic)
+    name = ""
+    if profileName <> invalid
+        name = profileName as string
+    end if
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = Prairie.ProfileLaunch.offerTitle(name)
+    dialog.message = Prairie.ProfileLaunch.offerMessage()
+    dialog.buttons = Prairie.ProfileLaunch.offerButtons()
+    dialog.focusButton = Prairie.ProfileLaunch.offerFocusIndex()
+    dialog.observeField("buttonSelected", "onRememberOfferButton")
+    dialog.observeField("wasClosed", "onRememberOfferClosed")
+    m.rememberOfferDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onRememberOfferButton()
+    dialog = m.rememberOfferDialog
+    if dialog = invalid
+        return
+    end if
+    m.rememberOfferDialog = invalid
+    remember = Prairie.ProfileLaunch.offerRemembers(dialog.buttonSelected)
+    dialog.close = true
+    answerRememberOffer(remember)
+end sub
+
+sub onRememberOfferClosed()
+    if m.rememberOfferDialog = invalid
+        return
+    end if
+    m.rememberOfferDialog = invalid
+    answerRememberOffer(false)
+end sub
+
+sub answerRememberOffer(remember as boolean)
+    m.profileLaunch = Prairie.ProfileLaunch.answeringOffer(m.profileLaunch, remember)
+    Prairie.ProfileLaunch.save(m.profileLaunch, m.store)
+    if m.session <> invalid
+        showHome()
+    end if
 end sub
 
 sub onProfilesCancel()
@@ -1761,6 +1944,9 @@ sub onOpenServers()
         if url <> invalid and (url as string).trim().len() > 0
             stopQuickConnect()
             forgotten = Prairie.ServerRegistry.forgetIfNeverSignedIn(m.registry, m.store, url as string)
+            if forgotten.removed
+                Prairie.Credentials.forget(m.store, url as string)
+            end if
             if forgotten.saved
                 m.registry = forgotten.registry
             else
@@ -1816,6 +2002,9 @@ sub onServerSelected()
         showHome()
         return
     end if
+    if resumeSavedSession(full.url as string)
+        return
+    end if
     m.connectPrefillUrl = full.url
     showConnect()
 end sub
@@ -1841,6 +2030,11 @@ sub onServerRemoveRequested()
     entry = m.screen.removeRequested
     if entry = invalid or entry.id = invalid
         return
+    end if
+    idx = Prairie.ServerRegistry.findIndex(m.registry, entry.id)
+    if idx >= 0
+        ' Removing a server always ends its saved session on this TV.
+        Prairie.Credentials.forget(m.store, m.registry.entries[idx].url as string)
     end if
     removed = Prairie.ServerRegistry.remove(m.registry, entry.id)
     saved = Prairie.ServerRegistry.save(removed, m.store)
@@ -1920,6 +2114,18 @@ sub onSettingsSave()
         payload.preferredQuality = current.preferredQuality
     end if
     Prairie.PlaybackSettings.save(payload, m.store)
+end sub
+
+' Profile Selection applies at once; it also answers a pending remember offer.
+sub onSettingsProfileSelection()
+    chosen = m.screen.profileSelectionChosen
+    if chosen = invalid or (chosen as string).len() = 0
+        return
+    end if
+    m.profileLaunch = Prairie.ProfileLaunch.withBehavior(m.profileLaunch, chosen as string)
+    Prairie.ProfileLaunch.save(m.profileLaunch, m.store)
+    m.screen.profileSelection = m.profileLaunch.behavior
+    m.screen.profileSelectionDescription = Prairie.ProfileLaunch.behaviorDescription(m.profileLaunch.behavior)
 end sub
 
 sub onSettingsBack()
@@ -2407,6 +2613,119 @@ sub applyCatalogPage(page as object, append as boolean)
     end if
 end sub
 
+' Options (*) on a poster card: Mark as Watched / Unwatched (and Libraries
+' on Home, which * opened directly before).
+sub onCardOptionsRequested()
+    request = m.screen.cardOptionsRequested
+    if request = invalid or request.contentId = invalid or m.session = invalid
+        return
+    end if
+    m.cardOptions = request
+    m.cardActions = Prairie.WatchedState.cardActions(request.watched = true, m.route = "home")
+    dialog = CreateObject("roSGNode", "Dialog")
+    if request.title <> invalid
+        dialog.title = request.title
+    end if
+    dialog.buttons = Prairie.WatchedState.cardActionLabels(m.cardActions)
+    dialog.observeField("buttonSelected", "onCardOptionsButton")
+    m.cardOptionsDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onCardOptionsButton()
+    dialog = m.cardOptionsDialog
+    request = m.cardOptions
+    if dialog = invalid or request = invalid
+        return
+    end if
+    choice = Prairie.WatchedState.cardActionAt(m.cardActions, dialog.buttonSelected)
+    dialog.close = true
+    m.cardOptionsDialog = invalid
+    m.cardOptions = invalid
+    if choice = "libraries"
+        onOpenLibraries()
+    else if choice = "watched"
+        node = request.node
+        target = not (request.watched = true)
+        if node <> invalid and node.hasField("watched")
+            target = not (node.watched = true)
+        end if
+        startWatchedWrite(request.contentId as string, target, node)
+    end if
+end sub
+
+sub onDetailWatchedRequested()
+    if m.route <> "detail" or m.session = invalid or m.detailContentId.len() = 0
+        return
+    end if
+    startWatchedWrite(m.detailContentId, not m.screen.watched, invalid)
+end sub
+
+' Shows the new state at once and writes it on its own task; a failed write
+' puts the old state back (unless a newer write for the item replaced it)
+' and says why.
+sub startWatchedWrite(contentId as string, target as boolean, node as dynamic)
+    if contentId.len() = 0 or m.session = invalid
+        return
+    end if
+    previous = not target
+    applyWatchedState(contentId, target, node)
+    existing = m.watchedWrites[contentId]
+    if existing <> invalid and existing.task <> invalid
+        existing.task.unobserveField("response")
+        existing.task.control = "STOP"
+    end if
+    m.watchedGeneration = m.watchedGeneration + 1
+    task = CreateObject("roSGNode", "HttpTask")
+    task.addFields({ watchedContentId: contentId, watchedGeneration: m.watchedGeneration })
+    task.observeField("response", "onWatchedResponse")
+    m.watchedWrites[contentId] = {
+        task: task,
+        generation: m.watchedGeneration,
+        previous: previous,
+        target: target,
+        node: node
+    }
+    task.request = Prairie.WatchedState.buildRequest(Prairie.Api.sessionOptions(m.session), contentId, target)
+    task.control = "RUN"
+end sub
+
+sub applyWatchedState(contentId as string, watched as boolean, node as dynamic)
+    if node <> invalid and node.hasField("watched")
+        node.watched = watched
+    end if
+    if m.route = "detail" and m.screen <> invalid and m.detailContentId = contentId
+        m.screen.watched = watched
+        if m.detailItem <> invalid
+            m.detailItem = Prairie.WatchedState.withWatched(m.detailItem, watched)
+        end if
+    end if
+end sub
+
+sub onWatchedResponse(event as object)
+    task = event.getRoSGNode()
+    if task = invalid
+        return
+    end if
+    response = event.getData()
+    contentId = task.watchedContentId
+    task.unobserveField("response")
+    write = m.watchedWrites[contentId]
+    if write = invalid or write.generation <> task.watchedGeneration
+        return
+    end if
+    m.watchedWrites.delete(contentId)
+    if response <> invalid and response.ok = true
+        return
+    end if
+    errorInfo = invalid
+    if response <> invalid
+        errorInfo = response.error
+    end if
+    applyWatchedState(contentId, write.previous, write.node)
+    showMessage(Prairie.WatchedState.actionLabel(write.previous), Prairie.WatchedState.failureMessage(write.target, errorInfo))
+end sub
+
 sub onHttpResponse()
     response = m.httpTask.response
     pending = m.pending
@@ -2414,7 +2733,7 @@ sub onHttpResponse()
 
     chainingCollections = pending = "collectionsLibraries" or pending = "libraryCollections"
     chainingDiscover = pending = "discoverProbe"
-    chainingAuth = pending = "serverProbe" or pending = "deviceStart" or pending = "devicePoll"
+    chainingAuth = pending = "serverProbe" or pending = "deviceStart" or pending = "devicePoll" or pending = "sessionRefresh"
     chainingQuality = pending = "qualityLadder"
     if m.screen <> invalid and m.screen.hasField("busy") and not chainingCollections and not chainingDiscover and not chainingAuth and not chainingQuality
         m.screen.busy = false
@@ -2456,6 +2775,11 @@ sub onHttpResponse()
 
     if pending = "serverProbe"
         onServerProbeResponse(response)
+        return
+    end if
+
+    if pending = "sessionRefresh"
+        onSessionRefreshResponse(response)
         return
     end if
 
@@ -2620,7 +2944,8 @@ sub onHttpResponse()
         m.auth = {
             serverUrl: m.loginServerUrl,
             accessToken: data.access_token as string,
-            username: username
+            username: username,
+            refreshToken: data.refresh_token
         }
         Prairie.Persist.saveLastServerUrl(m.loginServerUrl, m.store)
         showProfiles()
@@ -2630,6 +2955,11 @@ sub onHttpResponse()
         m.screen.callFunc("focusDefault")
         if profiles.count() = 0
             m.screen.errorText = "No profiles on this account"
+        end if
+        if m.resume <> invalid
+            resumed = m.resume
+            m.resume = invalid
+            autoOpenRememberedProfile(resumed.serverUrl, profiles)
         end if
     else if pending = "verifyPin"
         data = response.data

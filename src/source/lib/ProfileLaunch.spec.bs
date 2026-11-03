@@ -1,0 +1,89 @@
+namespace tests
+    @suite("Prairie.ProfileLaunch")
+    class ProfileLaunchSuite extends rooibos.BaseTestSuite
+
+        @describe("state")
+        @it("asks every time on a new TV and offers to remember")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            state = Prairie.ProfileLaunch.load(store)
+            m.assertEqual(state.behavior, Prairie.ProfileLaunch.everyTime())
+            m.assertTrue(state.rememberOfferPending)
+            store.setItem(Prairie.ProfileLaunch.storageKey(), "nope")
+            m.assertTrue(Prairie.ProfileLaunch.load(store).rememberOfferPending)
+            store.setItem(Prairie.ProfileLaunch.storageKey(), " ")
+            m.assertTrue(Prairie.ProfileLaunch.load(store).rememberOfferPending)
+        end sub
+
+        @it("round-trips through the store")
+        sub _()
+            store = Prairie.Store.createMemoryStore()
+            m.assertTrue(Prairie.ProfileLaunch.save({ behavior: Prairie.ProfileLaunch.automatic(), rememberOfferPending: false }, store))
+            state = Prairie.ProfileLaunch.load(store)
+            m.assertEqual(state.behavior, Prairie.ProfileLaunch.automatic())
+            m.assertFalse(state.rememberOfferPending)
+            Prairie.ProfileLaunch.save(Prairie.ProfileLaunch.firstLaunch(), store)
+            m.assertEqual(Prairie.ProfileLaunch.load(store).behavior, Prairie.ProfileLaunch.everyTime())
+            store.setItem(Prairie.ProfileLaunch.storageKey(), "{}")
+            m.assertEqual(Prairie.ProfileLaunch.load(store).behavior, Prairie.ProfileLaunch.automatic())
+            store.failWrites = true
+            m.assertFalse(Prairie.ProfileLaunch.save(state, store))
+        end sub
+
+        @it("answers the offer once")
+        sub _()
+            first = Prairie.ProfileLaunch.firstLaunch()
+            remembered = Prairie.ProfileLaunch.answeringOffer(first, true)
+            m.assertEqual(remembered.behavior, Prairie.ProfileLaunch.automatic())
+            m.assertFalse(remembered.rememberOfferPending)
+            asked = Prairie.ProfileLaunch.answeringOffer(first, false)
+            m.assertEqual(asked.behavior, Prairie.ProfileLaunch.everyTime())
+            m.assertFalse(asked.rememberOfferPending)
+            m.assertEqual(Prairie.ProfileLaunch.answeringOffer(asked, true).behavior, Prairie.ProfileLaunch.everyTime())
+        end sub
+
+        @it("a Settings choice clears the pending offer")
+        sub _()
+            first = Prairie.ProfileLaunch.firstLaunch()
+            chosen = Prairie.ProfileLaunch.withBehavior(first, Prairie.ProfileLaunch.everyTime())
+            m.assertEqual(chosen.behavior, Prairie.ProfileLaunch.everyTime())
+            m.assertFalse(chosen.rememberOfferPending)
+            m.assertEqual(Prairie.ProfileLaunch.withBehavior(first, "other").behavior, Prairie.ProfileLaunch.automatic())
+        end sub
+
+        @describe("autoOpen")
+        @it("opens the remembered profile only when Automatic")
+        sub _()
+            profiles = [{ id: "p1", name: "Jo" }, { id: "p2", name: "Kid", has_pin: true }, invalid, { name: "no id" }]
+            auto = { behavior: Prairie.ProfileLaunch.automatic(), rememberOfferPending: false }
+            picked = Prairie.ProfileLaunch.autoOpen(auto, profiles, "p1")
+            m.assertEqual(picked.profile.name, "Jo")
+            m.assertFalse(picked.needsPin)
+            m.assertTrue(Prairie.ProfileLaunch.autoOpen(auto, profiles, "p2").needsPin)
+            m.assertInvalid(Prairie.ProfileLaunch.autoOpen(auto, profiles, "gone"))
+            m.assertInvalid(Prairie.ProfileLaunch.autoOpen(auto, profiles, ""))
+            m.assertInvalid(Prairie.ProfileLaunch.autoOpen(auto, invalid, "p1"))
+            m.assertInvalid(Prairie.ProfileLaunch.autoOpen(Prairie.ProfileLaunch.firstLaunch(), profiles, "p1"))
+        end sub
+
+        @describe("copy")
+        @it("matches the TV wording")
+        sub _()
+            m.assertEqual(Prairie.ProfileLaunch.offerTitle("Jo"), "Open Jo automatically?")
+            m.assertEqual(Prairie.ProfileLaunch.offerTitle(" "), "Open this profile automatically?")
+            m.assertTrue(Prairie.ProfileLaunch.offerMessage().instr("Who's Watching") >= 0)
+            buttons = Prairie.ProfileLaunch.offerButtons()
+            m.assertEqual(buttons[0], "Ask Every Time")
+            m.assertEqual(buttons[1], "Remember")
+            m.assertEqual(Prairie.ProfileLaunch.offerFocusIndex(), 1)
+            m.assertTrue(Prairie.ProfileLaunch.offerRemembers(1))
+            m.assertFalse(Prairie.ProfileLaunch.offerRemembers(0))
+            m.assertFalse(Prairie.ProfileLaunch.offerRemembers(-1))
+            m.assertEqual(Prairie.ProfileLaunch.behaviorTitle(Prairie.ProfileLaunch.automatic()), "Automatic")
+            m.assertEqual(Prairie.ProfileLaunch.behaviorTitle(Prairie.ProfileLaunch.everyTime()), "Every Time")
+            m.assertTrue(Prairie.ProfileLaunch.behaviorDescription(Prairie.ProfileLaunch.automatic()).instr("PIN") >= 0)
+            m.assertTrue(Prairie.ProfileLaunch.behaviorDescription(Prairie.ProfileLaunch.everyTime()).len() > 0)
+        end sub
+
+    end class
+end namespace

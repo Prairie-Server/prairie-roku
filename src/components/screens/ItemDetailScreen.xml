@@ -13,6 +13,8 @@
         <field id="seasonSelected" type="int" value="-1" alwaysNotify="true" />
         <field id="userRating" type="int" value="0" />
         <field id="rateRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="watched" type="bool" value="false" />
+        <field id="watchedRequested" type="boolean" value="false" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>
@@ -80,6 +82,18 @@
                 id="rateLabel"
                 text="☆ Rate"
                 width="280"
+                height="64"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Rectangle>
+        <Rectangle id="watchedBg" translation="[680, 620]" width="380" height="64" color="0x232A36FF" focusable="true">
+            <Label
+                id="watchedLabel"
+                text="✓ Mark as Watched"
+                width="380"
                 height="64"
                 horizAlign="center"
                 vertAlign="center"

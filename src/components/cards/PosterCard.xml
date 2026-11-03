@@ -3,6 +3,7 @@
   RowList item for poster rails and grids. Focus draws a white outline, lifts
   the poster ~5% with a drop shadow, and leaves the caption weight unchanged.
   itemContent.isExploreAll draws the row's trailing "Explore all" card.
+  itemContent.watched draws a check badge, and follows Mark as Watched.
 -->
 <component name="PosterCard" extends="Group">
     <interface>
@@ -29,6 +30,19 @@
                 font="font:MediumBoldSystemFont"
                 visible="false"
             />
+            <Group id="watchedBadge" visible="false">
+                <Rectangle id="watchedBadgeBg" width="40" height="40" color="0xE0A84AFF" />
+                <Label
+                    id="watchedBadgeMark"
+                    text="✓"
+                    width="40"
+                    height="40"
+                    horizAlign="center"
+                    vertAlign="center"
+                    color="0x141820FF"
+                    font="font:SmallBoldSystemFont"
+                />
+            </Group>
         </Group>
         <Label
             id="caption"

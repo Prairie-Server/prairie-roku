@@ -13,6 +13,7 @@
         <field id="openLibraries" type="boolean" value="false" alwaysNotify="true" />
         <field id="openSearch" type="boolean" value="false" alwaysNotify="true" />
         <field id="openLiveTv" type="boolean" value="false" alwaysNotify="true" />
+        <field id="cardOptionsRequested" type="assocarray" alwaysNotify="true" />
         <field id="signOutRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>
@@ -57,7 +58,7 @@
         />
         <Label
             id="hint"
-            text="OK opens item · Up for the menu · ★ Libraries · Back Sign out"
+            text="OK opens item · Up for the menu · ★ Options · Back Sign out"
             translation="[80, 1010]"
             width="1600"
             color="0x9AA3B2FF"

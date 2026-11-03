@@ -9,6 +9,10 @@ sub init()
     m.poster = m.top.findNode("poster")
     m.exploreLabel = m.top.findNode("exploreLabel")
     m.caption = m.top.findNode("caption")
+    m.watchedBadge = m.top.findNode("watchedBadge")
+    m.top.findNode("watchedBadgeBg").color = colors.amber
+    m.top.findNode("watchedBadgeMark").color = colors.bg
+    m.content = invalid
     m.tile.color = colors.bgSoft
     m.exploreLabel.color = colors.ink
     m.caption.color = colors.ink
@@ -41,6 +45,7 @@ sub onLayout()
     m.poster.height = posterHeight
     m.exploreLabel.width = width
     m.exploreLabel.height = posterHeight
+    m.watchedBadge.translation = [width - 48, 8]
     m.caption.translation = [0, posterHeight + 8]
     m.caption.width = width
     m.caption.height = m.captionHeight - 8
@@ -48,9 +53,19 @@ end sub
 
 sub onItemContent()
     content = m.top.itemContent
+    ' Cards are recycled: follow only the current item's watched flag.
+    if m.content <> invalid
+        m.content.unobserveFieldScoped("watched")
+    end if
+    m.content = content
     if content = invalid
+        m.watchedBadge.visible = false
         return
     end if
+    if content.hasField("watched")
+        content.observeFieldScoped("watched", "onWatchedChange")
+    end if
+    onWatchedChange()
     exploreAll = content.hasField("isExploreAll") and content.isExploreAll = true
     m.exploreLabel.visible = exploreAll
     m.poster.visible = not exploreAll
@@ -61,6 +76,11 @@ sub onItemContent()
         m.poster.uri = content.hdPosterUrl
         m.caption.text = content.title
     end if
+end sub
+
+sub onWatchedChange()
+    content = m.content
+    m.watchedBadge.visible = content <> invalid and content.hasField("watched") and content.watched = true
 end sub
 
 ' Focus amount 0..1 for this card: its own focus within the row times the

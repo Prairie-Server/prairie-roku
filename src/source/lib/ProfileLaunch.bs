@@ -1,0 +1,140 @@
+' When this Roku asks "Who's watching?" at startup instead of reopening the
+' last profile picked on a server, as Android TV's ProfileLaunchPreferences
+' and Apple TV's Profile Selection do (Automatic / Every Time). A new TV asks
+' every time and, after its first pick, offers to open that profile
+' automatically. Device-wide; never sent to the server; survives sign-out.
+'
+' Unlike Android's Automatic, a profile with a PIN always asks for its PIN:
+' this Roku never stores a profile token.
+namespace Prairie.ProfileLaunch
+
+    function storageKey() as string
+        return "prairie.profileLaunch"
+    end function
+
+    function automatic() as string
+        return "automatic"
+    end function
+
+    function everyTime() as string
+        return "askEveryLaunch"
+    end function
+
+    ' A TV with no saved choice: ask every time, offer to remember.
+    function firstLaunch() as object
+        return {
+            behavior: everyTime(),
+            rememberOfferPending: true
+        }
+    end function
+
+    function load(store as object) as object
+        raw = store.getItem(storageKey())
+        if raw = invalid or (raw as string).trim().len() = 0
+            return firstLaunch()
+        end if
+        parsed = ParseJson(raw as string)
+        if parsed = invalid or type(parsed) <> "roAssociativeArray"
+            return firstLaunch()
+        end if
+        state = {
+            behavior: automatic(),
+            rememberOfferPending: parsed.rememberOfferPending = true
+        }
+        if parsed.behavior <> invalid and (parsed.behavior as string) = everyTime()
+            state.behavior = everyTime()
+        end if
+        return state
+    end function
+
+    function save(state as object, store as object) as boolean
+        saved = store.setItem(storageKey(), FormatJson({
+            behavior: state.behavior,
+            rememberOfferPending: state.rememberOfferPending = true
+        }))
+        return saved = true
+    end function
+
+    ' A choice in Settings also answers the offer.
+    function withBehavior(state as object, behavior as string) as object
+        chosen = automatic()
+        if behavior = everyTime()
+            chosen = everyTime()
+        end if
+        return {
+            behavior: chosen,
+            rememberOfferPending: false
+        }
+    end function
+
+    ' Remember opens the picked profile automatically from now on.
+    function answeringOffer(state as object, remember as boolean) as object
+        if state.rememberOfferPending <> true
+            return state
+        end if
+        if remember
+            return withBehavior(state, automatic())
+        end if
+        return {
+            behavior: state.behavior,
+            rememberOfferPending: false
+        }
+    end function
+
+    function behaviorTitle(behavior as string) as string
+        if behavior = everyTime()
+            return "Every Time"
+        end if
+        return "Automatic"
+    end function
+
+    function behaviorDescription(behavior as string) as string
+        if behavior = everyTime()
+            return "Show Who's Watching whenever Prairie starts."
+        end if
+        return "Open the last profile selected on this Roku. A protected profile still asks for its PIN."
+    end function
+
+    ' The profile to open at startup for this server, or invalid to show the
+    ' picker: { profile, needsPin }.
+    function autoOpen(state as object, profiles as object, rememberedId as string) as dynamic
+        if state.behavior <> automatic() or rememberedId.len() = 0 or profiles = invalid
+            return invalid
+        end if
+        for each profile in profiles
+            if profile <> invalid and profile.id <> invalid and (profile.id as string) = rememberedId
+                return {
+                    profile: profile,
+                    needsPin: profile.has_pin = true
+                }
+            end if
+        end for
+        return invalid
+    end function
+
+    function offerTitle(profileName as string) as string
+        name = profileName.trim()
+        if name.len() = 0
+            name = "this profile"
+        end if
+        return "Open " + name + " automatically?"
+    end function
+
+    function offerMessage() as string
+        return "Prairie can skip Who's Watching and open this profile when it starts on this Roku. You can change this later in Settings > Profile Selection."
+    end function
+
+    ' Ask Every Time, then Remember; focus starts on Remember.
+    function offerButtons() as object
+        return ["Ask Every Time", "Remember"]
+    end function
+
+    function offerFocusIndex() as integer
+        return 1
+    end function
+
+    function offerRemembers(index as integer) as boolean
+        return index = 1
+    end function
+
+end namespace

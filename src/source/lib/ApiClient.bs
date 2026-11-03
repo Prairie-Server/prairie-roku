@@ -145,4 +145,22 @@ namespace Prairie.Api
         }
     end function
 
+    ' The message a server put in an error body, or "" when it sent none.
+    function serverMessage(errorInfo as dynamic) as string
+        if errorInfo = invalid or errorInfo.body = invalid or type(errorInfo.body) <> "roAssociativeArray"
+            return ""
+        end if
+        body = errorInfo.body
+        for each key in ["message", "error", "detail", "title"]
+            value = body[key]
+            if value <> invalid and (type(value) = "roString" or type(value) = "String")
+                text = (value as string).trim()
+                if text.len() > 0
+                    return text
+                end if
+            end if
+        end for
+        return ""
+    end function
+
 end namespace

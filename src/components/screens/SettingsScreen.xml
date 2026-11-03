@@ -9,6 +9,9 @@
         <field id="latestVersionLabel" type="string" value="" />
         <field id="changelogUrl" type="string" value="" />
         <field id="saveRequested" type="assocarray" />
+        <field id="profileSelection" type="string" value="askEveryLaunch" />
+        <field id="profileSelectionDescription" type="string" value="" />
+        <field id="profileSelectionChosen" type="string" value="" alwaysNotify="true" />
         <field id="switchServerRequested" type="boolean" value="false" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
@@ -49,6 +52,15 @@
         <Rectangle id="transcodeBg" translation="[620, 270]" width="320" height="64" color="0x222B38FF" focusable="true">
             <Label id="transcodeLabel" text="Force transcode" width="320" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
         </Rectangle>
+
+        <Label id="profileSelectionLabel" text="Profile Selection" translation="[1020, 230]" color="0xE0A84AFF" font="font:SmallBoldSystemFont" />
+        <Rectangle id="profileAutoBg" translation="[1020, 270]" width="260" height="64" color="0x222B38FF" focusable="true">
+            <Label id="profileAutoLabel" text="Automatic" width="260" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+        </Rectangle>
+        <Rectangle id="profileEveryBg" translation="[1300, 270]" width="260" height="64" color="0x222B38FF" focusable="true">
+            <Label id="profileEveryLabel" text="Every Time" width="260" height="64" horizAlign="center" vertAlign="center" color="0xF3EFE6FF" font="font:MediumSystemFont" />
+        </Rectangle>
+        <Label id="profileSelectionHint" text="" translation="[1020, 350]" width="800" height="90" wrap="true" color="0x9AA3B2FF" font="font:SmallSystemFont" />
 
         <Label id="subLabel" text="Preferred subtitle language (ISO code, blank = off)" translation="[80, 370]" color="0xE0A84AFF" font="font:SmallBoldSystemFont" />
         <TextEditBox

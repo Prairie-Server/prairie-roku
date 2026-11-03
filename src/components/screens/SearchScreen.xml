@@ -7,6 +7,7 @@
         <field id="statusText" type="string" value="" />
         <field id="submitQuery" type="string" value="" alwaysNotify="true" />
         <field id="selectedContentId" type="string" value="" alwaysNotify="true" />
+        <field id="cardOptionsRequested" type="assocarray" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>
