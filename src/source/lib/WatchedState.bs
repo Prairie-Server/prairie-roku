@@ -54,8 +54,30 @@ namespace Prairie.WatchedState
         return "Mark as Watched"
     end function
 
-    function dialogButtons(currentlyWatched as boolean) as object
-        return [actionLabel(currentlyWatched), "Cancel"]
+    ' The Options (*) menu on a poster card: the watched toggle, Libraries on
+    ' Home (where * used to open them directly), then Cancel.
+    function cardActions(currentlyWatched as boolean, withLibraries as boolean) as object
+        actions = [{ id: "watched", label: actionLabel(currentlyWatched) }]
+        if withLibraries
+            actions.push({ id: "libraries", label: "Libraries" })
+        end if
+        actions.push({ id: "cancel", label: "Cancel" })
+        return actions
+    end function
+
+    function cardActionLabels(actions as object) as object
+        labels = []
+        for each action in actions
+            labels.push(action.label)
+        end for
+        return labels
+    end function
+
+    function cardActionAt(actions as object, index as integer) as string
+        if index < 0 or index >= actions.count()
+            return "cancel"
+        end if
+        return actions[index].id
     end function
 
     ' "Couldn't mark as watched." plus the server's reason, or "Try again.".

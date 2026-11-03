@@ -26,6 +26,7 @@ import "pkg:/source/lib/SignIn.bs"
 import "pkg:/source/lib/SignOut.bs"
 import "pkg:/source/lib/Credentials.bs"
 import "pkg:/source/lib/ProfileLaunch.bs"
+import "pkg:/source/lib/WatchedState.bs"
 import "pkg:/source/lib/Discover.bs"
 import "pkg:/source/lib/AppUpdate.bs"
 
@@ -109,6 +110,11 @@ sub init()
     m.profileLaunch = Prairie.ProfileLaunch.load(m.store)
     m.resume = invalid
     m.rememberOfferDialog = invalid
+    m.watchedWrites = {}
+    m.watchedGeneration = 0
+    m.cardOptions = invalid
+    m.cardOptionsDialog = invalid
+    m.cardActions = []
 
     ' If the persisted session blob exists but tokens are missing, treat the
     ' user as logged out and route to the login/connect flow.
@@ -723,6 +729,7 @@ sub showHome()
         m.homeReturnFocus = invalid
     end if
     screen.observeField("selectedContentId", "onHomeItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("exploreSection", "onHomeExploreSection")
     screen.observeField("navRequested", "onHomeNavRequested")
     screen.observeField("openLibraries", "onOpenLibraries")
@@ -929,6 +936,7 @@ sub showLibraryBrowse(library as object)
     screen.eyebrow = "Library"
     screen.titleText = library.name
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onLibraryBrowseBack")
     m.screenHost.appendChild(screen)
@@ -942,6 +950,7 @@ sub showSearch()
     screen = CreateObject("roSGNode", "SearchScreen")
     screen.observeField("submitQuery", "onSearchSubmit")
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
     m.screen = screen
@@ -975,6 +984,7 @@ sub showCollectionBrowse(collection as object)
     screen.eyebrow = "Collection"
     screen.titleText = collection.title
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onCollectionBrowseBack")
     m.screenHost.appendChild(screen)
@@ -995,6 +1005,7 @@ sub showSectionBrowse(section as object)
     screen.eyebrow = "Home"
     screen.titleText = section.title
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
@@ -1034,6 +1045,7 @@ sub showTabBrowse()
     screen.eyebrow = "Browse"
     screen.titleText = m.browseTab.label
     screen.observeField("selectedContentId", "onCatalogItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("loadMoreRequested", "onCatalogLoadMore")
     screen.observeField("backRequested", "onBrowseBackHome")
     m.screenHost.appendChild(screen)
@@ -1122,6 +1134,7 @@ sub showItemDetail(contentId as string, backRoute = "" as string)
     screen.observeField("similarSelected", "onDetailSimilarSelected")
     screen.observeField("backRequested", "onDetailBack")
     screen.observeField("rateRequested", "onDetailRateRequested")
+    screen.observeField("watchedRequested", "onDetailWatchedRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
     loadItemDetail()
@@ -2598,6 +2611,119 @@ sub applyCatalogPage(page as object, append as boolean)
         m.screen.busy = false
         m.screen.callFunc("focusDefault")
     end if
+end sub
+
+' Options (*) on a poster card: Mark as Watched / Unwatched (and Libraries
+' on Home, which * opened directly before).
+sub onCardOptionsRequested()
+    request = m.screen.cardOptionsRequested
+    if request = invalid or request.contentId = invalid or m.session = invalid
+        return
+    end if
+    m.cardOptions = request
+    m.cardActions = Prairie.WatchedState.cardActions(request.watched = true, m.route = "home")
+    dialog = CreateObject("roSGNode", "Dialog")
+    if request.title <> invalid
+        dialog.title = request.title
+    end if
+    dialog.buttons = Prairie.WatchedState.cardActionLabels(m.cardActions)
+    dialog.observeField("buttonSelected", "onCardOptionsButton")
+    m.cardOptionsDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onCardOptionsButton()
+    dialog = m.cardOptionsDialog
+    request = m.cardOptions
+    if dialog = invalid or request = invalid
+        return
+    end if
+    choice = Prairie.WatchedState.cardActionAt(m.cardActions, dialog.buttonSelected)
+    dialog.close = true
+    m.cardOptionsDialog = invalid
+    m.cardOptions = invalid
+    if choice = "libraries"
+        onOpenLibraries()
+    else if choice = "watched"
+        node = request.node
+        target = not (request.watched = true)
+        if node <> invalid and node.hasField("watched")
+            target = not (node.watched = true)
+        end if
+        startWatchedWrite(request.contentId as string, target, node)
+    end if
+end sub
+
+sub onDetailWatchedRequested()
+    if m.route <> "detail" or m.session = invalid or m.detailContentId.len() = 0
+        return
+    end if
+    startWatchedWrite(m.detailContentId, not m.screen.watched, invalid)
+end sub
+
+' Shows the new state at once and writes it on its own task; a failed write
+' puts the old state back (unless a newer write for the item replaced it)
+' and says why.
+sub startWatchedWrite(contentId as string, target as boolean, node as dynamic)
+    if contentId.len() = 0 or m.session = invalid
+        return
+    end if
+    previous = not target
+    applyWatchedState(contentId, target, node)
+    existing = m.watchedWrites[contentId]
+    if existing <> invalid and existing.task <> invalid
+        existing.task.unobserveField("response")
+        existing.task.control = "STOP"
+    end if
+    m.watchedGeneration = m.watchedGeneration + 1
+    task = CreateObject("roSGNode", "HttpTask")
+    task.addFields({ watchedContentId: contentId, watchedGeneration: m.watchedGeneration })
+    task.observeField("response", "onWatchedResponse")
+    m.watchedWrites[contentId] = {
+        task: task,
+        generation: m.watchedGeneration,
+        previous: previous,
+        target: target,
+        node: node
+    }
+    task.request = Prairie.WatchedState.buildRequest(Prairie.Api.sessionOptions(m.session), contentId, target)
+    task.control = "RUN"
+end sub
+
+sub applyWatchedState(contentId as string, watched as boolean, node as dynamic)
+    if node <> invalid and node.hasField("watched")
+        node.watched = watched
+    end if
+    if m.route = "detail" and m.screen <> invalid and m.detailContentId = contentId
+        m.screen.watched = watched
+        if m.detailItem <> invalid
+            m.detailItem = Prairie.WatchedState.withWatched(m.detailItem, watched)
+        end if
+    end if
+end sub
+
+sub onWatchedResponse(event as object)
+    task = event.getRoSGNode()
+    if task = invalid
+        return
+    end if
+    response = event.getData()
+    contentId = task.watchedContentId
+    task.unobserveField("response")
+    write = m.watchedWrites[contentId]
+    if write = invalid or write.generation <> task.watchedGeneration
+        return
+    end if
+    m.watchedWrites.delete(contentId)
+    if response <> invalid and response.ok = true
+        return
+    end if
+    errorInfo = invalid
+    if response <> invalid
+        errorInfo = response.error
+    end if
+    applyWatchedState(contentId, write.previous, write.node)
+    showMessage(Prairie.WatchedState.actionLabel(write.previous), Prairie.WatchedState.failureMessage(write.target, errorInfo))
 end sub
 
 sub onHttpResponse()
