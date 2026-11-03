@@ -1,30 +1,43 @@
 import "pkg:/source/lib/Theme.bs"
-import "pkg:/source/lib/ServerUrl.bs"
 import "pkg:/source/lib/Auth.bs"
-import "pkg:/source/lib/ApiClient.bs"
+import "pkg:/source/lib/ServerAddress.bs"
+import "pkg:/source/lib/SignIn.bs"
 
 sub init()
     m.top.observeField("focusedChild", "onFocusChange")
     m.serverUrl = m.top.findNode("serverUrl")
+    m.port = m.top.findNode("port")
     m.username = m.top.findNode("username")
     m.password = m.top.findNode("password")
     m.errorLabel = m.top.findNode("errorLabel")
+    m.advancedBg = m.top.findNode("advancedBg")
+    m.advancedLabel = m.top.findNode("advancedLabel")
+    m.protocolBg = m.top.findNode("protocolBg")
+    m.protocolLabel = m.top.findNode("protocolLabel")
     m.connectBg = m.top.findNode("connectBg")
     m.connectLabel = m.top.findNode("connectLabel")
     m.connectFocus = m.top.findNode("connectFocus")
     m.serversBg = m.top.findNode("serversBg")
     m.scanBg = m.top.findNode("scanBg")
     m.quickConnectBg = m.top.findNode("quickConnectBg")
-    m.quickConnectCode = m.top.findNode("quickConnectCode")
+    m.quickConnectLabel = m.top.findNode("quickConnectLabel")
+    m.quickConnectCodeRow = m.top.findNode("quickConnectCodeRow")
+    m.quickConnectCodeLabel = m.top.findNode("quickConnectCodeLabel")
     m.quickConnectMatch = m.top.findNode("quickConnectMatch")
+    m.quickConnectMatchLabel = m.top.findNode("quickConnectMatchLabel")
+    m.quickConnectHint = m.top.findNode("quickConnectHint")
     m.quickConnectQr = m.top.findNode("quickConnectQr")
     m.quickConnectQrFrame = m.top.findNode("quickConnectQrFrame")
     m.quickConnectStatusLabel = m.top.findNode("quickConnectStatusLabel")
     m.brand = m.top.findNode("brand")
     m.eyebrow = m.top.findNode("eyebrow")
     m.lede = m.top.findNode("lede")
+    m.scheme = "auto"
+    m.showsAdvanced = false
+    m.secondaryButtons = [m.advancedBg, m.protocolBg, m.serversBg, m.scanBg, m.quickConnectBg]
 
-    colors = Prairie.Theme.colors()
+    m.colors = Prairie.Theme.colors()
+    colors = m.colors
     m.top.findNode("backdrop").color = colors.bg
     m.brand.text = Prairie.Theme.brandName()
     m.brand.color = colors.ink
@@ -34,19 +47,14 @@ sub init()
     m.connectBg.color = colors.amber
     m.connectLabel.color = colors.bg
     m.connectFocus.color = colors.ring
-    m.serversBg.color = colors.bgSoft
-    m.scanBg.color = colors.bgSoft
-    m.quickConnectBg.color = colors.bgSoft
     m.top.findNode("quickConnectPanel").color = colors.bgElevated
     m.top.findNode("quickConnectEyebrow").color = colors.amber
     m.top.findNode("quickConnectTitle").color = colors.ink
-    m.top.findNode("quickConnectHint").color = colors.muted
-    m.top.findNode("quickConnectCodeLabel").color = colors.muted
-    m.quickConnectCode.color = colors.amber
-    m.top.findNode("quickConnectMatchLabel").color = colors.muted
+    m.quickConnectHint.color = colors.muted
+    m.quickConnectCodeLabel.color = colors.muted
+    m.quickConnectMatchLabel.color = colors.muted
     m.quickConnectMatch.color = colors.ink
-    m.top.findNode("quickConnectLabel").color = colors.ink
-    m.quickConnectStatusLabel.color = colors.muted
+    m.quickConnectStatusLabel.color = colors.ink
     m.quickConnectQrFrame.color = "0xFFFFFFFF"
     if m.quickConnectQr <> invalid
         m.quickConnectQr.lightColor = "0xFFFFFFFF"
@@ -54,10 +62,14 @@ sub init()
         m.quickConnectQr.visible = false
     end if
     m.quickConnectQrFrame.visible = false
+    paintSecondaryButtons()
+    paintAdvanced()
+    paintSignInState()
 
     m.top.observeField("initialServerUrl", "onInitialServerUrl")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("busy", "onBusy")
+    m.top.observeField("quickConnectState", "paintSignInState")
     m.top.observeField("quickConnectUserCode", "onQuickConnectUserCode")
     m.top.observeField("quickConnectMatchCode", "onQuickConnectMatchCode")
     m.top.observeField("quickConnectVerificationUri", "onQuickConnectVerificationUri")
@@ -84,22 +96,59 @@ sub onBusy()
         return
     end if
     if m.top.busy
-        m.connectLabel.text = "▶ Connecting…"
+        m.connectLabel.text = "Signing in…"
     else
-        m.connectLabel.text = "▶ Connect"
+        m.connectLabel.text = "▶ Sign in"
     end if
 end sub
 
-sub onQuickConnectUserCode()
-    if m.quickConnectCode <> invalid
-        m.quickConnectCode.text = m.top.quickConnectUserCode
+' Status, guidance and action for the device sign-in state, worded as on
+' Android TV / Apple TV.
+sub paintSignInState()
+    state = m.top.quickConnectState
+    copy = Prairie.SignIn.stateCopy(state, m.top.quickConnectActivate)
+    if state = ""
+        ' No server yet: nothing is being fetched.
+        copy.status = ""
+        copy.showsCode = false
     end if
+    m.quickConnectStatusLabel.text = copy.status
+    m.quickConnectHint.text = copy.hint
+    m.quickConnectLabel.text = copy.action
+    m.quickConnectCodeLabel.visible = copy.showsCode
+    m.quickConnectMatchLabel.visible = copy.showsCode and m.top.quickConnectMatchCode.len() > 0
+    m.quickConnectMatch.visible = m.quickConnectMatchLabel.visible
+    m.quickConnectCodeRow.visible = copy.showsCode
+end sub
+
+' The code as one large monospaced line: each character in an equal-width
+' cell, no tiles, scaled down to fit the panel.
+sub onQuickConnectUserCode()
+    row = m.quickConnectCodeRow
+    while row.getChildCount() > 0
+        row.removeChildIndex(0)
+    end while
+    layout = Prairie.SignIn.codeLayout(m.top.quickConnectUserCode, 510, 60)
+    font = "font:LargeBoldSystemFont"
+    if layout.cellWidth < 44
+        font = "font:MediumBoldSystemFont"
+    end if
+    for each cell in layout.cells
+        label = row.createChild("Label")
+        label.text = cell.text
+        label.translation = [cell.x, 0]
+        label.width = layout.cellWidth
+        label.height = 80
+        label.horizAlign = "center"
+        label.vertAlign = "center"
+        label.font = font
+        label.color = m.colors.amber
+    end for
 end sub
 
 sub onQuickConnectMatchCode()
-    if m.quickConnectMatch <> invalid
-        m.quickConnectMatch.text = m.top.quickConnectMatchCode
-    end if
+    m.quickConnectMatch.text = m.top.quickConnectMatchCode
+    paintSignInState()
 end sub
 
 sub onQuickConnectVerificationUri()
@@ -110,38 +159,90 @@ sub onQuickConnectVerificationUri()
     if uri.len() = 0
         m.quickConnectQr.text = ""
         m.quickConnectQr.visible = false
-        if m.quickConnectQrFrame <> invalid
-            m.quickConnectQrFrame.visible = false
-        end if
+        m.quickConnectQrFrame.visible = false
         return
     end if
     m.quickConnectQr.text = uri
     m.quickConnectQr.visible = true
-    if m.quickConnectQrFrame <> invalid
-        m.quickConnectQrFrame.visible = true
+    m.quickConnectQrFrame.visible = true
+end sub
+
+' A free-text status (an address error) replaces the state's own wording.
+sub onQuickConnectStatus()
+    if m.top.quickConnectStatus.len() > 0
+        m.quickConnectStatusLabel.text = m.top.quickConnectStatus
     end if
 end sub
 
-sub onQuickConnectStatus()
-    status = m.top.quickConnectStatus
-    if m.quickConnectStatusLabel <> invalid
-        m.quickConnectStatusLabel.text = status
+sub paintAdvanced()
+    if m.showsAdvanced
+        m.advancedLabel.text = "Hide advanced options"
+    else
+        m.advancedLabel.text = "Advanced options"
     end if
+    m.protocolLabel.text = "Protocol: " + Prairie.ServerAddress.schemeLabel(m.scheme)
+    m.protocolBg.visible = m.showsAdvanced
+    m.port.visible = m.showsAdvanced
+end sub
+
+sub setAdvanced(shows as boolean)
+    m.showsAdvanced = shows
+    if not shows and (m.protocolBg.isInFocusChain() or m.port.isInFocusChain())
+        m.advancedBg.setFocus(true)
+    end if
+    paintAdvanced()
+end sub
+
+sub paintSecondaryButtons()
+    for each button in m.secondaryButtons
+        label = button.getChild(0)
+        if button.hasFocus()
+            button.color = m.colors.ring
+            label.color = m.colors.bg
+        else
+            button.color = m.colors.bgSoft
+            label.color = m.colors.ink
+        end if
+    end for
 end sub
 
 sub focusDefault()
-    if m.serverUrl <> invalid
-        m.serverUrl.setFocus(true)
-    end if
+    m.serverUrl.setFocus(true)
 end sub
+
+' The addresses to try for the typed server, protocol and port. A port
+' error opens Advanced options so the Port field is in view.
+function serverCandidates() as object
+    portText = ""
+    if m.showsAdvanced
+        portText = m.port.text
+    end if
+    scheme = "auto"
+    if m.showsAdvanced
+        scheme = m.scheme
+    end if
+    result = Prairie.ServerAddress.candidates(m.serverUrl.text, scheme, portText)
+    if result.ok <> true and result.field = "port"
+        setAdvanced(true)
+    end if
+    return result
+end function
 
 sub onFocusChange()
     if m.connectFocus = invalid or m.connectBg = invalid
         return
     end if
-    isConnectFocused = m.connectBg.isInFocusChain()
-    m.connectFocus.visible = isConnectFocused
+    m.connectFocus.visible = m.connectBg.isInFocusChain()
+    paintSecondaryButtons()
 end sub
+
+function advancedRowFocused() as boolean
+    return m.advancedBg.isInFocusChain() or m.protocolBg.isInFocusChain() or m.port.isInFocusChain()
+end function
+
+function buttonRowFocused() as boolean
+    return m.connectBg.isInFocusChain() or m.serversBg.isInFocusChain() or m.scanBg.isInFocusChain() or m.quickConnectBg.isInFocusChain()
+end function
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press
@@ -151,6 +252,14 @@ function onKeyEvent(key as string, press as boolean) as boolean
     if key = "OK" or key = "play"
         if m.connectBg.isInFocusChain()
             submitConnect()
+            return true
+        else if m.advancedBg.isInFocusChain()
+            setAdvanced(not m.showsAdvanced)
+            return true
+        else if m.protocolBg.isInFocusChain()
+            m.scheme = Prairie.ServerAddress.nextScheme(m.scheme)
+            m.top.errorText = ""
+            paintAdvanced()
             return true
         else if m.serversBg.isInFocusChain()
             m.top.openServers = true
@@ -164,6 +273,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         end if
     else if key = "down"
         if m.serverUrl.isInFocusChain()
+            m.advancedBg.setFocus(true)
+            return true
+        else if advancedRowFocused()
             m.username.setFocus(true)
             return true
         else if m.username.isInFocusChain()
@@ -174,18 +286,27 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     else if key = "up"
-        if m.connectBg.isInFocusChain() or m.serversBg.isInFocusChain() or m.scanBg.isInFocusChain() or m.quickConnectBg.isInFocusChain()
+        if buttonRowFocused()
             m.password.setFocus(true)
             return true
         else if m.password.isInFocusChain()
             m.username.setFocus(true)
             return true
         else if m.username.isInFocusChain()
+            m.advancedBg.setFocus(true)
+            return true
+        else if advancedRowFocused()
             m.serverUrl.setFocus(true)
             return true
         end if
     else if key = "right"
-        if m.connectBg.isInFocusChain()
+        if m.advancedBg.isInFocusChain() and m.showsAdvanced
+            m.protocolBg.setFocus(true)
+            return true
+        else if m.protocolBg.isInFocusChain()
+            m.port.setFocus(true)
+            return true
+        else if m.connectBg.isInFocusChain()
             m.serversBg.setFocus(true)
             return true
         else if m.serversBg.isInFocusChain()
@@ -196,7 +317,13 @@ function onKeyEvent(key as string, press as boolean) as boolean
             return true
         end if
     else if key = "left"
-        if m.quickConnectBg.isInFocusChain()
+        if m.port.isInFocusChain()
+            m.protocolBg.setFocus(true)
+            return true
+        else if m.protocolBg.isInFocusChain()
+            m.advancedBg.setFocus(true)
+            return true
+        else if m.quickConnectBg.isInFocusChain()
             m.scanBg.setFocus(true)
             return true
         else if m.scanBg.isInFocusChain()
@@ -220,20 +347,25 @@ sub submitConnect()
         return
     end if
     m.top.errorText = ""
-    validated = Prairie.ServerUrl.validate(m.serverUrl.text)
-    if validated.ok <> true
-        m.top.errorText = validated.message
+    resolved = serverCandidates()
+    if resolved.ok <> true
+        m.top.errorText = resolved.message
         return
     end if
     username = m.username.text.trim()
     password = m.password.text
-    if username.len() = 0 or password.len() = 0
-        m.top.errorText = "Enter username and password"
+    if username.len() = 0
+        m.top.errorText = "Username is required"
+        return
+    end if
+    if password.len() = 0
+        m.top.errorText = "Password is required"
         return
     end if
 
     m.top.busy = true
-    m.top.submitRequest = Prairie.Api.buildRequest({
-        serverUrl: validated.url
-    }, Prairie.Auth.loginPath(), "POST", Prairie.Auth.buildLoginBody(username, password))
+    m.top.submitRequest = {
+        urls: resolved.urls,
+        loginBody: Prairie.Auth.buildLoginBody(username, password)
+    }
 end sub
