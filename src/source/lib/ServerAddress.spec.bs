@@ -1,0 +1,125 @@
+namespace tests
+    @suite("Prairie.ServerAddress")
+    class ServerAddressSuite extends rooibos.BaseTestSuite
+
+        @describe("protocol options")
+        @it("cycles Auto, HTTPS and HTTP with labels")
+        sub _()
+            m.assertEqual(Prairie.ServerAddress.schemeLabel("auto"), "Auto")
+            m.assertEqual(Prairie.ServerAddress.schemeLabel("https"), "HTTPS")
+            m.assertEqual(Prairie.ServerAddress.schemeLabel("http"), "HTTP")
+            m.assertEqual(Prairie.ServerAddress.nextScheme("auto"), "https")
+            m.assertEqual(Prairie.ServerAddress.nextScheme("https"), "http")
+            m.assertEqual(Prairie.ServerAddress.nextScheme("http"), "auto")
+            m.assertEqual(Prairie.ServerAddress.nextScheme("bogus"), "auto")
+        end sub
+
+        @it("parses port text")
+        sub _()
+            m.assertEqual(Prairie.ServerAddress.parsePort(" "), 0)
+            m.assertEqual(Prairie.ServerAddress.parsePort("8096"), 8096)
+            m.assertEqual(Prairie.ServerAddress.parsePort("0"), -1)
+            m.assertEqual(Prairie.ServerAddress.parsePort("65536"), -1)
+            m.assertEqual(Prairie.ServerAddress.parsePort("123456"), -1)
+            m.assertEqual(Prairie.ServerAddress.parsePort("80a"), -1)
+        end sub
+
+        @describe("candidates")
+        @it("tries HTTPS, HTTP, then port 8090 for a bare LAN host in Auto")
+        sub _()
+            result = Prairie.ServerAddress.candidates(" 192.168.1.10/ ", "auto", "")
+            m.assertTrue(result.ok)
+            m.assertEqual(result.urls.count(), 3)
+            m.assertEqual(result.urls[0], "https://192.168.1.10")
+            m.assertEqual(result.urls[1], "http://192.168.1.10")
+            m.assertEqual(result.urls[2], "http://192.168.1.10:8090")
+        end sub
+
+        @it("tries only HTTPS for a public host in Auto")
+        sub _()
+            result = Prairie.ServerAddress.candidates("prairie.example.com/media", "auto", "")
+            m.assertTrue(result.ok)
+            m.assertEqual(result.urls.count(), 1)
+            m.assertEqual(result.urls[0], "https://prairie.example.com/media")
+        end sub
+
+        @it("refuses HTTP for a public host")
+        sub _()
+            result = Prairie.ServerAddress.candidates("prairie.example.com", "http", "")
+            m.assertFalse(result.ok)
+            m.assertEqual(result.field, "address")
+            m.assertEqual(result.message, "Use HTTPS, or HTTP only for a local/LAN server.")
+        end sub
+
+        @it("uses the chosen protocol and port")
+        sub _()
+            result = Prairie.ServerAddress.candidates("nas.local", "http", "8096")
+            m.assertEqual(result.urls.count(), 1)
+            m.assertEqual(result.urls[0], "http://nas.local:8096")
+            result = Prairie.ServerAddress.candidates("http://nas.local", "https", "")
+            m.assertEqual(result.urls[0], "https://nas.local")
+        end sub
+
+        @it("keeps a typed scheme and port in Auto")
+        sub _()
+            result = Prairie.ServerAddress.candidates("http://10.0.0.5:9000", "auto", "1234")
+            m.assertEqual(result.urls.count(), 1)
+            m.assertEqual(result.urls[0], "http://10.0.0.5:9000")
+            result = Prairie.ServerAddress.candidates("10.0.0.5", "auto", "8096")
+            m.assertEqual(result.urls.count(), 2)
+            m.assertEqual(result.urls[1], "http://10.0.0.5:8096")
+        end sub
+
+        @it("brackets IPv6 hosts")
+        sub _()
+            result = Prairie.ServerAddress.candidates("[::1]:8096", "http", "")
+            m.assertEqual(result.urls[0], "http://[::1]:8096")
+            result = Prairie.ServerAddress.candidates("fe80::1", "https", "")
+            m.assertEqual(result.urls[0], "https://[fe80::1]")
+        end sub
+
+        @it("reports port errors on the port field")
+        sub _()
+            result = Prairie.ServerAddress.candidates("10.0.0.5", "auto", "99999")
+            m.assertFalse(result.ok)
+            m.assertEqual(result.field, "port")
+            m.assertEqual(result.message, "Port must be a number between 1 and 65535.")
+            m.assertEqual(Prairie.ServerAddress.candidates("10.0.0.5:0", "auto", "").field, "port")
+            m.assertEqual(Prairie.ServerAddress.candidates("10.0.0.5:", "auto", "").field, "port")
+            m.assertEqual(Prairie.ServerAddress.candidates("[::1]:x", "auto", "").field, "port")
+        end sub
+
+        @it("rejects blank and malformed addresses")
+        sub _()
+            m.assertEqual(Prairie.ServerAddress.candidates("  ", "auto", "").message, "Please enter a server host.")
+            m.assertEqual(Prairie.ServerAddress.candidates("ftp://x.example", "auto", "").message, "Server address must use http or https.")
+            m.assertEqual(Prairie.ServerAddress.candidates("user@x.example", "auto", "").message, "Server address must not include credentials.")
+            m.assertEqual(Prairie.ServerAddress.candidates("https://", "auto", "").message, "Enter a valid server address.")
+            m.assertEqual(Prairie.ServerAddress.candidates("bad host", "auto", "").field, "address")
+            m.assertFalse(Prairie.ServerAddress.candidates("[::1]x", "auto", "").ok)
+            m.assertFalse(Prairie.ServerAddress.candidates("[]", "auto", "").ok)
+            m.assertFalse(Prairie.ServerAddress.candidates(":8096", "auto", "").ok)
+        end sub
+
+        @describe("probe failures")
+        @it("tells network failures from HTTP errors")
+        sub _()
+            m.assertTrue(Prairie.ServerAddress.isNetworkFailure(invalid))
+            m.assertTrue(Prairie.ServerAddress.isNetworkFailure({ status: 408, code: "timeout" }))
+            m.assertTrue(Prairie.ServerAddress.isNetworkFailure({ status: -7, code: invalid }))
+            m.assertTrue(Prairie.ServerAddress.isNetworkFailure({ code: invalid }))
+            m.assertFalse(Prairie.ServerAddress.isNetworkFailure({ status: 404, code: invalid }))
+        end sub
+
+        @it("says Could not reach a Prairie server when an HTTP error has no message")
+        sub _()
+            network = "Could not reach a Prairie server at that address."
+            m.assertEqual(Prairie.ServerAddress.probeFailureMessage({ status: -6, code: invalid }), network)
+            m.assertEqual(Prairie.ServerAddress.probeFailureMessage({ status: 404, message: "Not Found", body: invalid }), network)
+            m.assertEqual(Prairie.ServerAddress.probeFailureMessage({ status: 404, body: { message: "  " } }), network)
+            m.assertEqual(Prairie.ServerAddress.probeFailureMessage({ status: 502, body: { detail: "Upstream down" } }), "Could not reach server: Upstream down")
+            m.assertEqual(Prairie.ServerAddress.serverMessage({ body: { error: 5 } }), "")
+        end sub
+
+    end class
+end namespace

@@ -1,0 +1,69 @@
+namespace tests
+    @suite("Prairie.SignIn")
+    class SignInSuite extends rooibos.BaseTestSuite
+
+        @describe("deviceName")
+        @it("names the TV by its device name, with a fallback")
+        sub _()
+            m.assertEqual(Prairie.SignIn.deviceName("  Living Room Roku "), "Living Room Roku")
+            m.assertEqual(Prairie.SignIn.deviceName(""), "Roku")
+            m.assertEqual(Prairie.SignIn.deviceName(invalid), "Roku")
+            long = String(70, "a")
+            m.assertEqual(Prairie.SignIn.deviceName(long).len(), 63)
+        end sub
+
+        @describe("stateCopy")
+        @it("matches Android TV and Apple TV wording")
+        sub _()
+            waiting = Prairie.SignIn.stateCopy("waiting", "https://p.example/activate")
+            m.assertEqual(waiting.status, "Waiting for approval")
+            m.assertTrue(waiting.showsCode)
+            m.assertTrue(waiting.hint.instr("https://p.example/activate") > 0)
+            m.assertTrue(Prairie.SignIn.stateCopy("waiting").hint.instr("your server's /activate page") > 0)
+            m.assertEqual(Prairie.SignIn.stateCopy("newCode").status, "New code. Waiting for approval.")
+            getting = Prairie.SignIn.stateCopy("gettingCode")
+            m.assertEqual(getting.status, "Getting a sign-in code…")
+            m.assertFalse(getting.showsCode)
+            declined = Prairie.SignIn.stateCopy("declined")
+            m.assertEqual(declined.status, "Sign-in was declined.")
+            m.assertEqual(declined.hint, "Show a new code to try again.")
+            m.assertEqual(declined.action, "Show a new code")
+            m.assertFalse(declined.showsCode)
+            failed = Prairie.SignIn.stateCopy("failed")
+            m.assertEqual(failed.status, "Couldn't get a sign-in code.")
+            m.assertEqual(failed.action, "Try again")
+        end sub
+
+        @describe("code layout")
+        @it("lays the code out as one monospaced line without separators")
+        sub _()
+            chars = Prairie.SignIn.codeCharacters(" abcd-efgh ")
+            m.assertEqual(chars.count(), 9)
+            m.assertEqual(chars[4], " ")
+            m.assertEqual(chars[0], "A")
+            m.assertEqual(Prairie.SignIn.codeCharacters("-AB--CD-").count(), 5)
+            layout = Prairie.SignIn.codeLayout("ABCD-EFGH", 1000, 60)
+            m.assertEqual(layout.cellWidth, 60)
+            m.assertEqual(layout.cells.count(), 8)
+            m.assertEqual(layout.cells[3].x, 180)
+            m.assertEqual(layout.cells[4].x, 270)
+            m.assertEqual(layout.width, 510)
+            narrow = Prairie.SignIn.codeLayout("ABCD-EFGH", 340, 60)
+            m.assertEqual(narrow.cellWidth, 40)
+            m.assertTrue(narrow.width <= 340)
+            m.assertEqual(Prairie.SignIn.codeLayout("", 300, 60).cells.count(), 0)
+        end sub
+
+        @describe("loginFailureMessage")
+        @it("says Incorrect username or password for a 401")
+        sub _()
+            m.assertEqual(Prairie.SignIn.loginFailureMessage(401, "Unauthorized"), "Incorrect username or password.")
+            m.assertEqual(Prairie.SignIn.loginFailureMessage(429, ""), "Too many attempts. Wait a moment, then try again.")
+            m.assertEqual(Prairie.SignIn.loginFailureMessage(-6, "x"), "Network error. Check your connection.")
+            m.assertEqual(Prairie.SignIn.loginFailureMessage(408, "x"), "Network error. Check your connection.")
+            m.assertEqual(Prairie.SignIn.loginFailureMessage(500, " "), "Login failed")
+            m.assertEqual(Prairie.SignIn.loginFailureMessage(403, "Account is disabled"), "Account is disabled")
+        end sub
+
+    end class
+end namespace
