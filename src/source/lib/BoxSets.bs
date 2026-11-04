@@ -217,4 +217,44 @@ namespace Prairie.BoxSets
         return merged
     end function
 
+    function isPlayed(item as object) as boolean
+        return type(item.user_state) = "roAssociativeArray" and item.user_state.played = true
+    end function
+
+    ' The movie the box set's Play starts: the first one in collection order
+    ' the profile has not played (an in-progress movie is not played), or the
+    ' first once all are played. Invalid for an empty box set.
+    function nextMovie(items as object) as dynamic
+        for each item in items
+            if not isPlayed(item)
+                return item
+            end if
+        end for
+        if items.count() > 0
+            return items[0]
+        end if
+        return invalid
+    end function
+
+    ' Where the next movie resumes, 0 to start it from the beginning.
+    function resumeSeconds(item as object) as integer
+        if isPlayed(item)
+            return 0
+        end if
+        return intOr(item.position_seconds, 0)
+    end function
+
+    ' "Continue · Title" once the set or the movie is started, else "Play Title".
+    function playLabel(boxSet as object, item as object) as string
+        title = "Movie"
+        if item.title <> invalid
+            title = item.title as string
+        end if
+        started = boxSet.playedCount > 0 and boxSet.playedCount < boxSet.movieCount
+        if started or resumeSeconds(item) > 0
+            return "Continue · " + title
+        end if
+        return "Play " + title
+    end function
+
 end namespace
