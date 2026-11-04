@@ -1,0 +1,87 @@
+namespace tests
+    @suite("Prairie.RequestBrands")
+    class RequestBrandsSuite extends rooibos.BaseTestSuite
+
+        @describe("rows")
+        @it("maps brand row types to browse kinds")
+        sub _()
+            m.assertEqual(Prairie.RequestBrands.kindFor("studios"), "studio")
+            m.assertEqual(Prairie.RequestBrands.kindFor("Networks"), "network")
+            m.assertEqual(Prairie.RequestBrands.kindFor("genres"), "genre")
+            m.assertEqual(Prairie.RequestBrands.kindFor("tmdb_chart"), "")
+            m.assertEqual(Prairie.RequestBrands.kindFor(invalid), "")
+            m.assertEqual(Prairie.RequestBrands.collectionPath("Studios"), "/api/v2/requests/discover/studios")
+        end sub
+
+        @it("reads a brand list into cards")
+        sub _()
+            brands = Prairie.RequestBrands.fromResponse({ items: [
+                { slug: "marvel-studios", display_name: "Marvel Studios", logo_url: "https://l/m.png", series_supported: false },
+                { slug: "marvel-studios", display_name: "Again" },
+                { slug: "drama", display_name: " ", series_supported: true },
+                { display_name: "No slug" },
+                "junk"
+            ] })
+            m.assertEqual(brands.count(), 2)
+            m.assertEqual(brands[0].name, "Marvel Studios")
+            m.assertEqual(brands[0].logoUrl, "https://l/m.png")
+            m.assertEqual(brands[1].name, "drama")
+            m.assertEqual(brands[1].logoUrl, "")
+            m.assertTrue(brands[1].seriesSupported)
+            items = Prairie.RequestBrands.screenItems("studio", brands)
+            m.assertEqual(items[0].content_id, "brand:studio:marvel-studios")
+            m.assertEqual(items[0].title, "Marvel Studios")
+            m.assertTrue(items[0].fit)
+            m.assertEqual(Prairie.RequestBrands.fromResponse(invalid).count(), 0)
+            m.assertEqual(Prairie.RequestBrands.fromResponse({ items: "x" }).count(), 0)
+        end sub
+
+        @it("parses brand card ids")
+        sub _()
+            ref = Prairie.RequestBrands.parseCardId("brand:genre:science-fiction")
+            m.assertEqual(ref.kind, "genre")
+            m.assertEqual(ref.slug, "science-fiction")
+            m.assertInvalid(Prairie.RequestBrands.parseCardId("brand:genre:"))
+            m.assertInvalid(Prairie.RequestBrands.parseCardId("brand:x"))
+            m.assertInvalid(Prairie.RequestBrands.parseCardId("movie:1"))
+            m.assertInvalid(Prairie.RequestBrands.parseCardId(invalid))
+        end sub
+
+        @describe("browse")
+        @it("browses studios as movies, networks as series and genres as either")
+        sub _()
+            m.assertEqual(Prairie.RequestBrands.mediaTypes("studio", { seriesSupported: true }).join(","), "movie")
+            m.assertEqual(Prairie.RequestBrands.mediaTypes("network", invalid).join(","), "series")
+            m.assertEqual(Prairie.RequestBrands.mediaTypes("genre", { seriesSupported: true }).join(","), "movie,series")
+            m.assertEqual(Prairie.RequestBrands.mediaTypes("genre", invalid).join(","), "movie")
+            m.assertEqual(Prairie.RequestBrands.mediaLabel("series"), "Series")
+            m.assertEqual(Prairie.RequestBrands.mediaLabel("movie"), "Movies")
+            m.assertEqual(Prairie.RequestBrands.browsePath("studio", "a24", "movie", 2), "/api/v2/requests/discover/browse/studio/a24?page=2")
+            m.assertEqual(Prairie.RequestBrands.browsePath("genre", "drama", "series"), "/api/v2/requests/discover/browse/genre/drama?page=1&media_type=series")
+        end sub
+
+        @it("pages a browse read until its last page")
+        sub _()
+            data = {
+                display_name: "A24",
+                page: 1,
+                total_pages: 3,
+                results: [{ tmdb_id: 1, title: "Moonlight", media_type: "movie" }]
+            }
+            page = Prairie.RequestBrands.pageFromResponse(data, 1)
+            m.assertEqual(page.cards.count(), 1)
+            m.assertEqual(page.title, "A24")
+            m.assertEqual(page.nextPage, 2)
+            data.page = 3
+            m.assertEqual(Prairie.RequestBrands.pageFromResponse(data, 3).nextPage, 0)
+            data.page = 600
+            data.total_pages = 900
+            m.assertEqual(Prairie.RequestBrands.pageFromResponse(data, 600).nextPage, 0)
+            empty = Prairie.RequestBrands.pageFromResponse(invalid, 4)
+            m.assertEqual(empty.page, 4)
+            m.assertEqual(empty.cards.count(), 0)
+            m.assertEqual(Prairie.RequestBrands.pageFromResponse({}, 2).page, 2)
+        end sub
+
+    end class
+end namespace

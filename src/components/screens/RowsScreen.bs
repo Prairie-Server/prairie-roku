@@ -122,7 +122,7 @@ sub onRows()
                     if entry.content_id <> invalid
                         contentId = entry.content_id as string
                     end if
-                    node.addFields({ contentId: contentId, isExploreAll: false, watched: Prairie.WatchedState.isWatched(entry) })
+                    node.addFields({ contentId: contentId, isExploreAll: false, watched: Prairie.WatchedState.isWatched(entry), fitPoster: entry.fit = true })
                 end for
             end if
             if source.browsable = true and source.id <> invalid

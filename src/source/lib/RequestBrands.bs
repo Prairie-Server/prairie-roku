@@ -1,0 +1,137 @@
+import "pkg:/source/lib/Requests.bs"
+
+' Brand rows on the Requests hub: a row_order entry of type studios,
+' networks or genres draws the matching brand list
+' (GET /api/v2/requests/discover/{type}); a brand opens a paged browse page
+' (GET /api/v2/requests/discover/browse/{kind}/{slug}).
+namespace Prairie.RequestBrands
+
+    ' The browse kind for a brand row type: studio, network, genre or "".
+    function kindFor(rowType as dynamic) as string
+        if rowType = invalid
+            return ""
+        end if
+        value = LCase(rowType as string)
+        if value = "studios"
+            return "studio"
+        else if value = "networks"
+            return "network"
+        else if value = "genres"
+            return "genre"
+        end if
+        return ""
+    end function
+
+    function collectionPath(rowType as string) as string
+        return "/api/v2/requests/discover/" + LCase(rowType).encodeUriComponent()
+    end function
+
+    ' [{ slug, name, logoUrl, seriesSupported }] from a brand list.
+    function fromResponse(data as dynamic) as object
+        brands = []
+        if data = invalid or type(data) <> "roAssociativeArray" or type(data.items) <> "roArray"
+            return brands
+        end if
+        seen = {}
+        for each raw in data.items
+            if type(raw) = "roAssociativeArray" and raw.slug <> invalid
+                slug = (raw.slug as string).trim()
+                name = slug
+                if raw.display_name <> invalid and (raw.display_name as string).trim().len() > 0
+                    name = (raw.display_name as string).trim()
+                end if
+                if slug.len() > 0 and not seen.doesExist(slug)
+                    seen[slug] = true
+                    logo = ""
+                    if raw.logo_url <> invalid
+                        logo = raw.logo_url as string
+                    end if
+                    brands.push({ slug: slug, name: name, logoUrl: logo, seriesSupported: raw.series_supported = true })
+                end if
+            end if
+        end for
+        return brands
+    end function
+
+    function cardId(kind as string, slug as string) as string
+        return "brand:" + kind + ":" + slug
+    end function
+
+    ' { kind, slug } from a brand card's id, or invalid.
+    function parseCardId(contentId as dynamic) as dynamic
+        if contentId = invalid
+            return invalid
+        end if
+        text = contentId as string
+        if text.left(6) <> "brand:"
+            return invalid
+        end if
+        rest = text.mid(6)
+        sep = rest.instr(":")
+        if sep <= 0 or sep >= rest.len() - 1
+            return invalid
+        end if
+        return { kind: rest.left(sep), slug: rest.mid(sep + 1) }
+    end function
+
+    ' Poster cards for a brand row; logos fit inside the card.
+    function screenItems(kind as string, brands as object) as object
+        items = []
+        for each brand in brands
+            items.push({ content_id: cardId(kind, brand.slug), title: brand.name, poster_url: brand.logoUrl, fit: true, watched: false })
+        end for
+        return items
+    end function
+
+    ' The media types a brand browses: studios movies, networks series,
+    ' genres movies and, when the brand allows, series.
+    function mediaTypes(kind as string, brand as dynamic) as object
+        if kind = "network"
+            return ["series"]
+        end if
+        if kind = "genre" and brand <> invalid and brand.seriesSupported = true
+            return ["movie", "series"]
+        end if
+        return ["movie"]
+    end function
+
+    function mediaLabel(mediaType as string) as string
+        if mediaType = "series"
+            return "Series"
+        end if
+        return "Movies"
+    end function
+
+    ' Only a genre takes media_type; studios and networks have one.
+    function browsePath(kind as string, slug as string, mediaType as string, page = 1 as integer) as string
+        result = "/api/v2/requests/discover/browse/" + kind.encodeUriComponent() + "/" + slug.encodeUriComponent() + "?page=" + page.toStr()
+        if kind = "genre"
+            result = result + "&media_type=" + mediaType.encodeUriComponent()
+        end if
+        return result
+    end function
+
+    ' { cards, page, nextPage, title } for one browse page; nextPage is 0 at
+    ' the end (TMDB stops at 500 pages).
+    function pageFromResponse(data as dynamic, requestedPage as integer) as object
+        result = { cards: [], page: requestedPage, nextPage: 0, title: "" }
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return result
+        end if
+        result.cards = Prairie.Requests.cardsFrom(data.results)
+        if data.display_name <> invalid
+            result.title = data.display_name as string
+        end if
+        page = Prairie.Requests.intOr(data.page, requestedPage)
+        result.page = page
+        totalPages = Prairie.Requests.intOr(data.total_pages, 0)
+        if totalPages > 500
+            totalPages = 500
+        end if
+        if page < totalPages
+            result.nextPage = page + 1
+        end if
+        return result
+    end function
+
+end namespace

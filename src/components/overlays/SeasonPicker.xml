@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Season picker for a series request: check the seasons to ask for, then
+     Request N Seasons. Sits over the current screen and keeps every key. -->
+<component name="SeasonPicker" extends="Group">
+    <interface>
+        <field id="titleText" type="string" value="" />
+        <field id="seasons" type="array" />
+        <field id="submitted" type="array" alwaysNotify="true" />
+        <field id="closed" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="SeasonPicker.bs" />
+    <children>
+        <Rectangle id="dim" width="1920" height="1080" color="0x000000C0" />
+        <Rectangle id="panel" translation="[460, 120]" width="1000" height="840" color="0x1E2430FF">
+            <Label
+                id="eyebrow"
+                text="CHOOSE SEASONS"
+                translation="[60, 50]"
+                color="0xE0A84AFF"
+                font="font:SmallBoldSystemFont"
+            />
+            <Label
+                id="title"
+                text=""
+                translation="[60, 90]"
+                width="880"
+                color="0xF3EFE6FF"
+                font="font:MediumBoldSystemFont"
+            />
+            <CheckList
+                id="list"
+                translation="[60, 170]"
+                itemSize="[880, 64]"
+                numRows="8"
+                vertFocusAnimationStyle="floatingFocus"
+            />
+            <Rectangle id="submitBg" translation="[60, 720]" width="880" height="72" color="0xE0A84AFF" focusable="true">
+                <Label
+                    id="submitLabel"
+                    text=""
+                    width="880"
+                    height="72"
+                    horizAlign="center"
+                    vertAlign="center"
+                    color="0x141820FF"
+                    font="font:MediumBoldSystemFont"
+                />
+            </Rectangle>
+        </Rectangle>
+    </children>
+</component>

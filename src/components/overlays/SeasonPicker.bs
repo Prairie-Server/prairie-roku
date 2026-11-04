@@ -1,0 +1,95 @@
+import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/RequestDetail.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.title = m.top.findNode("title")
+    m.list = m.top.findNode("list")
+    m.submitBg = m.top.findNode("submitBg")
+    m.submitLabel = m.top.findNode("submitLabel")
+    m.title.color = colors.ink
+    m.top.observeField("titleText", "onTitleText")
+    m.top.observeField("seasons", "onSeasons")
+    m.list.observeField("checkedState", "onChecked")
+end sub
+
+sub onTitleText()
+    m.title.text = m.top.titleText
+end sub
+
+sub onSeasons()
+    content = CreateObject("roSGNode", "ContentNode")
+    if m.top.seasons <> invalid
+        for each season in m.top.seasons
+            node = content.createChild("ContentNode")
+            node.title = season.label
+        end for
+    end if
+    m.list.content = content
+    onChecked()
+end sub
+
+function checkedCount() as integer
+    return Prairie.RequestDetail.checkedNumbers(seasonList(), m.list.checkedState).count()
+end function
+
+function seasonList() as object
+    if m.top.seasons = invalid
+        return []
+    end if
+    return m.top.seasons
+end function
+
+sub onChecked()
+    count = checkedCount()
+    if count = 0
+        m.submitLabel.text = "Check the seasons to request"
+    else
+        m.submitLabel.text = Prairie.RequestDetail.submitLabel(count)
+    end if
+    paintSubmit()
+end sub
+
+sub paintSubmit()
+    colors = Prairie.Theme.colors()
+    if checkedCount() = 0
+        m.submitBg.color = colors.muted
+    else if m.submitBg.hasFocus()
+        m.submitBg.color = colors.ink
+    else
+        m.submitBg.color = colors.amber
+    end if
+end sub
+
+sub focusDefault()
+    m.list.setFocus(true)
+    paintSubmit()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return true
+    end if
+    if key = "back"
+        m.top.closed = true
+        return true
+    end if
+    if m.submitBg.hasFocus()
+        if key = "OK"
+            numbers = Prairie.RequestDetail.checkedNumbers(seasonList(), m.list.checkedState)
+            if numbers.count() > 0
+                m.top.submitted = numbers
+            end if
+        else if key = "up"
+            m.list.setFocus(true)
+            paintSubmit()
+        end if
+        return true
+    end if
+    if key = "down" or key = "play"
+        ' Past the last season (or Play from anywhere): the submit button.
+        m.submitBg.setFocus(true)
+        paintSubmit()
+    end if
+    return true
+end function

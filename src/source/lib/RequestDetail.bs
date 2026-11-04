@@ -1,0 +1,152 @@
+import "pkg:/source/lib/Requests.bs"
+
+' A request card's title read (GET /api/v2/requests/detail): the dialog's
+' actions, season picking for series requests (MediaRequestCreate.seasons)
+' and following someone else's request (android RequestDetailViewModel:
+' "Notify me when available", PUT/DELETE /api/v2/requests/follows).
+namespace Prairie.RequestDetail
+
+    function path(mediaType as string, tmdbId as integer) as string
+        return "/api/v2/requests/detail/" + mediaType.encodeUriComponent() + "/" + tmdbId.toStr()
+    end function
+
+    function followPath(mediaType as string, tmdbId as integer) as string
+        return "/api/v2/requests/follows/" + mediaType.encodeUriComponent() + "/" + tmdbId.toStr()
+    end function
+
+    ' What the server's requests status offers beyond requesting: following a
+    ' title someone else requested, and picking a series' seasons.
+    function featuresFromStatus(data as dynamic) as object
+        features = { followSupported: false, seasonRequestsSupported: false }
+        if data = invalid or type(data) <> "roAssociativeArray"
+            return features
+        end if
+        features.followSupported = data.follow_supported = true
+        features.seasonRequestsSupported = data.season_requests_supported = true
+        return features
+    end function
+
+    ' The regular seasons a request can still ask for (not in the library,
+    ' not covered by the active request): [{ number, label }].
+    function requestableSeasons(detail as dynamic) as object
+        seasons = []
+        if detail = invalid or type(detail) <> "roAssociativeArray" or type(detail.seasons) <> "roArray"
+            return seasons
+        end if
+        for each season in detail.seasons
+            if type(season) = "roAssociativeArray"
+                number = Prairie.Requests.intOr(season.season_number, 0)
+                availability = ""
+                if season.availability <> invalid
+                    availability = LCase(season.availability as string)
+                end if
+                if number >= 1 and season.requested <> true and availability <> "available"
+                    seasons.push({ number: number, label: seasonLabel(season, number, availability) })
+                end if
+            end if
+        end for
+        return seasons
+    end function
+
+    function seasonLabel(season as object, number as integer, availability as string) as string
+        name = "Season " + number.toStr()
+        if season.name <> invalid and (season.name as string).trim().len() > 0
+            name = (season.name as string).trim()
+        end if
+        parts = [name]
+        episodes = Prairie.Requests.intOr(season.episode_count, 0)
+        if episodes = 1
+            parts.push("1 episode")
+        else if episodes > 1
+            parts.push(episodes.toStr() + " episodes")
+        end if
+        if availability = "partial"
+            parts.push("Partly in library")
+        end if
+        return parts.join(" · ")
+    end function
+
+    ' Someone else's open request: the viewer can ask to hear when the title
+    ' lands instead of requesting it again. Not for the requester, a title in
+    ' the library, or one that can be requested.
+    function canFollow(entry as object, features as object) as boolean
+        if features.followSupported <> true or entry.requestable or entry.requestedByViewer or entry.inLibrary
+            return false
+        end if
+        return entry.reason = "already_requested"
+    end function
+
+    function followLabel(following as boolean) as string
+        if following
+            return "Stop notifying me"
+        end if
+        return "Notify me when available"
+    end function
+
+    function followNotice(following as boolean) as string
+        if following
+            return "We'll let you know when it's available"
+        end if
+        return "Notification turned off"
+    end function
+
+    ' Dialog choices: Open (in the library), Request (every missing season
+    ' and, with season requests, Choose Seasons), Notify, then Cancel.
+    function actions(entry as object, seasons as object, features as object) as object
+        list = []
+        if entry.inLibrary and entry.libraryContentId.len() > 0
+            list.push({ id: "open", label: "Open" })
+        end if
+        if entry.requestable
+            if entry.mediaType = "series" and features.seasonRequestsSupported = true and seasons.count() > 1
+                if entry.inLibrary
+                    list.push({ id: "request", label: "Request Missing Seasons" })
+                else
+                    list.push({ id: "request", label: "Request All Seasons" })
+                end if
+                list.push({ id: "seasons", label: "Choose Seasons…" })
+            else
+                list.push({ id: "request", label: "Request" })
+            end if
+        end if
+        if canFollow(entry, features)
+            list.push({ id: "follow", label: followLabel(entry.following) })
+        end if
+        list.push({ id: "cancel", label: "Cancel" })
+        return list
+    end function
+
+    ' The picker's submit label for the checked season count.
+    function submitLabel(count as integer) as string
+        if count = 1
+            return "Request 1 Season"
+        end if
+        return "Request " + count.toStr() + " Seasons"
+    end function
+
+    ' Season numbers for the checked rows of the picker.
+    function checkedNumbers(seasons as object, checked as dynamic) as object
+        numbers = []
+        if type(checked) <> "roArray"
+            return numbers
+        end if
+        index = 0
+        for each season in seasons
+            if index < checked.count() and checked[index] = true
+                numbers.push(season.number)
+            end if
+            index = index + 1
+        end for
+        return numbers
+    end function
+
+    ' The entry after a follow or unfollow; the follow answer's state wins.
+    function applyFollow(entry as object, following as boolean, data as dynamic) as object
+        entry.following = following
+        if data <> invalid and type(data) = "roAssociativeArray" and data.following <> invalid
+            entry.following = data.following = true
+        end if
+        return entry
+    end function
+
+end namespace

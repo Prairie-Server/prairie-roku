@@ -141,6 +141,18 @@ namespace Prairie.Requests
         if result.overview <> invalid
             overview = result.overview as string
         end if
+        req = {}
+        if type(result.request) = "roAssociativeArray"
+            req = result.request
+        end if
+        reason = ""
+        if req.reason <> invalid
+            reason = req.reason as string
+        end if
+        imdbId = ""
+        if result.imdb_id <> invalid
+            imdbId = result.imdb_id as string
+        end if
         return {
             tmdbId: tmdbId,
             mediaType: mediaType,
@@ -152,7 +164,13 @@ namespace Prairie.Requests
             posterUrl: imageUrl(result.poster_path),
             inLibrary: isInLibrary(result),
             libraryContentId: libraryId,
-            state: stateLabel(result)
+            state: stateLabel(result),
+            requestable: req.requestable <> false,
+            following: req.following = true,
+            requestedByViewer: req.requested_by_viewer = true,
+            reason: reason,
+            tvdbId: intOr(result.tvdb_id, 0),
+            imdbId: imdbId
         }
     end function
 
@@ -176,9 +194,10 @@ namespace Prairie.Requests
     end function
 
     ' Rows the hub draws. A server with row_order lists every row in that
-    ' order; brand rows (studios, networks, genres) and empty rows are
-    ' skipped. Without row_order the sections show in the order sent.
-    ' Each row: { key, title, cards, browsable }.
+    ' order, empty title rows skipped; a brand row (studios, networks,
+    ' genres) comes with no cards and brandType set, for the scene to fill
+    ' from the brand list. Without row_order the sections show in the order
+    ' sent. Each row: { key, title, cards, browsable, brandType }.
     function hubRows(data as dynamic) as object
         rows = []
         if data = invalid or type(data) <> "roAssociativeArray"
@@ -198,10 +217,14 @@ namespace Prairie.Requests
         ordered = []
         if browsable
             for each ref in data.row_order
-                if type(ref) = "roAssociativeArray" and ref.key <> invalid and not isBrandRow(ref.type)
-                    section = sections[ref.key as string]
-                    if section <> invalid
-                        ordered.push(section)
+                if type(ref) = "roAssociativeArray" and ref.key <> invalid
+                    if isBrandRow(ref.type)
+                        ordered.push({ brandType: LCase(ref.type as string), key: ref.key, title: ref.title })
+                    else
+                        section = sections[ref.key as string]
+                        if section <> invalid
+                            ordered.push(section)
+                        end if
                     end if
                 end if
             end for
@@ -209,13 +232,17 @@ namespace Prairie.Requests
             ordered = sectionList
         end if
         for each section in ordered
-            cards = cardsFrom(section.results)
-            if cards.count() > 0
-                title = section.key as string
-                if section.title <> invalid and (section.title as string).len() > 0
-                    title = section.title as string
+            title = section.key as string
+            if section.title <> invalid and (section.title as string).len() > 0
+                title = section.title as string
+            end if
+            if section.brandType <> invalid
+                rows.push({ key: section.key as string, title: title, cards: [], browsable: false, brandType: section.brandType })
+            else
+                cards = cardsFrom(section.results)
+                if cards.count() > 0
+                    rows.push({ key: section.key as string, title: title, cards: cards, browsable: true, brandType: "" })
                 end if
-                rows.push({ key: section.key as string, title: title, cards: cards, browsable: true })
             end if
         end for
         return rows
@@ -272,12 +299,23 @@ namespace Prairie.Requests
         return result
     end function
 
-    function createBody(entry as object) as string
+    ' The create body; seasons (series only) names the seasons to request,
+    ' invalid for every missing season.
+    function createBody(entry as object, seasons = invalid as dynamic) as string
         body = {
             media_type: entry.mediaType,
             tmdb_id: entry.tmdbId,
             title: entry.title
         }
+        if entry.mediaType = "series" and type(seasons) = "roArray" and seasons.count() > 0
+            body.seasons = seasons
+        end if
+        if entry.tvdbId <> invalid and entry.tvdbId > 0
+            body.tvdb_id = entry.tvdbId
+        end if
+        if entry.imdbId <> invalid and entry.imdbId.len() > 0
+            body.imdb_id = entry.imdbId
+        end if
         if entry.year > 0
             body.year = entry.year
         end if

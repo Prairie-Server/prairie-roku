@@ -110,5 +110,31 @@ namespace tests
             m.assertInvalid(Prairie.BoxSets.parseCardId(invalid))
         end sub
 
+        @describe("play")
+        @it("plays the first unplayed movie and resumes it")
+        sub _()
+            boxSet = Prairie.BoxSets.normalize(m.sample())
+            first = { content_id: "movie:1", title: "One", user_state: { played: true } }
+            second = { content_id: "movie:2", title: "Two", position_seconds: 754.6 }
+            third = { content_id: "movie:3", title: "Three" }
+            upNext = Prairie.BoxSets.nextMovie([first, second, third])
+            m.assertEqual(upNext.content_id, "movie:2")
+            m.assertEqual(Prairie.BoxSets.resumeSeconds(upNext), 754)
+            m.assertEqual(Prairie.BoxSets.playLabel(boxSet, upNext), "Continue · Two")
+            m.assertEqual(Prairie.BoxSets.playLabel(boxSet, third), "Play Three")
+            m.assertEqual(Prairie.BoxSets.resumeSeconds(first), 0)
+            boxSet.playedCount = 1
+            m.assertEqual(Prairie.BoxSets.playLabel(boxSet, third), "Continue · Three")
+            boxSet.playedCount = 8
+            m.assertEqual(Prairie.BoxSets.playLabel(boxSet, {}), "Play Movie")
+        end sub
+
+        @it("starts over once every movie is played")
+        sub _()
+            played = { content_id: "movie:1", title: "One", user_state: { played: true } }
+            m.assertEqual(Prairie.BoxSets.nextMovie([played]).content_id, "movie:1")
+            m.assertInvalid(Prairie.BoxSets.nextMovie([]))
+        end sub
+
     end class
 end namespace
