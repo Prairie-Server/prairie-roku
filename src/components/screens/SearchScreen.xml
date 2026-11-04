@@ -2,6 +2,7 @@
 <component name="SearchScreen" extends="Group">
     <interface>
         <field id="items" type="array" />
+        <field id="requestItems" type="array" />
         <field id="busy" type="bool" value="false" />
         <field id="errorText" type="string" value="" />
         <field id="statusText" type="string" value="" />
@@ -75,6 +76,7 @@
             itemSpacing="[0, 24]"
             rowItemSpacing="[[32, 0]]"
             showRowLabel="[false]"
+            rowLabelOffset="[[0, 12]]"
             drawFocusFeedback="false"
         />
     </children>
