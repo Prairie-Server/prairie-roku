@@ -15,6 +15,10 @@
         <field id="rateRequested" type="boolean" value="false" alwaysNotify="true" />
         <field id="watched" type="bool" value="false" />
         <field id="watchedRequested" type="boolean" value="false" alwaysNotify="true" />
+        <field id="trailers" type="array" />
+        <field id="trailerSelected" type="assocarray" alwaysNotify="true" />
+        <field id="boxSet" type="assocarray" />
+        <field id="boxSetRequested" type="boolean" value="false" alwaysNotify="true" />
         <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
         <function name="focusDefault" />
     </interface>
@@ -22,6 +26,7 @@
     <children>
         <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
         <Poster id="heroArt" width="1920" height="1080" translation="[0,0]" opacity="0.35" />
+        <Group id="page">
         <Label
             id="eyebrow"
             text=""
@@ -101,6 +106,19 @@
                 font="font:MediumBoldSystemFont"
             />
         </Rectangle>
+        <Rectangle id="boxSetBg" translation="[1080, 620]" width="460" height="64" color="0x232A36FF" focusable="true" visible="false">
+            <Label
+                id="boxSetLabel"
+                text="Box Set"
+                width="440"
+                height="64"
+                translation="[10, 0]"
+                horizAlign="center"
+                vertAlign="center"
+                color="0xF3EFE6FF"
+                font="font:MediumBoldSystemFont"
+            />
+        </Rectangle>
         <Label
             id="seasonsTitle"
             text="Seasons"
@@ -154,5 +172,27 @@
             drawFocusFeedback="false"
             visible="false"
         />
+        <Label
+            id="trailersTitle"
+            text="Trailers &amp; Extras"
+            translation="[80, 1090]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+            visible="false"
+        />
+        <RowList
+            id="trailerList"
+            translation="[80, 1140]"
+            itemComponentName="PosterCard"
+            itemSize="[1760, 240]"
+            rowItemSize="[[320, 220]]"
+            numRows="1"
+            itemSpacing="[0, 0]"
+            rowItemSpacing="[[28, 0]]"
+            showRowLabel="[false]"
+            drawFocusFeedback="false"
+            visible="false"
+        />
+        </Group>
     </children>
 </component>
