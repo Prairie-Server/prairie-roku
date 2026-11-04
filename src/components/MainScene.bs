@@ -74,6 +74,7 @@ sub init()
     m.libraryCollectionCards = []
     m.personalCollectionCards = []
     m.detailContentId = ""
+    m.playerReturnRoute = ""
     m.ratingPrevious = 0
     m.ratingDialog = invalid
     m.detailBackRoute = "home"
@@ -1154,6 +1155,8 @@ sub showItemDetail(contentId as string, backRoute = "" as string)
 end sub
 
 sub showPlayer(launch as object)
+    ' Where Back from the player lands: the box set page returns to itself.
+    m.playerReturnRoute = m.route
     clearScreen()
     m.route = "player"
     m.playLaunch = launch
@@ -2420,7 +2423,11 @@ sub onPlayerExit()
     m.playbackSession = invalid
     savedBack = m.detailBackRoute
     contentId = m.detailContentId
-    if contentId.len() > 0
+    returnRoute = m.playerReturnRoute
+    m.playerReturnRoute = ""
+    if returnRoute = "boxset" and m.boxSetPage <> invalid
+        showBoxSet(m.boxSetPage)
+    else if contentId.len() > 0
         showItemDetail(contentId)
         m.detailBackRoute = savedBack
     else

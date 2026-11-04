@@ -34,6 +34,7 @@ sub initFeatures()
     m.requestOrigin = ""
     m.boxSetPage = invalid
     m.boxSetOrigin = invalid
+    m.boxSetNext = invalid
     m.detailBoxSet = invalid
     m.searchQuery = ""
     m.searchItems = []
@@ -486,6 +487,8 @@ sub showBoxSet(boxSet as object)
     screen.observeField("selectedContentId", "onBoxSetFilmSelected")
     screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
     screen.observeField("backRequested", "onBoxSetBack")
+    screen.observeField("actionRequested", "onBoxSetPlay")
+    screen.observeField("playRequested", "onDetailPlayRequested")
     m.screenHost.appendChild(screen)
     m.screen = screen
     screen.callFunc("focusDefault")
@@ -508,7 +511,24 @@ sub applyBoxSetDetail(response as object)
     m.boxSetPage = page.boxSet
     m.screen.eyebrow = "Box Set · " + Prairie.BoxSets.heroFacts(page.boxSet)
     m.screen.items = page.items
+    ' Play starts the first unwatched film (android TvBoxSetScreen).
+    m.boxSetNext = Prairie.BoxSets.nextMovie(page.items)
+    if m.boxSetNext <> invalid
+        m.screen.actionText = Prairie.BoxSets.playLabel(page.boxSet, m.boxSetNext)
+    end if
     m.screen.callFunc("focusDefault")
+end sub
+
+sub onBoxSetPlay()
+    film = m.boxSetNext
+    if film = invalid or film.content_id = invalid
+        return
+    end if
+    title = ""
+    if film.title <> invalid
+        title = film.title as string
+    end if
+    m.screen.playRequested = { contentId: film.content_id as string, title: title }
 end sub
 
 sub onBoxSetFilmSelected()
