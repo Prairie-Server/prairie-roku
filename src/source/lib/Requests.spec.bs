@@ -95,7 +95,7 @@ namespace tests
         end sub
 
         @describe("hub")
-        @it("follows row_order and skips brand and empty rows")
+        @it("follows row_order, keeps brand rows and skips empty rows")
         sub _()
             data = {
                 items: [
@@ -115,11 +115,16 @@ namespace tests
                 ]
             }
             rows = Prairie.Requests.hubRows(data)
-            m.assertEqual(rows.count(), 2)
+            m.assertEqual(rows.count(), 3)
             m.assertEqual(rows[0].key, "trending_movies")
             m.assertEqual(rows[0].title, "Trending")
-            m.assertEqual(rows[1].key, "popular_movies")
-            m.assertTrue(rows[1].browsable)
+            m.assertEqual(rows[0].brandType, "")
+            m.assertEqual(rows[1].key, "studios")
+            m.assertEqual(rows[1].brandType, "studios")
+            m.assertEqual(rows[1].cards.count(), 0)
+            m.assertFalse(rows[1].browsable)
+            m.assertEqual(rows[2].key, "popular_movies")
+            m.assertTrue(rows[2].browsable)
         end sub
 
         @it("keeps the sent order on servers without row_order")
@@ -188,6 +193,30 @@ namespace tests
             minimal = ParseJson(Prairie.Requests.createBody(Prairie.Requests.card(bare)))
             m.assertInvalid(minimal.year)
             m.assertInvalid(minimal.poster_path)
+        end sub
+
+        @it("names the seasons and external ids of a series request")
+        sub _()
+            source = m.result(7, "Show", "series")
+            source.tvdb_id = 81189
+            source.imdb_id = "tt0903747"
+            source.request = { requestable: false, following: true, requested_by_viewer: false, reason: "already_requested" }
+            entry = Prairie.Requests.card(source)
+            m.assertFalse(entry.requestable)
+            m.assertTrue(entry.following)
+            m.assertFalse(entry.requestedByViewer)
+            m.assertEqual(entry.reason, "already_requested")
+            body = ParseJson(Prairie.Requests.createBody(entry, [2, 3]))
+            m.assertEqual(body.seasons.count(), 2)
+            m.assertEqual(body.seasons[1], 3)
+            m.assertEqual(body.tvdb_id, 81189)
+            m.assertEqual(body.imdb_id, "tt0903747")
+            every = ParseJson(Prairie.Requests.createBody(entry, []))
+            m.assertInvalid(every.seasons)
+            movie = ParseJson(Prairie.Requests.createBody(Prairie.Requests.card(m.result(8, "Film")), [1]))
+            m.assertInvalid(movie.seasons)
+            m.assertInvalid(movie.tvdb_id)
+            m.assertTrue(Prairie.Requests.card({ tmdb_id: 9, title: "Bare", media_type: "movie" }).requestable)
         end sub
 
         @it("offers Request, Open or nothing besides Cancel")
