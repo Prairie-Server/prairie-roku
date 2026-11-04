@@ -73,6 +73,12 @@ sub onItemContent()
         m.poster.uri = ""
         m.caption.text = ""
     else
+        ' Brand logos fit inside the card; posters fill it.
+        if content.hasField("fitPoster") and content.fitPoster = true
+            m.poster.loadDisplayMode = "scaleToFit"
+        else
+            m.poster.loadDisplayMode = "scaleToZoom"
+        end if
         m.poster.uri = content.hdPosterUrl
         m.caption.text = content.title
     end if

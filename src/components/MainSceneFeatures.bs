@@ -39,6 +39,16 @@ sub initFeatures()
     m.requestSeasons = []
     m.requestFocus = invalid
     m.seasonPicker = invalid
+    m.brandCache = {}
+    m.hubRows = []
+    m.hubBrands = {}
+    m.brandLookup = {}
+    m.brandDialog = invalid
+    m.brandChoice = invalid
+    m.brandBrowse = invalid
+    m.brandItems = []
+    m.brandPage = 1
+    m.brandNext = 0
     m.boxSetPage = invalid
     m.boxSetOrigin = invalid
     m.boxSetNext = invalid
@@ -68,6 +78,7 @@ sub resetFeatureCacheForSession()
     m.requestsEnabled = false
     m.requestsKnown = false
     m.requestFeatures = Prairie.RequestDetail.featuresFromStatus(invalid)
+    m.brandCache = {}
 end sub
 
 ' ---- Side requests ----
@@ -177,6 +188,10 @@ sub onSideResponse(event as object)
         applyRequestsSearch(response)
     else if kind = "requestCreate"
         applyRequestCreate(response)
+    else if kind = "brandBrowse"
+        applyRequestsBrandPage(response)
+    else if kind.left(7) = "brands:"
+        applyHubBrands(kind.mid(7), response)
     else if kind = "requestDetail"
         applyRequestDetail(response)
     else if kind = "requestFollow"
@@ -222,6 +237,10 @@ sub onRowsItemSelected()
     end if
     if Prairie.Requests.isCardId(contentId)
         openRequestCard(contentId)
+        return
+    end if
+    if Prairie.RequestBrands.parseCardId(contentId) <> invalid
+        openBrandCard(contentId)
         return
     end if
     m.detailChain = invalid
@@ -624,7 +643,7 @@ function openSearchSpecialCard(contentId as string) as boolean
 end function
 
 function isSpecialCardId(contentId as dynamic) as boolean
-    return Prairie.Requests.isCardId(contentId) or Prairie.BoxSets.parseCardId(contentId) <> invalid
+    return Prairie.Requests.isCardId(contentId) or Prairie.BoxSets.parseCardId(contentId) <> invalid or Prairie.RequestBrands.parseCardId(contentId) <> invalid
 end function
 
 ' ---- Requests ----
@@ -698,12 +717,178 @@ sub applyRequestsDiscover(response as object)
         m.screen.callFunc("focusDefault")
         return
     end if
-    rows = []
-    for each hubRow in Prairie.Requests.hubRows(response.data)
+    m.hubRows = Prairie.Requests.hubRows(response.data)
+    for each hubRow in m.hubRows
         rememberRequestCards(hubRow.cards)
-        rows.push({ id: hubRow.key, title: hubRow.title, items: Prairie.Requests.screenItems(hubRow.cards), browsable: hubRow.browsable })
+    end for
+    loadHubBrands()
+end sub
+
+' ---- Brand rows (studios, networks, genres) ----
+
+' Reads the brand lists the hub's row_order asks for (cached per session),
+' then paints the hub once every list answered.
+sub loadHubBrands()
+    m.hubBrands = {}
+    pending = false
+    for each hubRow in m.hubRows
+        rowType = hubRow.brandType
+        if rowType.len() > 0 and not m.hubBrands.doesExist(rowType)
+            cached = m.brandCache[rowType]
+            if cached <> invalid
+                m.hubBrands[rowType] = cached
+            else if m.session <> invalid
+                m.hubBrands[rowType] = invalid
+                startSideRequest("brands:" + rowType, sideGet(Prairie.RequestBrands.collectionPath(rowType)))
+                pending = true
+            end if
+        end if
+    end for
+    if not pending
+        paintRequestsHub()
+    end if
+end sub
+
+sub applyHubBrands(rowType as string, response as object)
+    brands = []
+    if response.ok = true
+        brands = Prairie.RequestBrands.fromResponse(response.data)
+        m.brandCache[rowType] = brands
+    end if
+    m.hubBrands[rowType] = brands
+    for each key in m.sideTasks
+        if key.left(7) = "brands:"
+            return
+        end if
+    end for
+    paintRequestsHub()
+end sub
+
+sub paintRequestsHub()
+    rows = []
+    m.brandLookup = {}
+    for each hubRow in m.hubRows
+        if hubRow.brandType.len() > 0
+            brands = m.hubBrands[hubRow.brandType]
+            kind = Prairie.RequestBrands.kindFor(hubRow.brandType)
+            if brands <> invalid and brands.count() > 0 and kind.len() > 0
+                for each brand in brands
+                    m.brandLookup[Prairie.RequestBrands.cardId(kind, brand.slug)] = { kind: kind, brand: brand }
+                end for
+                rows.push({ id: hubRow.key, title: hubRow.title, items: Prairie.RequestBrands.screenItems(kind, brands), browsable: false })
+            end if
+        else
+            rows.push({ id: hubRow.key, title: hubRow.title, items: Prairie.Requests.screenItems(hubRow.cards), browsable: hubRow.browsable })
+        end if
     end for
     paintRows(rows, "Nothing to discover right now")
+end sub
+
+' A brand card: a genre that also lists series asks which first.
+sub openBrandCard(contentId as string)
+    ref = m.brandLookup[contentId]
+    if ref = invalid
+        return
+    end if
+    types = Prairie.RequestBrands.mediaTypes(ref.kind, ref.brand)
+    if types.count() = 1
+        showRequestsBrand({ kind: ref.kind, brand: ref.brand, mediaType: types[0] })
+        return
+    end if
+    m.brandChoice = { ref: ref, types: types }
+    labels = []
+    for each mediaType in types
+        labels.push(Prairie.RequestBrands.mediaLabel(mediaType))
+    end for
+    labels.push("Cancel")
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = ref.brand.name
+    dialog.buttons = labels
+    dialog.observeField("buttonSelected", "onBrandChoice")
+    m.brandDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onBrandChoice()
+    dialog = m.brandDialog
+    choice = m.brandChoice
+    m.brandDialog = invalid
+    m.brandChoice = invalid
+    if dialog = invalid or choice = invalid
+        return
+    end if
+    index = dialog.buttonSelected
+    dialog.close = true
+    if index >= 0 and index < choice.types.count()
+        showRequestsBrand({ kind: choice.ref.kind, brand: choice.ref.brand, mediaType: choice.types[index] })
+    end if
+end sub
+
+' A brand's titles, paged through GET discover/browse/{kind}/{slug}.
+sub showRequestsBrand(browse as object)
+    clearScreen()
+    m.route = "requestsBrand"
+    m.brandBrowse = browse
+    m.brandItems = []
+    m.brandNext = 0
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Requests · " + Prairie.RequestBrands.mediaLabel(browse.mediaType)
+    screen.titleText = browse.brand.name
+    screen.busy = true
+    screen.observeField("selectedContentId", "onRowsItemSelected")
+    screen.observeField("loadMoreRequested", "onRequestsBrandMore")
+    screen.observeField("backRequested", "onRequestsBrandBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
+    loadRequestsBrandPage(1)
+end sub
+
+sub loadRequestsBrandPage(page as integer)
+    if m.session = invalid or m.brandBrowse = invalid
+        return
+    end if
+    m.brandPage = page
+    m.screen.busy = true
+    path = Prairie.RequestBrands.browsePath(m.brandBrowse.kind, m.brandBrowse.brand.slug, m.brandBrowse.mediaType, page)
+    startSideRequest("brandBrowse", sideGet(path))
+end sub
+
+sub onRequestsBrandMore()
+    if m.brandNext > 0 and not m.sideTasks.doesExist("brandBrowse")
+        loadRequestsBrandPage(m.brandNext)
+    end if
+end sub
+
+sub applyRequestsBrandPage(response as object)
+    if response.ok <> true
+        if isRequestsOff(response)
+            closeRequestsToHome()
+            return
+        end if
+        m.screen.busy = false
+        m.screen.errorText = responseMessage(response, "Could not load " + m.brandBrowse.brand.name)
+        return
+    end if
+    page = Prairie.RequestBrands.pageFromResponse(response.data, m.brandPage)
+    rememberRequestCards(page.cards)
+    for each item in Prairie.Requests.screenItems(page.cards)
+        m.brandItems.push(item)
+    end for
+    m.brandNext = page.nextPage
+    if page.title.len() > 0
+        m.screen.titleText = page.title
+    end if
+    m.screen.items = m.brandItems
+    m.screen.hasMore = page.nextPage > 0
+    m.screen.busy = false
+    if m.brandPage = 1
+        m.screen.callFunc("focusDefault")
+    end if
+end sub
+
+sub onRequestsBrandBack()
+    showRequestsHub()
 end sub
 
 sub onRequestsExploreRow()

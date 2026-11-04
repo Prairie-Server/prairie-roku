@@ -2369,6 +2369,8 @@ sub onDetailBack()
         showRequestsHub()
     else if back = "requestsRow" and m.requestsRow <> invalid
         showRequestsRow(m.requestsRow)
+    else if back = "requestsBrand" and m.brandBrowse <> invalid
+        showRequestsBrand(m.brandBrowse)
     else if back = "libraries"
         showLibraries()
     else
