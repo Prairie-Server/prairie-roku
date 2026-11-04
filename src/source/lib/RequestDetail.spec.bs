@@ -1,0 +1,130 @@
+namespace tests
+    @suite("Prairie.RequestDetail")
+    class RequestDetailSuite extends rooibos.BaseTestSuite
+
+        function entry(overrides as object) as object
+            source = { tmdb_id: 5, title: "Heat", media_type: "series", availability: "missing", request: { requestable: true } }
+            source.append(overrides)
+            return Prairie.Requests.card(source)
+        end function
+
+        function features(follow as boolean, seasons as boolean) as object
+            return { followSupported: follow, seasonRequestsSupported: seasons }
+        end function
+
+        @describe("paths and status")
+        @it("builds the detail and follow paths")
+        sub _()
+            m.assertEqual(Prairie.RequestDetail.path("series", 1399), "/api/v2/requests/detail/series/1399")
+            m.assertEqual(Prairie.RequestDetail.followPath("movie", 949), "/api/v2/requests/follows/movie/949")
+        end sub
+
+        @it("reads follow and season support from the status")
+        sub _()
+            on = Prairie.RequestDetail.featuresFromStatus({ follow_supported: true, season_requests_supported: true })
+            m.assertTrue(on.followSupported)
+            m.assertTrue(on.seasonRequestsSupported)
+            off = Prairie.RequestDetail.featuresFromStatus({ follow_supported: "yes" })
+            m.assertFalse(off.followSupported)
+            m.assertFalse(off.seasonRequestsSupported)
+            m.assertFalse(Prairie.RequestDetail.featuresFromStatus(invalid).followSupported)
+        end sub
+
+        @describe("seasons")
+        @it("lists the seasons a request can still ask for")
+        sub _()
+            detail = { seasons: [
+                { season_number: 0, name: "Specials", episode_count: 3, availability: "missing", requested: false },
+                { season_number: 1, name: "Season 1", episode_count: 10, availability: "available", requested: false },
+                { season_number: 2, name: "Season 2", episode_count: 10, availability: "partial", requested: false },
+                { season_number: 3, name: " ", episode_count: 1, availability: "missing", requested: false },
+                { season_number: 4, episode_count: 0, requested: true },
+                { season_number: 5 },
+                "junk"
+            ] }
+            seasons = Prairie.RequestDetail.requestableSeasons(detail)
+            m.assertEqual(seasons.count(), 3)
+            m.assertEqual(seasons[0].number, 2)
+            m.assertEqual(seasons[0].label, "Season 2 · 10 episodes · Partly in library")
+            m.assertEqual(seasons[1].label, "Season 3 · 1 episode")
+            m.assertEqual(seasons[2].label, "Season 5")
+            m.assertEqual(Prairie.RequestDetail.requestableSeasons(invalid).count(), 0)
+            m.assertEqual(Prairie.RequestDetail.requestableSeasons({ seasons: "x" }).count(), 0)
+        end sub
+
+        @it("labels the picker and reads its checks")
+        sub _()
+            seasons = [{ number: 2 }, { number: 3 }, { number: 5 }]
+            picked = Prairie.RequestDetail.checkedNumbers(seasons, [true, false, true])
+            m.assertEqual(picked.count(), 2)
+            m.assertEqual(picked[0], 2)
+            m.assertEqual(picked[1], 5)
+            short = Prairie.RequestDetail.checkedNumbers(seasons, [false, true])
+            m.assertEqual(short.count(), 1)
+            m.assertEqual(short[0], 3)
+            m.assertEqual(Prairie.RequestDetail.checkedNumbers(seasons, invalid).count(), 0)
+            m.assertEqual(Prairie.RequestDetail.submitLabel(1), "Request 1 Season")
+            m.assertEqual(Prairie.RequestDetail.submitLabel(3), "Request 3 Seasons")
+        end sub
+
+        @describe("follow")
+        @it("follows only someone else's open request")
+        sub _()
+            other = m.entry({ request: { requestable: false, requested_by_viewer: false, reason: "already_requested", request_id: "r" } })
+            m.assertTrue(Prairie.RequestDetail.canFollow(other, m.features(true, false)))
+            m.assertFalse(Prairie.RequestDetail.canFollow(other, m.features(false, false)))
+            mine = m.entry({ request: { requestable: false, requested_by_viewer: true, reason: "already_requested" } })
+            m.assertFalse(Prairie.RequestDetail.canFollow(mine, m.features(true, false)))
+            open = m.entry({})
+            m.assertFalse(Prairie.RequestDetail.canFollow(open, m.features(true, false)))
+            owned = m.entry({ availability: "available", request: { requestable: false, reason: "already_requested" } })
+            m.assertFalse(Prairie.RequestDetail.canFollow(owned, m.features(true, false)))
+            blocked = m.entry({ request: { requestable: false, reason: "blocked" } })
+            m.assertFalse(Prairie.RequestDetail.canFollow(blocked, m.features(true, false)))
+        end sub
+
+        @it("words the follow action and its result")
+        sub _()
+            m.assertEqual(Prairie.RequestDetail.followLabel(false), "Notify me when available")
+            m.assertEqual(Prairie.RequestDetail.followLabel(true), "Stop notifying me")
+            m.assertEqual(Prairie.RequestDetail.followNotice(true), "We'll let you know when it's available")
+            m.assertEqual(Prairie.RequestDetail.followNotice(false), "Notification turned off")
+            target = m.entry({})
+            m.assertTrue(Prairie.RequestDetail.applyFollow(target, true, invalid).following)
+            m.assertFalse(Prairie.RequestDetail.applyFollow(target, true, { following: false }).following)
+            m.assertFalse(Prairie.RequestDetail.applyFollow(target, false, {}).following)
+        end sub
+
+        @describe("actions")
+        @it("offers every season or a pick of them for a series")
+        sub _()
+            seasons = [{ number: 1 }, { number: 2 }]
+            labels = Prairie.Requests.actionLabels(Prairie.RequestDetail.actions(m.entry({}), seasons, m.features(false, true)))
+            m.assertEqual(labels.join("|"), "Request All Seasons|Choose Seasons…|Cancel")
+            single = Prairie.Requests.actionLabels(Prairie.RequestDetail.actions(m.entry({}), [{ number: 1 }], m.features(false, true)))
+            m.assertEqual(single.join("|"), "Request|Cancel")
+            unsupported = Prairie.Requests.actionLabels(Prairie.RequestDetail.actions(m.entry({}), seasons, m.features(false, false)))
+            m.assertEqual(unsupported.join("|"), "Request|Cancel")
+            movie = Prairie.Requests.actionLabels(Prairie.RequestDetail.actions(m.entry({ media_type: "movie" }), seasons, m.features(false, true)))
+            m.assertEqual(movie.join("|"), "Request|Cancel")
+        end sub
+
+        @it("opens a library title and requests its missing seasons")
+        sub _()
+            owned = m.entry({ availability: "available", library_content_id: "series:a" })
+            labels = Prairie.Requests.actionLabels(Prairie.RequestDetail.actions(owned, [{ number: 3 }, { number: 4 }], m.features(false, true)))
+            m.assertEqual(labels.join("|"), "Open|Request Missing Seasons|Choose Seasons…|Cancel")
+            done = m.entry({ availability: "available", library_content_id: "series:a", request: { requestable: false, reason: "already_available" } })
+            m.assertEqual(Prairie.Requests.actionLabels(Prairie.RequestDetail.actions(done, [], m.features(true, true))).join("|"), "Open|Cancel")
+        end sub
+
+        @it("adds Notify for someone else's request")
+        sub _()
+            other = m.entry({ request: { requestable: false, following: true, reason: "already_requested" } })
+            list = Prairie.RequestDetail.actions(other, [], m.features(true, true))
+            m.assertEqual(Prairie.Requests.actionLabels(list).join("|"), "Stop notifying me|Cancel")
+            m.assertEqual(Prairie.Requests.actionAt(list, 0), "follow")
+        end sub
+
+    end class
+end namespace
