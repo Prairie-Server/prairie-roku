@@ -1,0 +1,220 @@
+import "pkg:/source/lib/Theme.bs"
+import "pkg:/source/lib/ArtworkUrl.bs"
+import "pkg:/source/lib/WatchedState.bs"
+
+sub init()
+    colors = Prairie.Theme.colors()
+    m.top.findNode("backdrop").color = colors.bg
+    m.brand = m.top.findNode("brand")
+    m.topNav = m.top.findNode("topNav")
+    m.eyebrowLabel = m.top.findNode("eyebrowLabel")
+    m.title = m.top.findNode("title")
+    m.errorLabel = m.top.findNode("errorLabel")
+    m.statusLabel = m.top.findNode("statusLabel")
+    m.rails = m.top.findNode("rails")
+
+    m.brand.text = Prairie.Theme.brandName()
+    m.brand.color = colors.amber
+    m.eyebrowLabel.color = colors.amber
+    m.title.color = colors.ink
+    m.errorLabel.color = colors.danger
+    m.statusLabel.color = colors.muted
+
+    m.top.observeField("eyebrow", "onEyebrow")
+    m.top.observeField("titleText", "onTitleText")
+    m.top.observeField("navEntries", "onNavEntries")
+    m.top.observeField("navSelectedId", "onNavEntries")
+    m.top.observeField("profileName", "onNavEntries")
+    m.top.observeField("rows", "onRows")
+    m.top.observeField("busy", "onStatus")
+    m.top.observeField("statusText", "onStatus")
+    m.top.observeField("errorText", "onErrorText")
+    m.rails.observeField("rowItemSelected", "onItemSelected")
+    m.topNav.observeField("activatedId", "onNavActivated")
+end sub
+
+sub onEyebrow()
+    m.eyebrowLabel.text = UCase(m.top.eyebrow)
+end sub
+
+sub onTitleText()
+    m.title.text = m.top.titleText
+end sub
+
+sub onErrorText()
+    m.errorLabel.text = m.top.errorText
+end sub
+
+sub onStatus()
+    if m.top.busy
+        m.statusLabel.text = "Loading…"
+    else
+        m.statusLabel.text = m.top.statusText
+    end if
+end sub
+
+function hasNav() as boolean
+    return m.top.navEntries <> invalid and m.top.navEntries.count() > 0
+end function
+
+' Top bar tabs: the screen's entries plus the trailing profile entry; the
+' heading moves under the bar.
+sub onNavEntries()
+    shown = hasNav()
+    m.brand.visible = shown
+    m.topNav.visible = shown
+    m.eyebrowLabel.visible = not shown
+    if shown
+        m.title.translation = [80, 110]
+        m.title.font = "font:MediumBoldSystemFont"
+    else
+        m.title.translation = [80, 100]
+        m.title.font = "font:LargeBoldSystemFont"
+    end if
+    if not shown
+        return
+    end if
+    entries = []
+    for each entry in m.top.navEntries
+        entries.push(entry)
+    end for
+    profileLabel = "Profile"
+    if m.top.profileName.len() > 0
+        profileLabel = m.top.profileName
+    end if
+    entries.push({ id: "profile", label: profileLabel })
+    m.topNav.entries = entries
+    m.topNav.selectedId = m.top.navSelectedId
+end sub
+
+sub onNavActivated()
+    entryId = m.topNav.activatedId
+    if entryId = m.top.navSelectedId
+        focusDefault()
+        return
+    end if
+    m.top.navRequested = entryId
+end sub
+
+sub onRows()
+    rows = m.top.rows
+    content = CreateObject("roSGNode", "ContentNode")
+    if rows <> invalid
+        for each source in rows
+            row = content.createChild("ContentNode")
+            title = ""
+            if source.title <> invalid
+                title = source.title as string
+            end if
+            row.title = title
+            if source.items <> invalid
+                for each entry in source.items
+                    node = row.createChild("ContentNode")
+                    itemTitle = "Title"
+                    if entry.title <> invalid
+                        itemTitle = entry.title as string
+                    end if
+                    node.title = itemTitle
+                    if entry.poster_url <> invalid
+                        node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string, 200)
+                    end if
+                    contentId = ""
+                    if entry.content_id <> invalid
+                        contentId = entry.content_id as string
+                    end if
+                    node.addFields({ contentId: contentId, isExploreAll: false, watched: Prairie.WatchedState.isWatched(entry) })
+                end for
+            end if
+            if source.browsable = true and source.id <> invalid
+                explore = row.createChild("ContentNode")
+                explore.title = m.top.exploreLabel
+                explore.addFields({ contentId: "", isExploreAll: true, rowId: source.id as string, rowTitle: title })
+            end if
+        end for
+    end if
+    m.rails.content = content
+end sub
+
+function hasRows() as boolean
+    return m.rails.content <> invalid and m.rails.content.getChildCount() > 0
+end function
+
+sub focusDefault()
+    if hasRows()
+        m.rails.setFocus(true)
+    else if hasNav()
+        m.topNav.callFunc("focusSelected")
+    else
+        m.top.setFocus(true)
+    end if
+end sub
+
+function itemAt(position as dynamic) as dynamic
+    if position = invalid or position.count() < 2 or m.rails.content = invalid
+        return invalid
+    end if
+    row = m.rails.content.getChild(position[0])
+    if row = invalid
+        return invalid
+    end if
+    return row.getChild(position[1])
+end function
+
+sub onItemSelected()
+    item = itemAt(m.rails.rowItemSelected)
+    if item = invalid
+        return
+    end if
+    if item.isExploreAll = true
+        m.top.exploreRow = { id: item.rowId, title: item.rowTitle }
+        return
+    end if
+    if item.contentId = invalid or (item.contentId as string).len() = 0
+        return
+    end if
+    m.top.selectedContentId = item.contentId
+end sub
+
+' The focused poster card's Options (*) request: { contentId, title, watched,
+' node }, or false when no real card has focus.
+function requestCardOptions() as boolean
+    if not m.rails.isInFocusChain()
+        return false
+    end if
+    item = itemAt(m.rails.rowItemFocused)
+    if item = invalid or item.isExploreAll = true or item.contentId = invalid or (item.contentId as string).len() = 0
+        return false
+    end if
+    m.top.cardOptionsRequested = {
+        contentId: item.contentId,
+        title: item.title,
+        watched: item.watched = true,
+        node: item
+    }
+    return true
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press
+        return false
+    end if
+    if key = "up" and hasNav() and m.rails.isInFocusChain()
+        m.topNav.callFunc("focusSelected")
+        return true
+    else if key = "down" and m.topNav.isInFocusChain()
+        if hasRows()
+            m.rails.setFocus(true)
+        end if
+        return true
+    else if key = "options"
+        return requestCardOptions()
+    else if key = "back"
+        if hasNav() and m.topNav.isInFocusChain() and hasRows()
+            m.rails.setFocus(true)
+            return true
+        end if
+        m.top.backRequested = true
+        return true
+    end if
+    return false
+end function
