@@ -7,6 +7,8 @@ import "pkg:/source/lib/Trailers.bs"
 import "pkg:/source/lib/ThemeMusic.bs"
 import "pkg:/source/lib/BoxSets.bs"
 import "pkg:/source/lib/Requests.bs"
+import "pkg:/source/lib/RequestDetail.bs"
+import "pkg:/source/lib/RequestBrands.bs"
 import "pkg:/source/lib/ForYou.bs"
 import "pkg:/source/lib/Calendar.bs"
 
@@ -32,6 +34,11 @@ sub initFeatures()
     m.requestDialogEntry = invalid
     m.requestDialogActions = []
     m.requestOrigin = ""
+    m.requestFeatures = Prairie.RequestDetail.featuresFromStatus(invalid)
+    m.requestDetailId = ""
+    m.requestSeasons = []
+    m.requestFocus = invalid
+    m.seasonPicker = invalid
     m.boxSetPage = invalid
     m.boxSetOrigin = invalid
     m.boxSetNext = invalid
@@ -60,6 +67,7 @@ sub resetFeatureCacheForSession()
     m.themeSettings = invalid
     m.requestsEnabled = false
     m.requestsKnown = false
+    m.requestFeatures = Prairie.RequestDetail.featuresFromStatus(invalid)
 end sub
 
 ' ---- Side requests ----
@@ -169,6 +177,10 @@ sub onSideResponse(event as object)
         applyRequestsSearch(response)
     else if kind = "requestCreate"
         applyRequestCreate(response)
+    else if kind = "requestDetail"
+        applyRequestDetail(response)
+    else if kind = "requestFollow"
+        applyRequestFollow(response)
     else if kind = "forYouMain"
         applyForYouMain(response)
     else if kind = "forYouRows"
@@ -627,6 +639,9 @@ end sub
 sub applyRequestsStatus(response as object)
     m.requestsKnown = true
     m.requestsEnabled = response.ok = true and Prairie.Requests.enabledFromStatus(response.data)
+    if response.ok = true
+        m.requestFeatures = Prairie.RequestDetail.featuresFromStatus(response.data)
+    end if
 end sub
 
 function isRequestsOff(response as object) as boolean
@@ -661,6 +676,7 @@ sub applyRequestsGate(response as object)
     if response.ok = true
         m.requestsEnabled = true
         m.requestsKnown = true
+        m.requestFeatures = Prairie.RequestDetail.featuresFromStatus(response.data)
     end if
     startSideRequest("requestsDiscover", sideGet(Prairie.Requests.discoverPath()))
 end sub
@@ -792,15 +808,53 @@ sub applyRequestsSearch(response as object)
     end if
 end sub
 
-' A request card: Open (in the library) or Request, then Cancel.
+' A request card: reads the title's request detail (seasons, follow state)
+' first; the card's own state stands in when that read fails.
 sub openRequestCard(contentId as string)
     entry = m.requestCards[contentId]
     if entry = invalid
         return
     end if
     m.requestOrigin = m.route
+    m.requestFocus = focusedLeaf()
+    if m.session = invalid
+        openRequestDialog(entry, [])
+        return
+    end if
+    m.requestDetailId = contentId
+    startSideRequest("requestDetail", sideGet(Prairie.RequestDetail.path(entry.mediaType, entry.tmdbId)))
+end sub
+
+sub applyRequestDetail(response as object)
+    contentId = m.requestDetailId
+    m.requestDetailId = ""
+    entry = m.requestCards[contentId]
+    if entry = invalid
+        return
+    end if
+    seasons = []
+    if response.ok = true
+        fresh = Prairie.Requests.card(response.data)
+        if fresh <> invalid
+            if fresh.libraryContentId.len() = 0
+                fresh.libraryContentId = entry.libraryContentId
+            end if
+            entry = fresh
+            m.requestCards[contentId] = entry
+        end if
+        seasons = Prairie.RequestDetail.requestableSeasons(response.data)
+    else if isRequestsOff(response) and isRequestsRoute(m.route)
+        closeRequestsToHome()
+        return
+    end if
+    openRequestDialog(entry, seasons)
+end sub
+
+' Open, Request (every missing season, or Choose Seasons), Notify, Cancel.
+sub openRequestDialog(entry as object, seasons as object)
     m.requestDialogEntry = entry
-    m.requestDialogActions = Prairie.Requests.actions(entry)
+    m.requestSeasons = seasons
+    m.requestDialogActions = Prairie.RequestDetail.actions(entry, seasons, m.requestFeatures)
     dialog = CreateObject("roSGNode", "Dialog")
     dialog.title = entry.title
     dialog.message = Prairie.Requests.dialogMessage(entry)
@@ -809,6 +863,23 @@ sub openRequestCard(contentId as string)
     m.requestDialog = dialog
     m.top.dialog = dialog
 end sub
+
+function isRequestsRoute(route as string) as boolean
+    return route = "requestsHub" or route = "requestsRow" or route = "requestsBrand"
+end function
+
+' The deepest focused node, to give focus back after an overlay.
+function focusedLeaf() as dynamic
+    node = m.top.focusedChild
+    while node <> invalid
+        child = node.focusedChild
+        if child = invalid or child.isSameNode(node)
+            return node
+        end if
+        node = child
+    end while
+    return invalid
+end function
 
 sub onRequestDialogButton()
     dialog = m.requestDialog
@@ -824,9 +895,96 @@ sub onRequestDialogButton()
         showItemDetail(entry.libraryContentId)
     else if choice = "request" and m.session <> invalid
         startSideRequest("requestCreate", sidePost(Prairie.Requests.createPath(), Prairie.Requests.createBody(entry)), false)
+    else if choice = "seasons"
+        openSeasonPicker(entry)
+    else if choice = "follow" and m.session <> invalid
+        method = "PUT"
+        body = "{}"
+        if entry.following
+            method = "DELETE"
+            body = invalid
+        end if
+        request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.RequestDetail.followPath(entry.mediaType, entry.tmdbId), method, body)
+        startSideRequest("requestFollow", request, false)
     else
         m.requestDialogEntry = invalid
     end if
+end sub
+
+' ---- Season picker ----
+
+sub openSeasonPicker(entry as object)
+    if m.screen = invalid
+        return
+    end if
+    closeSeasonPicker(false)
+    picker = CreateObject("roSGNode", "SeasonPicker")
+    picker.titleText = entry.title
+    picker.seasons = m.requestSeasons
+    picker.observeField("submitted", "onSeasonPickerSubmitted")
+    picker.observeField("closed", "onSeasonPickerClosed")
+    m.screen.appendChild(picker)
+    m.seasonPicker = picker
+    picker.callFunc("focusDefault")
+end sub
+
+sub closeSeasonPicker(restoreFocus as boolean)
+    picker = m.seasonPicker
+    m.seasonPicker = invalid
+    if picker = invalid
+        return
+    end if
+    picker.unobserveField("submitted")
+    picker.unobserveField("closed")
+    parent = picker.getParent()
+    if parent <> invalid
+        parent.removeChild(picker)
+    end if
+    if not restoreFocus
+        return
+    end if
+    if m.requestFocus <> invalid and m.requestFocus.getParent() <> invalid
+        m.requestFocus.setFocus(true)
+    else if m.screen <> invalid
+        m.screen.callFunc("focusDefault")
+    end if
+end sub
+
+sub onSeasonPickerClosed()
+    closeSeasonPicker(true)
+    m.requestDialogEntry = invalid
+end sub
+
+sub onSeasonPickerSubmitted()
+    picker = m.seasonPicker
+    entry = m.requestDialogEntry
+    if picker = invalid or entry = invalid or m.session = invalid
+        return
+    end if
+    numbers = picker.submitted
+    closeSeasonPicker(true)
+    startSideRequest("requestCreate", sidePost(Prairie.Requests.createPath(), Prairie.Requests.createBody(entry, numbers)), false)
+end sub
+
+' ---- Follow ----
+
+sub applyRequestFollow(response as object)
+    entry = m.requestDialogEntry
+    m.requestDialogEntry = invalid
+    if entry = invalid
+        return
+    end if
+    wanted = not entry.following
+    if response.ok = true
+        Prairie.RequestDetail.applyFollow(entry, wanted, response.data)
+        showMessage(entry.title, Prairie.RequestDetail.followNotice(entry.following))
+        return
+    end if
+    if isRequestsOff(response) and isRequestsRoute(m.route)
+        closeRequestsToHome()
+        return
+    end if
+    showMessage(entry.title, responseMessage(response, "Failed to update notification"))
 end sub
 
 sub applyRequestCreate(response as object)
@@ -840,7 +998,7 @@ sub applyRequestCreate(response as object)
         showMessage("Requested", Prairie.Requests.createdMessage(response.data, entry.title))
         return
     end if
-    if isRequestsOff(response) and (m.route = "requestsHub" or m.route = "requestsRow")
+    if isRequestsOff(response) and isRequestsRoute(m.route)
         closeRequestsToHome()
         return
     end if
