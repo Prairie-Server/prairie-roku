@@ -31,8 +31,9 @@ namespace Prairie.Nav
     end function
 
     ' Fixed top bar: Search, Home, one entry per library type the profile can
-    ' see, then Live TV when the server has channels. Each library-type entry
-    ' carries its matching libraries. There is no menu editor or pinning.
+    ' see, For You, Calendar, then Live TV when the server has channels. Each
+    ' library-type entry carries its matching libraries. There is no menu
+    ' editor or pinning.
     function topEntries(libraries as object, hasLiveTv as boolean) as object
         entries = [
             { id: "search", label: "Search", libraries: [] },
@@ -57,6 +58,8 @@ namespace Prairie.Nav
                 entries.push({ id: tabDef.id, label: tabDef.label, libraries: matching })
             end if
         end for
+        entries.push({ id: "foryou", label: "For You", libraries: [] })
+        entries.push({ id: "calendar", label: "Calendar", libraries: [] })
         if hasLiveTv
             entries.push({ id: "livetv", label: "Live TV", libraries: [] })
         end if
@@ -76,28 +79,31 @@ namespace Prairie.Nav
     end function
 
     ' Profile menu rows Roku has, in the shared order (Switch Profile,
-    ' History, Requests, Settings, Switch Server, Sign Out). Roku has no
-    ' History or Requests page, and Watchlist/Favorites are not menu rows.
-    function profileMenuEntries() as object
-        return [
-            { id: "switchProfile", label: "Switch Profile" },
-            { id: "settings", label: "Settings" },
-            { id: "switchServer", label: "Switch Server" },
-            { id: "signOut", label: "Sign Out" }
-        ]
+    ' History, Requests, Settings, Switch Server, Sign Out). Requests shows
+    ' only while the server enables it. Roku has no History or Watch Party
+    ' page, and Watchlist/Favorites are not menu rows.
+    function profileMenuEntries(requestsEnabled = false as boolean) as object
+        entries = [{ id: "switchProfile", label: "Switch Profile" }]
+        if requestsEnabled
+            entries.push({ id: "requests", label: "Requests" })
+        end if
+        entries.push({ id: "settings", label: "Settings" })
+        entries.push({ id: "switchServer", label: "Switch Server" })
+        entries.push({ id: "signOut", label: "Sign Out" })
+        return entries
     end function
 
-    function profileMenuLabels() as object
+    function profileMenuLabels(requestsEnabled = false as boolean) as object
         labels = []
-        for each entry in profileMenuEntries()
+        for each entry in profileMenuEntries(requestsEnabled)
             labels.push(entry.label)
         end for
         return labels
     end function
 
     ' Menu row id for a Dialog buttonSelected index; "" when out of range.
-    function profileMenuIdAt(index as integer) as string
-        entries = profileMenuEntries()
+    function profileMenuIdAt(index as integer, requestsEnabled = false as boolean) as string
+        entries = profileMenuEntries(requestsEnabled)
         if index < 0 or index >= entries.count()
             return ""
         end if

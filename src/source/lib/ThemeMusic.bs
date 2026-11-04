@@ -1,0 +1,118 @@
+import "pkg:/source/lib/UrlUtils.bs"
+
+' Local theme music on movie, series, season and episode pages when the
+' profile turns on ui.theme_music_enabled (android a#678, apple i#890).
+namespace Prairie.ThemeMusic
+
+    function enabledKey() as string
+        return "ui.theme_music_enabled"
+    end function
+
+    function loopKey() as string
+        return "ui.theme_music_loop"
+    end function
+
+    function settingsPath() as string
+        return "/api/v2/settings/values/effective?keys=" + enabledKey().encodeUriComponent() + "&keys=" + loopKey().encodeUriComponent()
+    end function
+
+    ' { enabled, loop } from the effective settings answer; both off by default.
+    function parseSettings(data as dynamic) as object
+        result = { enabled: false, loop: false }
+        if data = invalid or type(data) <> "roAssociativeArray" or type(data.items) <> "roArray"
+            return result
+        end if
+        for each item in data.items
+            if type(item) = "roAssociativeArray" and item.key <> invalid
+                isOn = item.value = true
+                if item.key = enabledKey()
+                    result.enabled = isOn
+                else if item.key = loopKey()
+                    result.loop = isOn
+                end if
+            end if
+        end for
+        return result
+    end function
+
+    function supportsType(itemType as dynamic) as boolean
+        if itemType = invalid
+            return false
+        end if
+        kind = LCase(itemType as string)
+        return kind = "movie" or kind = "series" or kind = "season" or kind = "episode"
+    end function
+
+    ' The theme a detail page plays: { ownerId, themeId, key }, or invalid
+    ' when the item type has no theme music or the server sent none.
+    function selection(detail as dynamic) as dynamic
+        if detail = invalid or type(detail) <> "roAssociativeArray" or not supportsType(detail.type)
+            return invalid
+        end if
+        themes = detail.themes
+        if type(themes) <> "roAssociativeArray" or themes.owner_id = invalid or type(themes.items) <> "roArray"
+            return invalid
+        end if
+        ownerId = themes.owner_id as string
+        for each track in themes.items
+            if type(track) = "roAssociativeArray" and track.id <> invalid
+                themeId = track.id as string
+                if ownerId.len() > 0 and themeId.len() > 0
+                    return { ownerId: ownerId, themeId: themeId, key: ownerId + "/" + themeId }
+                end if
+            end if
+        end for
+        return invalid
+    end function
+
+    function playbackPath(ownerId as string, themeId as string) as string
+        return "/api/v2/catalog/items/" + ownerId.encodeUriComponent() + "/themes/" + themeId.encodeUriComponent() + "/playback"
+    end function
+
+    ' Containers the Roku Audio node decodes; the server converts anything else to AAC.
+    function playbackBody() as string
+        return FormatJson({
+            accepted_formats: [
+                { container: "mp3" },
+                { container: "m4a" },
+                { container: "mp4", audio_codec: "aac" },
+                { container: "aac" },
+                { container: "flac" },
+                { container: "wav" }
+            ]
+        })
+    end function
+
+    ' Audio node streamformat for a grant's content type.
+    function streamFormat(contentType as dynamic) as string
+        kind = ""
+        if contentType <> invalid
+            kind = LCase(contentType as string)
+        end if
+        if kind.instr("mpeg") >= 0 or kind.instr("mp3") >= 0
+            return "mp3"
+        else if kind.instr("flac") >= 0
+            return "flac"
+        else if kind.instr("wav") >= 0
+            return "wav"
+        end if
+        return "mp4"
+    end function
+
+    ' { url, streamFormat } from a playback grant; a relative URL is resolved
+    ' against the server. Invalid without a URL.
+    function grantStream(serverUrl as string, data as dynamic) as dynamic
+        if data = invalid or type(data) <> "roAssociativeArray" or data.url = invalid
+            return invalid
+        end if
+        url = (data.url as string).trim()
+        if url.len() = 0
+            return invalid
+        end if
+        if LCase(url.left(7)) <> "http://" and LCase(url.left(8)) <> "https://"
+            url = Prairie.Url.joinUrl(serverUrl, url)
+        end if
+        return { url: url, streamFormat: streamFormat(data.content_type) }
+    end function
+
+end namespace

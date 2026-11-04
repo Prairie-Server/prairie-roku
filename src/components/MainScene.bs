@@ -127,6 +127,7 @@ sub init()
         m.session = sessionFromActiveRegistry()
     end if
 
+    initFeatures()
     if m.session <> invalid and Prairie.Session.hasAccessToken(m.session)
         showHome()
     else if not resumeSavedSession(startupServerUrl())
@@ -250,6 +251,10 @@ sub clearScreen()
         m.httpTask.control = "STOP"
     end if
     m.pending = ""
+    m.screenGeneration = m.screenGeneration + 1
+    if not m.keepThemeMusic
+        stopThemeMusic()
+    end if
     ' Drop any cached login body (password) when leaving the connect flow.
     m.serverProbe = invalid
     m.pinProfile = invalid
@@ -719,6 +724,8 @@ sub showHome()
     clearScreen()
     m.route = "home"
     resetNavCacheForSession()
+    resetFeatureCacheForSession()
+    loadRequestsStatus()
     screen = CreateObject("roSGNode", "HomeBrowseScreen")
     if m.session <> invalid and m.session.profileName <> invalid
         screen.profileName = m.session.profileName
@@ -1060,7 +1067,7 @@ sub showProfileMenu()
         title = m.session.profileName as string
     end if
     dialog.title = title
-    dialog.buttons = Prairie.Nav.profileMenuLabels()
+    dialog.buttons = Prairie.Nav.profileMenuLabels(m.requestsEnabled)
     dialog.observeField("buttonSelected", "onProfileMenuButton")
     m.profileMenuDialog = dialog
     m.top.dialog = dialog
@@ -1070,11 +1077,13 @@ sub onProfileMenuButton()
     if m.profileMenuDialog = invalid
         return
     end if
-    choice = Prairie.Nav.profileMenuIdAt(m.profileMenuDialog.buttonSelected)
+    choice = Prairie.Nav.profileMenuIdAt(m.profileMenuDialog.buttonSelected, m.requestsEnabled)
     m.profileMenuDialog.close = true
     m.profileMenuDialog = invalid
     if choice = "switchProfile"
         switchProfile()
+    else if choice = "requests"
+        showRequestsHub()
     else if choice = "settings"
         showSettings()
     else if choice = "switchServer"
@@ -1125,10 +1134,14 @@ sub showItemDetail(contentId as string, backRoute = "" as string)
     else
         m.detailBackRoute = m.route
     end if
+    ' Theme music keeps playing into a page with the same theme.
+    m.keepThemeMusic = true
     clearScreen()
+    m.keepThemeMusic = false
     m.route = "detail"
     m.detailItem = invalid
     screen = CreateObject("roSGNode", "ItemDetailScreen")
+    observeDetailFeatures(screen)
     screen.observeField("playRequested", "onDetailPlayRequested")
     screen.observeField("seasonSelected", "onDetailSeasonSelected")
     screen.observeField("similarSelected", "onDetailSimilarSelected")
@@ -2070,6 +2083,12 @@ sub onHomeNavRequested()
     entryId = m.screen.navRequested
     if entryId = "search"
         showSearch()
+    else if entryId = "home"
+        showHome()
+    else if entryId = "foryou"
+        showForYou()
+    else if entryId = "calendar"
+        showCalendar()
     else if entryId = "livetv"
         showLiveTv()
     else if entryId = "profile"
@@ -2297,6 +2316,9 @@ sub onCatalogItemSelected()
     if contentId = invalid or contentId.len() = 0
         return
     end if
+    if openSearchSpecialCard(contentId)
+        return
+    end if
     m.detailChain = invalid
     showItemDetail(contentId)
 end sub
@@ -2334,6 +2356,16 @@ sub onDetailBack()
         showCollectionBrowse(m.browseCollection)
     else if back = "search"
         showSearch()
+    else if back = "foryou"
+        showForYou()
+    else if back = "calendar"
+        showCalendar()
+    else if back = "boxset" and m.boxSetPage <> invalid
+        showBoxSet(m.boxSetPage)
+    else if back = "requestsHub"
+        showRequestsHub()
+    else if back = "requestsRow" and m.requestsRow <> invalid
+        showRequestsRow(m.requestsRow)
     else if back = "libraries"
         showLibraries()
     else
@@ -2571,6 +2603,7 @@ sub onSearchSubmit()
     trimmed = query.trim()
     if trimmed.len() = 0
         m.screen.items = []
+        m.screen.requestItems = []
         m.screen.statusText = ""
         m.screen.errorText = ""
         return
@@ -2579,6 +2612,7 @@ sub onSearchSubmit()
         return
     end if
     m.pending = "search"
+    m.searchQuery = trimmed
     m.screen.busy = true
     m.screen.statusText = ""
     m.httpTask.request = Prairie.Catalog.buildCatalogRequest({
@@ -2617,7 +2651,7 @@ end sub
 ' on Home, which * opened directly before).
 sub onCardOptionsRequested()
     request = m.screen.cardOptionsRequested
-    if request = invalid or request.contentId = invalid or m.session = invalid
+    if request = invalid or request.contentId = invalid or m.session = invalid or isSpecialCardId(request.contentId)
         return
     end if
     m.cardOptions = request
@@ -3010,6 +3044,7 @@ sub onHttpResponse()
             m.screen.statusText = ""
         end if
         m.screen.callFunc("focusDefault")
+        startSearchExtras(m.searchQuery, page.items)
     else if pending = "collectionsLibraries"
         libraries = Prairie.Libraries.librariesFromResponse(response.data)
         m.collectionLibraryQueue = []
@@ -3047,6 +3082,7 @@ sub onHttpResponse()
         m.detailItem = detail
         m.screen.detail = detail
         m.screen.callFunc("focusDefault")
+        onDetailLoaded(detail)
         if isSeriesDetail(detail)
             loadSeasons()
         else

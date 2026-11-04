@@ -1,0 +1,39 @@
+namespace tests
+    @suite("Prairie.ForYou")
+    class ForYouSuite extends rooibos.BaseTestSuite
+
+        @describe("rows")
+        @it("puts the main row first, then the cluster rows with cards")
+        sub _()
+            m.assertEqual(Prairie.ForYou.mainPath(), "/api/v2/recommendations/for-you/main?limit=20")
+            m.assertEqual(Prairie.ForYou.rowsPath(12), "/api/v2/recommendations/for-you/rows?limit=12")
+            mainData = { title: "", items: [{ content_id: "movie:1" }, { title: "no id" }] }
+            clusters = { items: [
+                { key: "c1", title: " Slow burns ", items: [{ content_id: "movie:2" }] },
+                { key: "c2", title: "Empty", items: [] },
+                { items: [{ content_id: "movie:3" }] },
+                "junk"
+            ] }
+            rows = Prairie.ForYou.rowsFromResponses(mainData, clusters)
+            m.assertEqual(rows.count(), 3)
+            m.assertEqual(rows[0].title, "For You")
+            m.assertEqual(rows[0].items.count(), 1)
+            m.assertEqual(rows[1].id, "c1")
+            m.assertEqual(rows[1].title, "Slow burns")
+            m.assertEqual(rows[2].title, "Recommended")
+        end sub
+
+        @it("caps rows at 20 cards and tolerates missing answers")
+        sub _()
+            items = []
+            for i = 1 to 25
+                items.push({ content_id: "movie:" + i.toStr() })
+            end for
+            rows = Prairie.ForYou.rowsFromResponses({ title: "Picks", items: items }, invalid)
+            m.assertEqual(rows[0].items.count(), 20)
+            m.assertEqual(Prairie.ForYou.rowsFromResponses(invalid, { items: "x" }).count(), 0)
+            m.assertInvalid(Prairie.ForYou.rowFrom({ items: "x" }, "x"))
+        end sub
+
+    end class
+end namespace

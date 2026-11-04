@@ -1,0 +1,140 @@
+' Detail page "Trailers & More" rail (android a#640/a#641, apple i#845/i#846).
+' Local extras come first in server order because they play in Prairie;
+' YouTube videos follow and hand off to the Roku YouTube channel.
+namespace Prairie.Trailers
+
+    ' Roku Channel Store id of YouTube.
+    function youtubeChannelId() as string
+        return "837"
+    end function
+
+    ' YouTube's still for a video; hqdefault exists for every upload.
+    function youtubeThumbnailUrl(siteKey as string) as string
+        return "https://i.ytimg.com/vi/" + siteKey.encodeUriComponent() + "/hqdefault.jpg"
+    end function
+
+    ' Deep-link parameters for roAppManager.LaunchApp (the same pair the
+    ' channel accepts over ECP: launch/837?contentId=<video>&mediaType=live).
+    function youtubeLaunchParams(siteKey as string) as object
+        return { contentId: siteKey, mediaType: "live" }
+    end function
+
+    function kindLabel(kind as dynamic) as string
+        raw = ""
+        if kind <> invalid
+            raw = LCase((kind as string).trim())
+        end if
+        if raw = "trailer"
+            return "Trailer"
+        else if raw = "teaser"
+            return "Teaser"
+        else if raw = "featurette"
+            return "Featurette"
+        else if raw = "behind_the_scenes" or raw = "behind-the-scenes"
+            return "Behind the Scenes"
+        else if raw = "deleted_scene" or raw = "deleted-scene"
+            return "Deleted Scene"
+        else if raw = "interview"
+            return "Interview"
+        end if
+        words = []
+        for each word in raw.replace("_", " ").replace("-", " ").split(" ")
+            if word.len() > 0
+                words.push(UCase(word.left(1)) + word.mid(1))
+            end if
+        end for
+        if words.count() = 0
+            return "Extra"
+        end if
+        return words.join(" ")
+    end function
+
+    ' "1:02:03" / "2:05" for a local extra's runtime; "" when unknown.
+    function durationLabel(seconds as dynamic) as string
+        if seconds = invalid
+            return ""
+        end if
+        total = Int(seconds)
+        if total <= 0
+            return ""
+        end if
+        hours = total \ 3600
+        minutes = (total mod 3600) \ 60
+        secs = total mod 60
+        secText = Right("0" + secs.toStr(), 2)
+        if hours > 0
+            return hours.toStr() + ":" + Right("0" + minutes.toStr(), 2) + ":" + secText
+        end if
+        return minutes.toStr() + ":" + secText
+    end function
+
+    function textOr(value as dynamic, fallback as string) as string
+        if value <> invalid
+            text = (value as string).trim()
+            if text.len() > 0
+                return text
+            end if
+        end if
+        return fallback
+    end function
+
+    ' Rail cards for a detail document: { key, source ("local"|"youtube"),
+    ' title, caption, thumbnailUrl, contentId, siteKey }, duplicates dropped.
+    function railEntries(detail as dynamic) as object
+        entries = []
+        if detail = invalid or type(detail) <> "roAssociativeArray"
+            return entries
+        end if
+        seen = {}
+        if type(detail.extras) = "roArray"
+            for each extra in detail.extras
+                if type(extra) = "roAssociativeArray" and extra.content_id <> invalid
+                    contentId = (extra.content_id as string).trim()
+                    key = "local:" + contentId
+                    if contentId.len() > 0 and not seen.doesExist(key)
+                        seen[key] = true
+                        caption = durationLabel(extra.duration_seconds)
+                        if caption.len() = 0
+                            caption = kindLabel(extra.kind)
+                        end if
+                        still = ""
+                        if extra.still_url <> invalid
+                            still = extra.still_url as string
+                        end if
+                        entries.push({
+                            key: key,
+                            source: "local",
+                            title: textOr(extra.title, kindLabel(extra.kind)),
+                            caption: caption,
+                            thumbnailUrl: still,
+                            contentId: contentId,
+                            siteKey: ""
+                        })
+                    end if
+                end if
+            end for
+        end if
+        if type(detail.videos) = "roArray"
+            for each video in detail.videos
+                if type(video) = "roAssociativeArray" and video.site <> invalid and video.site_key <> invalid
+                    siteKey = (video.site_key as string).trim()
+                    key = "youtube:" + siteKey
+                    if LCase(video.site as string) = "youtube" and siteKey.len() > 0 and not seen.doesExist(key)
+                        seen[key] = true
+                        entries.push({
+                            key: key,
+                            source: "youtube",
+                            title: textOr(video.name, kindLabel(video.kind)),
+                            caption: "YouTube",
+                            thumbnailUrl: youtubeThumbnailUrl(siteKey),
+                            contentId: "",
+                            siteKey: siteKey
+                        })
+                    end if
+                end if
+            end for
+        end if
+        return entries
+    end function
+
+end namespace

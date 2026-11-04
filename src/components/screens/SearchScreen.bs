@@ -22,6 +22,7 @@ sub init()
     m.statusLabel.color = colors.muted
 
     m.top.observeField("items", "onItems")
+    m.top.observeField("requestItems", "onItems")
     m.top.observeField("errorText", "onErrorText")
     m.top.observeField("statusText", "onStatusText")
     m.top.observeField("busy", "onBusy")
@@ -44,36 +45,55 @@ sub onBusy()
     end if
 end sub
 
+' Library matches (box sets first) in rows of eight; with requests on, the
+' titles not in the library follow under "Available to request".
 sub onItems()
-    items = m.top.items
     content = CreateObject("roSGNode", "ContentNode")
+    requestItems = m.top.requestItems
+    labelled = requestItems <> invalid and requestItems.count() > 0
+    appendRows(content, m.top.items, "In your libraries", labelled)
+    appendRows(content, requestItems, "Available to request", labelled)
+    if labelled
+        m.results.showRowLabel = [true]
+        m.results.itemSize = [1800, 340]
+    else
+        m.results.showRowLabel = [false]
+        m.results.itemSize = [1800, 300]
+    end if
+    m.results.content = content
+end sub
+
+sub appendRows(content as object, items as dynamic, heading as string, labelled as boolean)
+    if items = invalid
+        return
+    end if
     columns = 8
     row = invalid
     index = 0
-    if items <> invalid
-        for each entry in items
-            if index mod columns = 0
-                row = content.createChild("ContentNode")
+    for each entry in items
+        if index mod columns = 0
+            row = content.createChild("ContentNode")
+            if labelled and index = 0
+                row.title = heading
             end if
-            node = row.createChild("ContentNode")
-            title = "Title"
-            if entry.title <> invalid
-                title = entry.title as string
-            end if
-            node.title = title
-            if entry.poster_url <> invalid
-                node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string, 200)
-            end if
-            contentId = ""
-            if entry.content_id <> invalid
-                contentId = entry.content_id as string
-            end if
-            node.id = contentId
-            node.addFields({ contentId: contentId, watched: Prairie.WatchedState.isWatched(entry) })
-            index = index + 1
-        end for
-    end if
-    m.results.content = content
+        end if
+        node = row.createChild("ContentNode")
+        title = "Title"
+        if entry.title <> invalid
+            title = entry.title as string
+        end if
+        node.title = title
+        if entry.poster_url <> invalid
+            node.hdPosterUrl = Prairie.Artwork.preferred(entry.poster_url as string, 200)
+        end if
+        contentId = ""
+        if entry.content_id <> invalid
+            contentId = entry.content_id as string
+        end if
+        node.id = contentId
+        node.addFields({ contentId: contentId, watched: Prairie.WatchedState.isWatched(entry) })
+        index = index + 1
+    end for
 end sub
 
 sub focusDefault()

@@ -1,0 +1,88 @@
+namespace tests
+    @suite("Prairie.Calendar")
+    class CalendarSuite extends rooibos.BaseTestSuite
+
+        @describe("dates")
+        @it("builds the window path")
+        sub _()
+            m.assertEqual(Prairie.Calendar.windowDays(), 14)
+            m.assertEqual(Prairie.Calendar.path("2026-11-03", "2026-11-16", "America/New_York"), "/api/v2/calendar?start=2026-11-03&end=2026-11-16&timezone=America%2FNew_York")
+            m.assertEqual(Prairie.Calendar.path("2026-11-03", "2026-11-16"), "/api/v2/calendar?start=2026-11-03&end=2026-11-16")
+        end sub
+
+        @it("parses and adds days across months, years and leap days")
+        sub _()
+            m.assertEqual(Prairie.Calendar.formatDate(Prairie.Calendar.addDays(Prairie.Calendar.parseDate("2026-12-25"), 13)), "2027-01-07")
+            m.assertEqual(Prairie.Calendar.formatDate(Prairie.Calendar.addDays(Prairie.Calendar.parseDate("2028-02-28"), 1)), "2028-02-29")
+            m.assertEqual(Prairie.Calendar.formatDate(Prairie.Calendar.addDays(Prairie.Calendar.parseDate("2026-02-28"), 1)), "2026-03-01")
+            m.assertEqual(Prairie.Calendar.formatDate(Prairie.Calendar.addDays(Prairie.Calendar.parseDate("2026-04-30"), 1)), "2026-05-01")
+            m.assertEqual(Prairie.Calendar.formatDate(Prairie.Calendar.parseDate("2026-11-03T10:00:00Z")), "2026-11-03")
+            m.assertTrue(Prairie.Calendar.isLeapYear(2000))
+            m.assertFalse(Prairie.Calendar.isLeapYear(1900))
+            m.assertInvalid(Prairie.Calendar.parseDate("2026-02-30"))
+            m.assertInvalid(Prairie.Calendar.parseDate("2026-13-01"))
+            m.assertInvalid(Prairie.Calendar.parseDate("nope"))
+            m.assertInvalid(Prairie.Calendar.parseDate(invalid))
+        end sub
+
+        @it("labels days")
+        sub _()
+            m.assertEqual(Prairie.Calendar.dayOfWeek(Prairie.Calendar.parseDate("2026-11-03")), 2)
+            m.assertEqual(Prairie.Calendar.dayOfWeek(Prairie.Calendar.parseDate("2026-01-04")), 0)
+            m.assertEqual(Prairie.Calendar.dayLabel("2026-11-03", "2026-11-03"), "Today")
+            m.assertEqual(Prairie.Calendar.dayLabel("2026-11-04", "2026-11-03"), "Tomorrow")
+            m.assertEqual(Prairie.Calendar.dayLabel("2026-11-05", "2026-11-03"), "Thu, Nov 5")
+            m.assertEqual(Prairie.Calendar.dayLabel("2026-11-07", ""), "Sat, Nov 7")
+            m.assertEqual(Prairie.Calendar.dayLabel("bad", "2026-11-03"), "")
+        end sub
+
+        @describe("events")
+        @it("reads PREMIERE, NEW SEASON and FINALE badges")
+        sub _()
+            m.assertEqual(Prairie.Calendar.badgeLabel("series_premiere"), "PREMIERE")
+            m.assertEqual(Prairie.Calendar.badgeLabel("season_premiere"), "NEW SEASON")
+            m.assertEqual(Prairie.Calendar.badgeLabel("finale"), "FINALE")
+            m.assertEqual(Prairie.Calendar.badgeLabel("digital"), "")
+            m.assertEqual(Prairie.Calendar.badgeLabel(invalid), "")
+            episode = { type: "episode", season_number: 1, episode_number: 1, badges: ["series_premiere", "digital"] }
+            m.assertEqual(Prairie.Calendar.eventCaption(episode), "S1 · E1 · PREMIERE")
+            premiere = { type: "season_premiere", season_number: 2, badges: ["season_premiere"] }
+            m.assertEqual(Prairie.Calendar.eventCaption(premiere), "Season 2 · NEW SEASON")
+            m.assertEqual(Prairie.Calendar.eventCaption({ type: "movie" }), "")
+            m.assertEqual(Prairie.Calendar.eventCaption({}), "")
+        end sub
+
+        @it("opens episodes on their series and movies on themselves")
+        sub _()
+            m.assertEqual(Prairie.Calendar.targetContentId({ type: "episode", content_id: "ep:1", series_id: "series:1" }), "series:1")
+            m.assertEqual(Prairie.Calendar.targetContentId({ type: "season_premiere", content_id: "s:2", series_id: " " }), "s:2")
+            m.assertEqual(Prairie.Calendar.targetContentId({ type: "movie", content_id: "movie:1" }), "movie:1")
+            m.assertEqual(Prairie.Calendar.targetContentId({}), "")
+        end sub
+
+        @it("groups events into one row per day")
+        sub _()
+            data = { events: [
+                { date: "2026-11-03", items: [
+                    { type: "episode", content_id: "ep:1", series_id: "series:1", title: "Show", season_number: 1, episode_number: 1, badges: ["series_premiere"], poster_url: "https://p", watched: true },
+                    { type: "movie", content_id: "movie:1", title: "Film" },
+                    { type: "movie" },
+                    "junk"
+                ] },
+                { date: "2026-11-04", items: [] },
+                "junk"
+            ] }
+            rows = Prairie.Calendar.rowsFromResponse(data, "2026-11-03")
+            m.assertEqual(rows.count(), 1)
+            m.assertEqual(rows[0].title, "Today")
+            m.assertEqual(rows[0].items.count(), 2)
+            m.assertEqual(rows[0].items[0].content_id, "series:1")
+            m.assertEqual(rows[0].items[0].title, "Show · S1 · E1 · PREMIERE")
+            m.assertEqual(rows[0].items[0].poster_url, "https://p")
+            m.assertTrue(rows[0].items[0].watched)
+            m.assertEqual(rows[0].items[1].title, "Film")
+            m.assertEqual(Prairie.Calendar.rowsFromResponse(invalid, "").count(), 0)
+        end sub
+
+    end class
+end namespace

@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <component name="MainScene" extends="Scene">
     <script type="text/brightscript" uri="MainScene.bs" />
+    <script type="text/brightscript" uri="MainSceneFeatures.bs" />
     <children>
         <Group id="screenHost" />
         <HttpTask id="httpTask" />
         <HttpTask id="progressTask" />
         <HttpTask id="markersTask" />
+        <Audio id="themeAudio" />
         <Timer id="quickConnectTimer" repeat="false" duration="3" />
     </children>
 </component>

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Poster rows under a heading: For You, Calendar and the Requests hub.
+  rows: [{ id, title, items: [{ content_id, title, poster_url, watched }],
+  browsable }]. A browsable row ends with a "See all" card (exploreRow).
+  navEntries shows the top bar (top bar tabs); without it Back leaves.
+-->
+<component name="RowsScreen" extends="Group">
+    <interface>
+        <field id="eyebrow" type="string" value="" />
+        <field id="titleText" type="string" value="" />
+        <field id="navEntries" type="array" />
+        <field id="navSelectedId" type="string" value="" />
+        <field id="profileName" type="string" value="" />
+        <field id="rows" type="array" />
+        <field id="exploreLabel" type="string" value="See all" />
+        <field id="busy" type="bool" value="false" />
+        <field id="errorText" type="string" value="" />
+        <field id="statusText" type="string" value="" />
+        <field id="selectedContentId" type="string" value="" alwaysNotify="true" />
+        <field id="exploreRow" type="assocarray" alwaysNotify="true" />
+        <field id="cardOptionsRequested" type="assocarray" alwaysNotify="true" />
+        <field id="navRequested" type="string" value="" alwaysNotify="true" />
+        <field id="backRequested" type="boolean" value="false" alwaysNotify="true" />
+        <function name="focusDefault" />
+    </interface>
+    <script type="text/brightscript" uri="RowsScreen.bs" />
+    <children>
+        <Rectangle id="backdrop" width="1920" height="1080" color="0x141820FF" />
+        <Label
+            id="brand"
+            text="Prairie"
+            translation="[80, 44]"
+            font="font:MediumBoldSystemFont"
+            color="0xE0A84AFF"
+            visible="false"
+        />
+        <TopNav id="topNav" translation="[300, 36]" visible="false" />
+        <Label
+            id="eyebrowLabel"
+            text=""
+            translation="[80, 60]"
+            color="0xE0A84AFF"
+            font="font:SmallBoldSystemFont"
+        />
+        <Label
+            id="title"
+            text=""
+            translation="[80, 100]"
+            width="1400"
+            color="0xF3EFE6FF"
+            font="font:LargeBoldSystemFont"
+        />
+        <Label
+            id="errorLabel"
+            text=""
+            translation="[80, 170]"
+            width="1600"
+            color="0xE07070FF"
+            font="font:SmallSystemFont"
+        />
+        <Label
+            id="statusLabel"
+            text=""
+            translation="[80, 200]"
+            width="1600"
+            color="0x9AA3B2FF"
+            font="font:SmallSystemFont"
+        />
+        <RowList
+            id="rails"
+            translation="[60, 250]"
+            itemComponentName="PosterCard"
+            itemSize="[1800, 360]"
+            rowItemSize="[[200, 340]]"
+            numRows="2"
+            itemSpacing="[0, 70]"
+            rowItemSpacing="[[32, 0]]"
+            showRowLabel="[true]"
+            rowLabelOffset="[[0, 16]]"
+            drawFocusFeedback="false"
+        />
+    </children>
+</component>

@@ -1,0 +1,114 @@
+namespace tests
+    @suite("Prairie.BoxSets")
+    class BoxSetsSuite extends rooibos.BaseTestSuite
+
+        function sample() as object
+            return {
+                id: 1241,
+                library_id: "3",
+                title: " Harry Potter Collection ",
+                overview: "Wizards",
+                poster_url: "https://p/1.jpg",
+                backdrop_url: "https://b/1.jpg",
+                movie_count: 8,
+                played_count: 0,
+                first_year: 2001,
+                last_year: 2011
+            }
+        end function
+
+        @describe("paths")
+        @it("builds the box set reads")
+        sub _()
+            m.assertEqual(Prairie.BoxSets.searchPath(" harry potter "), "/api/v2/catalog/box-sets?q=harry%20potter&limit=5")
+            m.assertEqual(Prairie.BoxSets.detailPath("1241", "3"), "/api/v2/catalog/box-sets/1241?library_id=3")
+            m.assertEqual(Prairie.BoxSets.itemBoxSetPath("movie:a"), "/api/v2/catalog/items/movie%3Aa/box-set")
+        end sub
+
+        @describe("normalize")
+        @it("normalizes a box set")
+        sub _()
+            boxSet = Prairie.BoxSets.normalize(m.sample())
+            m.assertEqual(boxSet.id, "1241")
+            m.assertEqual(boxSet.libraryId, "3")
+            m.assertEqual(boxSet.title, "Harry Potter Collection")
+            m.assertEqual(boxSet.movieCount, 8)
+            m.assertEqual(boxSet.posterUrl, "https://p/1.jpg")
+            m.assertEqual(boxSet.backdropUrl, "https://b/1.jpg")
+            m.assertEqual(boxSet.overview, "Wizards")
+        end sub
+
+        @it("rejects incomplete box sets")
+        sub _()
+            m.assertInvalid(Prairie.BoxSets.normalize(invalid))
+            m.assertInvalid(Prairie.BoxSets.normalize({ id: "1", library_id: "2" }))
+            m.assertInvalid(Prairie.BoxSets.normalize({ id: true, library_id: "2", title: "x" }))
+            bare = Prairie.BoxSets.normalize({ id: "1", library_id: 2, title: "x", movie_count: "8", first_year: 2001.0 })
+            m.assertEqual(bare.libraryId, "2")
+            m.assertEqual(bare.movieCount, 0)
+            m.assertEqual(bare.firstYear, 2001)
+            m.assertEqual(bare.posterUrl, "")
+        end sub
+
+        @describe("responses")
+        @it("reads search, page and movie box set answers")
+        sub _()
+            list = Prairie.BoxSets.listFromResponse({ items: [m.sample(), { id: "x" }, "junk"] })
+            m.assertEqual(list.count(), 1)
+            m.assertEqual(Prairie.BoxSets.listFromResponse(invalid).count(), 0)
+
+            page = m.sample()
+            page.items = [{ content_id: "movie:1" }, { title: "no id" }, { content_id: "movie:2" }]
+            detail = Prairie.BoxSets.detailFromResponse(page)
+            m.assertEqual(detail.boxSet.title, "Harry Potter Collection")
+            m.assertEqual(detail.items.count(), 2)
+            m.assertEqual(detail.items[1].content_id, "movie:2")
+            m.assertInvalid(Prairie.BoxSets.detailFromResponse({}))
+            noItems = Prairie.BoxSets.detailFromResponse(m.sample())
+            m.assertEqual(noItems.items.count(), 0)
+
+            m.assertEqual(Prairie.BoxSets.itemBoxSetFromResponse({ box_set: m.sample() }).id, "1241")
+            m.assertInvalid(Prairie.BoxSets.itemBoxSetFromResponse({}))
+            m.assertInvalid(Prairie.BoxSets.itemBoxSetFromResponse(invalid))
+        end sub
+
+        @describe("labels")
+        @it("captions with years, film count and watched progress")
+        sub _()
+            boxSet = Prairie.BoxSets.normalize(m.sample())
+            m.assertEqual(Prairie.BoxSets.caption(boxSet), "2001 – 2011")
+            m.assertEqual(Prairie.BoxSets.heroFacts(boxSet), "8 films · 2001 – 2011")
+            boxSet.playedCount = 3
+            m.assertEqual(Prairie.BoxSets.caption(boxSet), "3 / 8 watched")
+            m.assertEqual(Prairie.BoxSets.heroFacts(boxSet), "8 films · 2001 – 2011 · 3 of 8 watched")
+            boxSet.playedCount = 0
+            boxSet.lastYear = 2001
+            m.assertEqual(Prairie.BoxSets.yearsLabel(boxSet), "2001")
+            boxSet.firstYear = 0
+            m.assertEqual(Prairie.BoxSets.yearsLabel(boxSet), "2001")
+            boxSet.lastYear = 0
+            boxSet.movieCount = 1
+            m.assertEqual(Prairie.BoxSets.caption(boxSet), "1 film")
+            m.assertEqual(Prairie.BoxSets.heroFacts(boxSet), "1 film")
+        end sub
+
+        @describe("search")
+        @it("lists box sets first and round-trips the card id")
+        sub _()
+            boxSet = Prairie.BoxSets.normalize(m.sample())
+            merged = Prairie.BoxSets.mergeSearch([boxSet], [{ content_id: "movie:1" }])
+            m.assertEqual(merged.count(), 2)
+            m.assertEqual(merged[0].content_id, "box_set:3:1241")
+            m.assertEqual(merged[0].type, "box_set")
+            m.assertEqual(merged[1].content_id, "movie:1")
+            ref = Prairie.BoxSets.parseCardId(merged[0].content_id)
+            m.assertEqual(ref.libraryId, "3")
+            m.assertEqual(ref.id, "1241")
+            m.assertInvalid(Prairie.BoxSets.parseCardId("movie:1"))
+            m.assertInvalid(Prairie.BoxSets.parseCardId("box_set:3"))
+            m.assertInvalid(Prairie.BoxSets.parseCardId("box_set:3:"))
+            m.assertInvalid(Prairie.BoxSets.parseCardId(invalid))
+        end sub
+
+    end class
+end namespace

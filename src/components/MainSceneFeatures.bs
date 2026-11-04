@@ -1,0 +1,828 @@
+' MainScene features that read on their own HttpTask ("side requests") so the
+' scene's single m.httpTask chain is not disturbed: detail trailers, theme
+' music and box sets, box sets in search, Requests, For You and Calendar.
+import "pkg:/source/lib/ApiClient.bs"
+import "pkg:/source/lib/Nav.bs"
+import "pkg:/source/lib/Trailers.bs"
+import "pkg:/source/lib/ThemeMusic.bs"
+import "pkg:/source/lib/BoxSets.bs"
+import "pkg:/source/lib/Requests.bs"
+import "pkg:/source/lib/ForYou.bs"
+import "pkg:/source/lib/Calendar.bs"
+
+sub initFeatures()
+    m.sideTasks = {}
+    m.screenGeneration = 0
+    m.featureCacheKey = ""
+    m.themeAudio = m.top.findNode("themeAudio")
+    m.themeSettings = invalid
+    m.themePick = invalid
+    m.themeKey = ""
+    m.themePlaying = false
+    m.keepThemeMusic = false
+    m.requestsEnabled = false
+    m.requestsKnown = false
+    m.requestCards = {}
+    m.requestsRow = invalid
+    m.requestsRowPage = 1
+    m.requestsRowNext = 0
+    m.requestsRowLegacy = false
+    m.requestsRowItems = []
+    m.requestDialog = invalid
+    m.requestDialogEntry = invalid
+    m.requestDialogActions = []
+    m.requestOrigin = ""
+    m.boxSetPage = invalid
+    m.boxSetOrigin = invalid
+    m.detailBoxSet = invalid
+    m.searchQuery = ""
+    m.searchItems = []
+    m.searchBoxSets = []
+    m.forYouMain = invalid
+    m.youtubeDialog = invalid
+    m.youtubeKey = ""
+end sub
+
+' Theme settings and requests status are read once per server + profile.
+sub resetFeatureCacheForSession()
+    key = ""
+    if m.session <> invalid
+        key = m.session.serverUrl
+        if m.session.profileId <> invalid
+            key = key + "|" + (m.session.profileId as string)
+        end if
+    end if
+    if key = m.featureCacheKey
+        return
+    end if
+    m.featureCacheKey = key
+    m.themeSettings = invalid
+    m.requestsEnabled = false
+    m.requestsKnown = false
+end sub
+
+' ---- Side requests ----
+
+' A read on its own task. A newer request of the same kind replaces an
+' older one; a screen-bound answer is dropped once the screen changed.
+sub startSideRequest(kind as string, request as object, screenBound = true as boolean)
+    previous = m.sideTasks[kind]
+    if previous <> invalid
+        previous.unobserveField("response")
+        previous.control = "STOP"
+    end if
+    task = CreateObject("roSGNode", "HttpTask")
+    task.addFields({ sideKind: kind, sideGeneration: m.screenGeneration, sideScreenBound: screenBound })
+    task.observeField("response", "onSideResponse")
+    m.sideTasks[kind] = task
+    task.request = request
+    task.control = "RUN"
+end sub
+
+sub stopSideRequest(kind as string)
+    task = m.sideTasks[kind]
+    if task <> invalid
+        task.unobserveField("response")
+        task.control = "STOP"
+        m.sideTasks.delete(kind)
+    end if
+end sub
+
+function sideGet(path as string) as object
+    return Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "GET")
+end function
+
+function sidePost(path as string, body as string) as object
+    return Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), path, "POST", body)
+end function
+
+function responseStatus(response as object) as integer
+    if response.error <> invalid and response.error.status <> invalid
+        return response.error.status as integer
+    end if
+    return 0
+end function
+
+function responseCode(response as object) as dynamic
+    if response.error = invalid
+        return invalid
+    end if
+    if response.error.code <> invalid
+        return response.error.code
+    end if
+    body = response.error.body
+    if body <> invalid and type(body) = "roAssociativeArray" and body.code <> invalid
+        return body.code
+    end if
+    return invalid
+end function
+
+function responseMessage(response as object, fallback as string) as string
+    if response.error <> invalid
+        message = Prairie.Api.serverMessage(response.error)
+        if message.len() > 0
+            return message
+        end if
+    end if
+    return fallback
+end function
+
+sub onSideResponse(event as object)
+    task = event.getRoSGNode()
+    if task = invalid
+        return
+    end if
+    kind = task.sideKind
+    task.unobserveField("response")
+    current = m.sideTasks[kind]
+    if current = invalid or not current.isSameNode(task)
+        return
+    end if
+    m.sideTasks.delete(kind)
+    if task.sideScreenBound = true and task.sideGeneration <> m.screenGeneration
+        return
+    end if
+    response = event.getData()
+    if response = invalid
+        return
+    end if
+    if kind = "themeSettings"
+        applyThemeSettings(response)
+    else if kind = "themeGrant"
+        applyThemeGrant(response)
+    else if kind = "detailBoxSet"
+        applyDetailBoxSet(response)
+    else if kind = "boxSetDetail"
+        applyBoxSetDetail(response)
+    else if kind = "boxSetSearch"
+        applyBoxSetSearch(response)
+    else if kind = "requestsStatus"
+        applyRequestsStatus(response)
+    else if kind = "requestsGate"
+        applyRequestsGate(response)
+    else if kind = "requestsDiscover"
+        applyRequestsDiscover(response)
+    else if kind = "requestsRowPage"
+        applyRequestsRowPage(response)
+    else if kind = "requestsSearch"
+        applyRequestsSearch(response)
+    else if kind = "requestCreate"
+        applyRequestCreate(response)
+    else if kind = "forYouMain"
+        applyForYouMain(response)
+    else if kind = "forYouRows"
+        applyForYouRows(response)
+    else if kind = "calendar"
+        applyCalendar(response)
+    end if
+end sub
+
+' ---- Top bar tabs and the rows screen ----
+
+function createRowsScreen(route as string, titleText as string, tabbed as boolean) as object
+    clearScreen()
+    m.route = route
+    screen = CreateObject("roSGNode", "RowsScreen")
+    if tabbed
+        screen.navEntries = currentNavEntries()
+        screen.navSelectedId = route
+        if m.session <> invalid and m.session.profileName <> invalid
+            screen.profileName = m.session.profileName
+        end if
+    end if
+    screen.titleText = titleText
+    screen.busy = true
+    screen.observeField("selectedContentId", "onRowsItemSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
+    screen.observeField("navRequested", "onHomeNavRequested")
+    screen.observeField("backRequested", "onBrowseBackHome")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
+    return screen
+end function
+
+sub onRowsItemSelected()
+    contentId = m.screen.selectedContentId
+    if contentId = invalid or contentId.len() = 0
+        return
+    end if
+    if Prairie.Requests.isCardId(contentId)
+        openRequestCard(contentId)
+        return
+    end if
+    m.detailChain = invalid
+    showItemDetail(contentId)
+end sub
+
+sub paintRows(rows as object, emptyText as string)
+    if m.screen = invalid
+        return
+    end if
+    m.screen.busy = false
+    m.screen.rows = rows
+    if rows.count() = 0
+        m.screen.statusText = emptyText
+    else
+        m.screen.statusText = ""
+    end if
+    m.screen.callFunc("focusDefault")
+end sub
+
+' For You: the main recommendation row, then the taste rows. Rebuilt and
+' read again each time it is shown.
+sub showForYou()
+    createRowsScreen("foryou", "For You", true)
+    if m.session = invalid
+        return
+    end if
+    m.forYouMain = invalid
+    startSideRequest("forYouMain", sideGet(Prairie.ForYou.mainPath()))
+end sub
+
+sub applyForYouMain(response as object)
+    if response.ok = true
+        m.forYouMain = response.data
+    end if
+    startSideRequest("forYouRows", sideGet(Prairie.ForYou.rowsPath()))
+end sub
+
+sub applyForYouRows(response as object)
+    rowsData = invalid
+    if response.ok = true
+        rowsData = response.data
+    end if
+    rows = Prairie.ForYou.rowsFromResponses(m.forYouMain, rowsData)
+    if rows.count() = 0 and response.ok <> true and m.forYouMain = invalid
+        m.screen.busy = false
+        m.screen.errorText = responseMessage(response, "Could not load recommendations")
+        m.screen.callFunc("focusDefault")
+        return
+    end if
+    paintRows(rows, "Watch a few titles to get recommendations")
+end sub
+
+' Calendar: the next two weeks in the device's time zone, one row per day.
+function calendarToday() as object
+    now = CreateObject("roDateTime")
+    now.toLocalTime()
+    return { year: now.getYear(), month: now.getMonth(), day: now.getDayOfMonth() }
+end function
+
+sub showCalendar()
+    createRowsScreen("calendar", "Calendar", true)
+    if m.session = invalid
+        return
+    end if
+    today = calendarToday()
+    m.calendarToday = Prairie.Calendar.formatDate(today)
+    last = Prairie.Calendar.formatDate(Prairie.Calendar.addDays(today, Prairie.Calendar.windowDays() - 1))
+    timezone = CreateObject("roDeviceInfo").getTimeZone()
+    startSideRequest("calendar", sideGet(Prairie.Calendar.path(m.calendarToday, last, timezone)))
+end sub
+
+sub applyCalendar(response as object)
+    if response.ok <> true
+        m.screen.busy = false
+        m.screen.errorText = responseMessage(response, "Could not load the calendar")
+        m.screen.callFunc("focusDefault")
+        return
+    end if
+    paintRows(Prairie.Calendar.rowsFromResponse(response.data, m.calendarToday), "Nothing scheduled in the next two weeks")
+end sub
+
+' ---- Detail: trailers, theme music, box set ----
+
+sub observeDetailFeatures(screen as object)
+    screen.observeField("trailerSelected", "onDetailTrailerSelected")
+    screen.observeField("boxSetRequested", "onDetailBoxSetRequested")
+end sub
+
+sub onDetailLoaded(detail as object)
+    m.screen.trailers = Prairie.Trailers.railEntries(detail)
+    startThemeMusicFor(detail)
+    m.detailBoxSet = invalid
+    if detail.type <> invalid and LCase(detail.type as string) = "movie" and m.session <> invalid
+        startSideRequest("detailBoxSet", sideGet(Prairie.BoxSets.itemBoxSetPath(m.detailContentId)))
+    end if
+end sub
+
+sub applyDetailBoxSet(response as object)
+    if response.ok <> true or m.route <> "detail"
+        return
+    end if
+    boxSet = Prairie.BoxSets.itemBoxSetFromResponse(response.data)
+    if boxSet <> invalid
+        m.detailBoxSet = boxSet
+        m.screen.boxSet = boxSet
+    end if
+end sub
+
+sub onDetailTrailerSelected()
+    entry = m.screen.trailerSelected
+    if entry = invalid or ratingInFlight()
+        return
+    end if
+    if entry.source = "local" and entry.contentId <> invalid and (entry.contentId as string).len() > 0
+        ' Extras play through the title's player; Back returns to this page.
+        m.screen.playRequested = { contentId: entry.contentId, title: entry.title }
+    else if entry.source = "youtube" and entry.siteKey <> invalid
+        launchYouTube(entry.siteKey as string)
+    end if
+end sub
+
+' roAppManager typed as a plain object: LaunchApp and
+' ShowChannelStoreSpringboard are newer than the BrighterScript type data.
+function appManager() as object
+    return CreateObject("roAppManager")
+end function
+
+' YouTube trailers open in the Roku YouTube channel. Without it, offer the
+' Channel Store page; firmware without app launch says where to watch.
+sub launchYouTube(siteKey as string)
+    if siteKey.len() = 0
+        return
+    end if
+    channelId = Prairie.Trailers.youtubeChannelId()
+    apps = appManager()
+    if apps = invalid
+        showMessage("YouTube", "Open the YouTube channel to watch this trailer.")
+        return
+    end if
+    if apps.isAppInstalled(channelId, "")
+        stopThemeMusic()
+        try
+            apps.launchApp(channelId, "", Prairie.Trailers.youtubeLaunchParams(siteKey))
+        catch launchError
+            showMessage("YouTube", "This Roku cannot open YouTube from here. Open the YouTube channel to watch this trailer.")
+        end try
+        return
+    end if
+    m.youtubeKey = siteKey
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = "YouTube"
+    dialog.message = "Trailers from YouTube play in the YouTube channel, which is not installed on this Roku."
+    dialog.buttons = ["Get YouTube", "Cancel"]
+    dialog.observeField("buttonSelected", "onYouTubeDialogButton")
+    m.youtubeDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onYouTubeDialogButton()
+    dialog = m.youtubeDialog
+    if dialog = invalid
+        return
+    end if
+    choice = dialog.buttonSelected
+    dialog.close = true
+    m.youtubeDialog = invalid
+    if choice <> 0
+        return
+    end if
+    apps = appManager()
+    if apps = invalid
+        return
+    end if
+    stopThemeMusic()
+    try
+        apps.showChannelStoreSpringboard(Prairie.Trailers.youtubeChannelId())
+    catch storeError
+        showMessage("YouTube", "Add the YouTube channel from the Roku Channel Store to watch trailers.")
+    end try
+end sub
+
+' Theme music: plays while a movie, series, season or episode page is open
+' and the profile enables it; a page with the same theme keeps it playing.
+sub startThemeMusicFor(detail as object)
+    pick = Prairie.ThemeMusic.selection(detail)
+    if pick = invalid
+        stopThemeMusic()
+        return
+    end if
+    if m.themePlaying and m.themeKey = pick.key
+        return
+    end if
+    stopThemeMusic()
+    m.themePick = pick
+    if m.session = invalid
+        return
+    end if
+    if m.themeSettings = invalid
+        startSideRequest("themeSettings", sideGet(Prairie.ThemeMusic.settingsPath()), false)
+        return
+    end if
+    requestThemeGrant()
+end sub
+
+sub applyThemeSettings(response as object)
+    data = invalid
+    if response.ok = true
+        data = response.data
+    end if
+    m.themeSettings = Prairie.ThemeMusic.parseSettings(data)
+    requestThemeGrant()
+end sub
+
+sub requestThemeGrant()
+    pick = m.themePick
+    if pick = invalid or m.themeSettings = invalid or m.themeSettings.enabled <> true or m.route <> "detail" or m.session = invalid
+        return
+    end if
+    startSideRequest("themeGrant", sidePost(Prairie.ThemeMusic.playbackPath(pick.ownerId, pick.themeId), Prairie.ThemeMusic.playbackBody()))
+end sub
+
+sub applyThemeGrant(response as object)
+    pick = m.themePick
+    if response.ok <> true or pick = invalid or m.route <> "detail" or m.session = invalid or m.themeAudio = invalid
+        return
+    end if
+    stream = Prairie.ThemeMusic.grantStream(m.session.serverUrl, response.data)
+    if stream = invalid
+        return
+    end if
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = stream.url
+    content.streamFormat = stream.streamFormat
+    m.themeAudio.content = content
+    m.themeAudio.loop = m.themeSettings.loop = true
+    m.themeAudio.control = "play"
+    m.themeKey = pick.key
+    m.themePlaying = true
+end sub
+
+sub stopThemeMusic()
+    stopSideRequest("themeGrant")
+    m.themePick = invalid
+    m.themeKey = ""
+    if m.themePlaying and m.themeAudio <> invalid
+        m.themeAudio.control = "stop"
+    end if
+    m.themePlaying = false
+end sub
+
+' ---- Box sets ----
+
+sub onDetailBoxSetRequested()
+    boxSet = m.detailBoxSet
+    if boxSet = invalid or ratingInFlight()
+        return
+    end if
+    ' A film opened from this box set's page goes back to it.
+    if m.detailBackRoute <> "boxset" or m.boxSetPage = invalid or m.boxSetPage.id <> boxSet.id
+        m.boxSetOrigin = { route: "detail", contentId: m.detailContentId, backRoute: m.detailBackRoute, chain: m.detailChain }
+    end if
+    showBoxSet(boxSet)
+end sub
+
+' The box set's page: its films in release order.
+sub showBoxSet(boxSet as object)
+    clearScreen()
+    m.route = "boxset"
+    m.boxSetPage = boxSet
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Box Set"
+    screen.titleText = boxSet.title
+    screen.busy = true
+    screen.observeField("selectedContentId", "onBoxSetFilmSelected")
+    screen.observeField("cardOptionsRequested", "onCardOptionsRequested")
+    screen.observeField("backRequested", "onBoxSetBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
+    if m.session <> invalid
+        startSideRequest("boxSetDetail", sideGet(Prairie.BoxSets.detailPath(boxSet.id, boxSet.libraryId)))
+    end if
+end sub
+
+sub applyBoxSetDetail(response as object)
+    m.screen.busy = false
+    if response.ok <> true
+        m.screen.errorText = responseMessage(response, "Could not load this box set")
+        return
+    end if
+    page = Prairie.BoxSets.detailFromResponse(response.data)
+    if page = invalid
+        m.screen.errorText = "Could not load this box set"
+        return
+    end if
+    m.boxSetPage = page.boxSet
+    m.screen.eyebrow = "Box Set · " + Prairie.BoxSets.heroFacts(page.boxSet)
+    m.screen.items = page.items
+    m.screen.callFunc("focusDefault")
+end sub
+
+sub onBoxSetFilmSelected()
+    contentId = m.screen.selectedContentId
+    if contentId = invalid or contentId.len() = 0
+        return
+    end if
+    m.detailChain = invalid
+    showItemDetail(contentId, "boxset")
+end sub
+
+sub onBoxSetBack()
+    origin = m.boxSetOrigin
+    m.boxSetOrigin = invalid
+    if origin <> invalid and origin.route = "detail"
+        m.detailChain = origin.chain
+        showItemDetail(origin.contentId, origin.backRoute)
+    else if origin <> invalid and origin.route = "search"
+        showSearch()
+    else
+        showHome()
+    end if
+end sub
+
+' Search: box sets first, then catalog matches; with requests on, titles
+' not in the library under "Available to request".
+sub startSearchExtras(query as string, items as object)
+    m.searchQuery = query
+    m.searchItems = items
+    m.searchBoxSets = []
+    if m.session = invalid
+        return
+    end if
+    startSideRequest("boxSetSearch", sideGet(Prairie.BoxSets.searchPath(query)))
+    if m.requestsEnabled and query.len() >= 2
+        startSideRequest("requestsSearch", sideGet(Prairie.Requests.searchPath(query)))
+    else if m.screen <> invalid and m.screen.hasField("requestItems")
+        m.screen.requestItems = []
+    end if
+end sub
+
+sub applyBoxSetSearch(response as object)
+    if response.ok <> true or m.route <> "search"
+        return
+    end if
+    m.searchBoxSets = Prairie.BoxSets.listFromResponse(response.data)
+    if m.searchBoxSets.count() = 0
+        return
+    end if
+    m.screen.items = Prairie.BoxSets.mergeSearch(m.searchBoxSets, m.searchItems)
+    m.screen.statusText = ""
+end sub
+
+function searchBoxSetFor(contentId as string) as dynamic
+    ref = Prairie.BoxSets.parseCardId(contentId)
+    if ref = invalid
+        return invalid
+    end if
+    for each boxSet in m.searchBoxSets
+        if boxSet.id = ref.id and boxSet.libraryId = ref.libraryId
+            return boxSet
+        end if
+    end for
+    return { id: ref.id, libraryId: ref.libraryId, title: "Box Set" }
+end function
+
+' A search card that is not a catalog item (a box set or a request card);
+' true when it was handled.
+function openSearchSpecialCard(contentId as string) as boolean
+    if Prairie.Requests.isCardId(contentId)
+        openRequestCard(contentId)
+        return true
+    end if
+    boxSet = searchBoxSetFor(contentId)
+    if boxSet = invalid
+        return false
+    end if
+    m.boxSetOrigin = { route: "search" }
+    showBoxSet(boxSet)
+    return true
+end function
+
+function isSpecialCardId(contentId as dynamic) as boolean
+    return Prairie.Requests.isCardId(contentId) or Prairie.BoxSets.parseCardId(contentId) <> invalid
+end function
+
+' ---- Requests ----
+
+sub loadRequestsStatus()
+    if m.session = invalid or m.requestsKnown
+        return
+    end if
+    startSideRequest("requestsStatus", sideGet(Prairie.Requests.statusPath()), false)
+end sub
+
+sub applyRequestsStatus(response as object)
+    m.requestsKnown = true
+    m.requestsEnabled = response.ok = true and Prairie.Requests.enabledFromStatus(response.data)
+end sub
+
+function isRequestsOff(response as object) as boolean
+    return Prairie.Requests.isRequestsOffError(responseStatus(response), responseCode(response))
+end function
+
+' The server turned requests off: leave for Home and drop the menu entry.
+sub closeRequestsToHome()
+    m.requestsEnabled = false
+    m.requestsKnown = true
+    showHome()
+    showMessage("Requests", "Requests are turned off on this server.")
+end sub
+
+' Requests hub: the server's Discover rows in row_order, each with See all.
+sub showRequestsHub()
+    screen = createRowsScreen("requestsHub", "Discover", false)
+    screen.eyebrow = "Requests"
+    screen.exploreLabel = "See all"
+    screen.observeField("exploreRow", "onRequestsExploreRow")
+    if m.session = invalid
+        return
+    end if
+    startSideRequest("requestsGate", sideGet(Prairie.Requests.statusPath()))
+end sub
+
+sub applyRequestsGate(response as object)
+    if response.ok = true and not Prairie.Requests.enabledFromStatus(response.data)
+        closeRequestsToHome()
+        return
+    end if
+    if response.ok = true
+        m.requestsEnabled = true
+        m.requestsKnown = true
+    end if
+    startSideRequest("requestsDiscover", sideGet(Prairie.Requests.discoverPath()))
+end sub
+
+sub rememberRequestCards(cards as object)
+    for each entry in cards
+        m.requestCards[Prairie.Requests.cardId(entry)] = entry
+    end for
+end sub
+
+sub applyRequestsDiscover(response as object)
+    if response.ok <> true
+        if isRequestsOff(response)
+            closeRequestsToHome()
+            return
+        end if
+        m.screen.busy = false
+        m.screen.errorText = responseMessage(response, "Could not load Discover")
+        m.screen.callFunc("focusDefault")
+        return
+    end if
+    rows = []
+    for each hubRow in Prairie.Requests.hubRows(response.data)
+        rememberRequestCards(hubRow.cards)
+        rows.push({ id: hubRow.key, title: hubRow.title, items: Prairie.Requests.screenItems(hubRow.cards), browsable: hubRow.browsable })
+    end for
+    paintRows(rows, "Nothing to discover right now")
+end sub
+
+sub onRequestsExploreRow()
+    row = m.screen.exploreRow
+    if row = invalid or row.id = invalid or (row.id as string).len() = 0
+        return
+    end if
+    showRequestsRow({ id: row.id, title: row.title })
+end sub
+
+' See all: a Discover row paged through GET discover/rows/{key}; servers
+' without it answer the legacy discover/{section} read.
+sub showRequestsRow(row as object)
+    clearScreen()
+    m.route = "requestsRow"
+    m.requestsRow = row
+    m.requestsRowItems = []
+    m.requestsRowNext = 0
+    m.requestsRowLegacy = false
+    screen = CreateObject("roSGNode", "CatalogBrowseScreen")
+    screen.eyebrow = "Requests"
+    screen.titleText = row.title
+    screen.busy = true
+    screen.observeField("selectedContentId", "onRowsItemSelected")
+    screen.observeField("loadMoreRequested", "onRequestsRowMore")
+    screen.observeField("backRequested", "onRequestsRowBack")
+    m.screenHost.appendChild(screen)
+    m.screen = screen
+    screen.callFunc("focusDefault")
+    loadRequestsRowPage(1)
+end sub
+
+sub loadRequestsRowPage(page as integer)
+    if m.session = invalid or m.requestsRow = invalid
+        return
+    end if
+    m.requestsRowPage = page
+    path = Prairie.Requests.rowPath(m.requestsRow.id, page)
+    if m.requestsRowLegacy
+        path = Prairie.Requests.legacySectionPath(m.requestsRow.id, page)
+    end if
+    m.screen.busy = true
+    startSideRequest("requestsRowPage", sideGet(path))
+end sub
+
+sub onRequestsRowMore()
+    if m.requestsRowNext > 0 and not m.sideTasks.doesExist("requestsRowPage")
+        loadRequestsRowPage(m.requestsRowNext)
+    end if
+end sub
+
+sub applyRequestsRowPage(response as object)
+    if response.ok <> true
+        status = responseStatus(response)
+        if status = 404 and not m.requestsRowLegacy and m.requestsRowPage = 1
+            m.requestsRowLegacy = true
+            loadRequestsRowPage(1)
+            return
+        end if
+        if isRequestsOff(response)
+            closeRequestsToHome()
+            return
+        end if
+        m.screen.busy = false
+        m.screen.errorText = responseMessage(response, "Could not load this row")
+        return
+    end if
+    page = Prairie.Requests.rowPageFromResponse(response.data, m.requestsRowPage)
+    rememberRequestCards(page.cards)
+    for each item in Prairie.Requests.screenItems(page.cards)
+        m.requestsRowItems.push(item)
+    end for
+    m.requestsRowNext = page.nextPage
+    m.screen.items = m.requestsRowItems
+    m.screen.hasMore = page.nextPage > 0
+    m.screen.busy = false
+    if m.requestsRowPage = 1
+        m.screen.callFunc("focusDefault")
+    end if
+end sub
+
+sub onRequestsRowBack()
+    showRequestsHub()
+end sub
+
+sub applyRequestsSearch(response as object)
+    if m.route <> "search" or not m.screen.hasField("requestItems")
+        return
+    end if
+    if response.ok <> true
+        if isRequestsOff(response)
+            m.requestsEnabled = false
+        end if
+        m.screen.requestItems = []
+        return
+    end if
+    found = Prairie.Requests.searchFromResponse(response.data)
+    rememberRequestCards(found.cards)
+    m.screen.requestItems = Prairie.Requests.screenItems(found.cards)
+    if found.cards.count() > 0 and (m.screen.items = invalid or m.screen.items.count() = 0)
+        m.screen.statusText = "Not in your libraries"
+    end if
+end sub
+
+' A request card: Open (in the library) or Request, then Cancel.
+sub openRequestCard(contentId as string)
+    entry = m.requestCards[contentId]
+    if entry = invalid
+        return
+    end if
+    m.requestOrigin = m.route
+    m.requestDialogEntry = entry
+    m.requestDialogActions = Prairie.Requests.actions(entry)
+    dialog = CreateObject("roSGNode", "Dialog")
+    dialog.title = entry.title
+    dialog.message = Prairie.Requests.dialogMessage(entry)
+    dialog.buttons = Prairie.Requests.actionLabels(m.requestDialogActions)
+    dialog.observeField("buttonSelected", "onRequestDialogButton")
+    m.requestDialog = dialog
+    m.top.dialog = dialog
+end sub
+
+sub onRequestDialogButton()
+    dialog = m.requestDialog
+    entry = m.requestDialogEntry
+    if dialog = invalid or entry = invalid
+        return
+    end if
+    choice = Prairie.Requests.actionAt(m.requestDialogActions, dialog.buttonSelected)
+    dialog.close = true
+    m.requestDialog = invalid
+    if choice = "open"
+        m.detailChain = invalid
+        showItemDetail(entry.libraryContentId)
+    else if choice = "request" and m.session <> invalid
+        startSideRequest("requestCreate", sidePost(Prairie.Requests.createPath(), Prairie.Requests.createBody(entry)), false)
+    else
+        m.requestDialogEntry = invalid
+    end if
+end sub
+
+sub applyRequestCreate(response as object)
+    entry = m.requestDialogEntry
+    m.requestDialogEntry = invalid
+    if entry = invalid
+        return
+    end if
+    if response.ok = true
+        entry.state = "Requested"
+        showMessage("Requested", Prairie.Requests.createdMessage(response.data, entry.title))
+        return
+    end if
+    if isRequestsOff(response) and (m.route = "requestsHub" or m.route = "requestsRow")
+        closeRequestsToHome()
+        return
+    end if
+    showMessage("Request", responseMessage(response, "Could not request " + entry.title + "."))
+end sub

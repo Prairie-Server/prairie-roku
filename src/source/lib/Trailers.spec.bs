@@ -1,0 +1,81 @@
+namespace tests
+    @suite("Prairie.Trailers")
+    class TrailersSuite extends rooibos.BaseTestSuite
+
+        @describe("railEntries")
+        @it("lists local extras before YouTube videos, without duplicates")
+        sub _()
+            detail = {
+                videos: [
+                    { kind: "trailer", site: "YouTube", site_key: "abc", name: "  Official Trailer " },
+                    { kind: "teaser", site: "vimeo", site_key: "v1" },
+                    { kind: "teaser", site: "youtube", site_key: " " },
+                    { kind: "clip", site: "youtube", site_key: "abc" },
+                    "junk"
+                ],
+                extras: [
+                    { content_id: "x1", kind: "behind_the_scenes", duration_seconds: 125, still_url: "https://s/x1.jpg" },
+                    { content_id: "x1", kind: "featurette" },
+                    { content_id: " ", kind: "featurette" },
+                    { kind: "featurette" },
+                    { content_id: "x2", kind: "making_of", title: "Making It" }
+                ]
+            }
+            entries = Prairie.Trailers.railEntries(detail)
+            m.assertEqual(entries.count(), 3)
+            m.assertEqual(entries[0].key, "local:x1")
+            m.assertEqual(entries[0].source, "local")
+            m.assertEqual(entries[0].title, "Behind the Scenes")
+            m.assertEqual(entries[0].caption, "2:05")
+            m.assertEqual(entries[0].thumbnailUrl, "https://s/x1.jpg")
+            m.assertEqual(entries[1].title, "Making It")
+            m.assertEqual(entries[1].caption, "Making Of")
+            m.assertEqual(entries[1].thumbnailUrl, "")
+            m.assertEqual(entries[2].source, "youtube")
+            m.assertEqual(entries[2].title, "Official Trailer")
+            m.assertEqual(entries[2].caption, "YouTube")
+            m.assertEqual(entries[2].siteKey, "abc")
+            m.assertEqual(entries[2].thumbnailUrl, "https://i.ytimg.com/vi/abc/hqdefault.jpg")
+        end sub
+
+        @it("is empty without a detail or rails")
+        sub _()
+            m.assertEqual(Prairie.Trailers.railEntries(invalid).count(), 0)
+            m.assertEqual(Prairie.Trailers.railEntries("x").count(), 0)
+            m.assertEqual(Prairie.Trailers.railEntries({}).count(), 0)
+        end sub
+
+        @describe("labels")
+        @it("names extra kinds")
+        sub _()
+            m.assertEqual(Prairie.Trailers.kindLabel("trailer"), "Trailer")
+            m.assertEqual(Prairie.Trailers.kindLabel("Teaser"), "Teaser")
+            m.assertEqual(Prairie.Trailers.kindLabel("featurette"), "Featurette")
+            m.assertEqual(Prairie.Trailers.kindLabel("behind-the-scenes"), "Behind the Scenes")
+            m.assertEqual(Prairie.Trailers.kindLabel("deleted_scene"), "Deleted Scene")
+            m.assertEqual(Prairie.Trailers.kindLabel("deleted-scene"), "Deleted Scene")
+            m.assertEqual(Prairie.Trailers.kindLabel("interview"), "Interview")
+            m.assertEqual(Prairie.Trailers.kindLabel("short-film"), "Short Film")
+            m.assertEqual(Prairie.Trailers.kindLabel(""), "Extra")
+            m.assertEqual(Prairie.Trailers.kindLabel(invalid), "Extra")
+        end sub
+
+        @it("formats runtimes")
+        sub _()
+            m.assertEqual(Prairie.Trailers.durationLabel(3723), "1:02:03")
+            m.assertEqual(Prairie.Trailers.durationLabel(59), "0:59")
+            m.assertEqual(Prairie.Trailers.durationLabel(0), "")
+            m.assertEqual(Prairie.Trailers.durationLabel(invalid), "")
+        end sub
+
+        @describe("youtube")
+        @it("launches the YouTube channel with the video id")
+        sub _()
+            m.assertEqual(Prairie.Trailers.youtubeChannelId(), "837")
+            params = Prairie.Trailers.youtubeLaunchParams("abc")
+            m.assertEqual(params.contentId, "abc")
+            m.assertEqual(params.mediaType, "live")
+        end sub
+
+    end class
+end namespace

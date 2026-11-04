@@ -3,6 +3,7 @@ import "pkg:/source/lib/ArtworkUrl.bs"
 import "pkg:/source/lib/ApiClient.bs"
 import "pkg:/source/lib/Catalog.bs"
 import "pkg:/source/lib/WatchedState.bs"
+import "pkg:/source/lib/BoxSets.bs"
 
 sub init()
     colors = Prairie.Theme.colors()
@@ -26,6 +27,12 @@ sub init()
     m.episodeList = m.top.findNode("episodeList")
     m.similarTitle = m.top.findNode("similarTitle")
     m.similarList = m.top.findNode("similarList")
+    m.page = m.top.findNode("page")
+    m.boxSetBg = m.top.findNode("boxSetBg")
+    m.boxSetLabel = m.top.findNode("boxSetLabel")
+    m.trailersTitle = m.top.findNode("trailersTitle")
+    m.trailerList = m.top.findNode("trailerList")
+    m.trailerScroll = 0
 
     m.eyebrow.color = colors.amber
     m.title.color = colors.ink
@@ -36,12 +43,15 @@ sub init()
     m.playLabel.color = colors.bg
     m.seasonsTitle.color = colors.amber
     m.similarTitle.color = colors.amber
+    m.trailersTitle.color = colors.amber
     m.rateLabel.color = colors.ink
     m.colors = colors
     m.rateBg.color = colors.bgElevated
     m.rateBg.observeField("focusedChild", "onRateFocus")
     m.watchedBg.observeField("focusedChild", "onWatchedFocus")
+    m.boxSetBg.observeField("focusedChild", "onBoxSetFocus")
     onWatchedFocus()
+    onBoxSetFocus()
     m.top.observeField("watched", "onWatched")
 
     m.top.observeField("detail", "onDetail")
@@ -54,6 +64,9 @@ sub init()
     m.seasonList.observeField("rowItemSelected", "onSeasonSelected")
     m.episodeList.observeField("rowItemSelected", "onEpisodeSelected")
     m.similarList.observeField("rowItemSelected", "onSimilarSelected")
+    m.trailerList.observeField("rowItemSelected", "onTrailerSelected")
+    m.top.observeField("trailers", "onTrailers")
+    m.top.observeField("boxSet", "onBoxSet")
 end sub
 
 sub onErrorText()
@@ -87,6 +100,102 @@ sub onWatchedFocus()
         m.watchedLabel.color = m.colors.ink
     end if
 end sub
+
+sub onBoxSetFocus()
+    if m.boxSetBg.hasFocus()
+        m.boxSetBg.color = m.colors.ring
+        m.boxSetLabel.color = m.colors.bg
+    else
+        m.boxSetBg.color = m.colors.bgElevated
+        m.boxSetLabel.color = m.colors.ink
+    end if
+end sub
+
+' A movie in a box set offers its page from the action row.
+sub onBoxSet()
+    boxSet = m.top.boxSet
+    shown = boxSet <> invalid and boxSet.title <> invalid and not m.seasonList.visible
+    m.boxSetBg.visible = shown
+    if shown
+        m.boxSetLabel.text = "▤ " + (boxSet.title as string)
+    end if
+end sub
+
+' Trailers & Extras: local extras, then YouTube videos, each with a still.
+sub onTrailers()
+    entries = m.top.trailers
+    content = CreateObject("roSGNode", "ContentNode")
+    row = content.createChild("ContentNode")
+    if entries <> invalid
+        index = 0
+        for each entry in entries
+            node = row.createChild("ContentNode")
+            title = entry.title
+            if entry.caption <> invalid and (entry.caption as string).len() > 0
+                title = title + " · " + entry.caption
+            end if
+            node.title = title
+            node.hdPosterUrl = entry.thumbnailUrl
+            node.addFields({ entryIndex: index, isExploreAll: false })
+            index = index + 1
+        end for
+    end if
+    m.trailerList.content = content
+    shown = row.getChildCount() > 0
+    m.trailersTitle.visible = shown
+    m.trailerList.visible = shown
+    layoutTrailers()
+end sub
+
+' The rail sits under the last rail shown; focusing it scrolls the page up
+' so it stays on screen.
+sub layoutTrailers()
+    top = 730
+    if m.seasonList.visible
+        top = 1060
+    else if m.similarList.visible
+        top = 1090
+    end if
+    m.trailersTitle.translation = [80, top]
+    m.trailerList.translation = [80, top + 50]
+    m.trailerScroll = top + 50 + 260 - 1040
+    if m.trailerScroll < 0
+        m.trailerScroll = 0
+    end if
+end sub
+
+sub focusTrailers()
+    m.page.translation = [0, -m.trailerScroll]
+    m.trailerList.setFocus(true)
+end sub
+
+sub leaveTrailers(target as object)
+    m.page.translation = [0, 0]
+    target.setFocus(true)
+end sub
+
+sub onTrailerSelected()
+    selection = m.trailerList.rowItemSelected
+    entries = m.top.trailers
+    if selection = invalid or selection.count() < 2 or entries = invalid
+        return
+    end if
+    if selection[1] >= 0 and selection[1] < entries.count()
+        m.top.trailerSelected = entries[selection[1]]
+    end if
+end sub
+
+' The action button focus returns to from a rail below.
+function actionAnchor() as object
+    if m.playBg.visible
+        return m.playBg
+    end if
+    return m.rateBg
+end function
+
+function actionHasFocus() as boolean
+    return m.playBg.hasFocus() or m.rateBg.hasFocus() or m.watchedBg.hasFocus() or m.boxSetBg.hasFocus()
+end function
 
 sub onWatched()
     m.watchedLabel.text = "✓ " + Prairie.WatchedState.actionLabel(m.top.watched)
@@ -172,6 +281,7 @@ sub onDetail()
     if series
         m.similarTitle.visible = false
         m.similarList.visible = false
+        m.boxSetBg.visible = false
     end if
     if series
         m.rateBg.translation = [80, 620]
@@ -253,6 +363,7 @@ sub onSimilar()
     shown = row.getChildCount() > 0 and not m.seasonList.visible
     m.similarTitle.visible = shown
     m.similarList.visible = shown
+    layoutTrailers()
 end sub
 
 sub onSimilarSelected()
@@ -340,6 +451,36 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.top.watchedRequested = true
         return true
     end if
+    if key = "OK" and m.boxSetBg.visible and m.boxSetBg.hasFocus()
+        m.top.boxSetRequested = true
+        return true
+    end if
+    if key = "right" and m.boxSetBg.visible and m.watchedBg.hasFocus()
+        m.boxSetBg.setFocus(true)
+        return true
+    end if
+    if key = "left" and m.boxSetBg.hasFocus()
+        m.watchedBg.setFocus(true)
+        return true
+    end if
+    if key = "up" and m.trailerList.hasFocus()
+        if m.similarList.visible
+            leaveTrailers(m.similarList)
+        else if m.episodeList.visible
+            leaveTrailers(m.episodeList)
+        else
+            leaveTrailers(actionAnchor())
+        end if
+        return true
+    end if
+    if key = "down" and m.trailerList.visible
+        fromRail = m.similarList.hasFocus() or m.episodeList.hasFocus()
+        fromActions = actionHasFocus() and not m.seasonList.visible and not m.similarList.visible
+        if fromRail or fromActions
+            focusTrailers()
+            return true
+        end if
+    end if
     if key = "right" and m.rateBg.hasFocus()
         m.watchedBg.setFocus(true)
         return true
@@ -356,7 +497,15 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.playBg.setFocus(true)
         return true
     end if
-    if key = "down" and m.seasonList.visible and (m.rateBg.hasFocus() or m.watchedBg.hasFocus())
+    if key = "down" and m.seasonList.visible and actionHasFocus()
+        m.seasonList.setFocus(true)
+        return true
+    end if
+    if key = "down" and m.seasonList.hasFocus() and m.episodeList.visible
+        m.episodeList.setFocus(true)
+        return true
+    end if
+    if key = "up" and m.episodeList.hasFocus()
         m.seasonList.setFocus(true)
         return true
     end if
@@ -364,7 +513,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.rateBg.setFocus(true)
         return true
     end if
-    if key = "down" and m.similarList.visible and (m.rateBg.hasFocus() or m.playBg.hasFocus() or m.watchedBg.hasFocus())
+    if key = "down" and m.similarList.visible and actionHasFocus()
         m.similarList.setFocus(true)
         return true
     end if
