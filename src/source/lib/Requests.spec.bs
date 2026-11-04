@@ -222,5 +222,21 @@ namespace tests
             m.assertEqual(Prairie.Requests.createdMessage(invalid, "Heat"), "Heat was requested.")
         end sub
 
+        @it("draws request cards with an id the scene can resolve")
+        sub _()
+            source = m.result(5, "Heat", "series")
+            source.request = { request_id: "r" }
+            entry = Prairie.Requests.card(source)
+            items = Prairie.Requests.screenItems([entry, Prairie.Requests.card(m.result(6, "Plain"))])
+            m.assertEqual(items.count(), 2)
+            m.assertEqual(items[0].content_id, "request:series:5")
+            m.assertEqual(items[0].title, "Heat · Requested")
+            m.assertEqual(items[1].title, "Plain")
+            m.assertFalse(items[1].watched)
+            m.assertTrue(Prairie.Requests.isCardId("request:movie:6"))
+            m.assertFalse(Prairie.Requests.isCardId("movie:6"))
+            m.assertFalse(Prairie.Requests.isCardId(invalid))
+        end sub
+
     end class
 end namespace

@@ -364,4 +364,31 @@ namespace Prairie.Requests
         return parts.join(" · ")
     end function
 
+    ' The id a request card carries on screen: "request:{media type}:{tmdb id}".
+    function cardId(entry as object) as string
+        return "request:" + entry.mediaType + ":" + entry.tmdbId.toStr()
+    end function
+
+    function isCardId(contentId as dynamic) as boolean
+        return contentId <> invalid and (contentId as string).left(8) = "request:"
+    end function
+
+    ' A poster card { content_id, title, poster_url, watched } for a title;
+    ' the title names a state other than Request.
+    function screenItem(entry as object) as object
+        title = entry.title
+        if entry.state.len() > 0 and entry.state <> "Request"
+            title = title + " · " + entry.state
+        end if
+        return { content_id: cardId(entry), title: title, poster_url: entry.posterUrl, watched: false }
+    end function
+
+    function screenItems(entries as object) as object
+        items = []
+        for each entry in entries
+            items.push(screenItem(entry))
+        end for
+        return items
+    end function
+
 end namespace
