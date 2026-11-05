@@ -19,7 +19,7 @@
     "validate": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run package"
   },
   "devDependencies": {
-    "@rokucommunity/bslint": "1.0.0-alpha.56",
+    "@rokucommunity/bslint": "1.0.0-alpha.57",
     "brighterscript": "1.0.0-alpha.56",
     "brs-node": "2.6.1",
     "prettier": "3.9.10",
