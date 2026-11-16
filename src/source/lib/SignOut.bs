@@ -8,7 +8,7 @@ import "pkg:/source/lib/Credentials.bs"
 namespace Prairie.SignOut
 
     function logoutPath() as string
-        return "/api/v1/auth/logout"
+        return "/api/v2/auth/logout"
     end function
 
     function logoutTimeoutMs() as integer

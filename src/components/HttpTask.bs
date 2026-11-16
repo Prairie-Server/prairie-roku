@@ -37,14 +37,16 @@ sub runRequest()
         timeoutMs = request.timeoutMs as integer
     end if
 
+    body = ""
+    if request.body <> invalid
+        body = request.body as string
+    end if
     sent = false
-    if method = "GET" or method = "DELETE"
+    ' A DELETE with a body (v2 playback stop) goes out through the POST call;
+    ' setRequest above already set the verb.
+    if method = "GET" or (method = "DELETE" and body.len() = 0)
         sent = transfer.asyncGetToString()
     else
-        body = ""
-        if request.body <> invalid
-            body = request.body as string
-        end if
         sent = transfer.asyncPostFromString(body)
     end if
 

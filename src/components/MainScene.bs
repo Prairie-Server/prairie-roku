@@ -1424,14 +1424,26 @@ sub loadEpisodes(seasonNumber as integer)
     m.httpTask.control = "RUN"
 end sub
 
+' v2 start, replan, progress and stop all carry the server's installation_id,
+' which only GET /playback/capabilities hands out, so fetch it first.
 sub startPlaybackSession()
     if m.session = invalid or m.playLaunch = invalid
         return
     end if
-    m.pending = "playbackStart"
+    m.pending = "playbackCapabilities"
+    m.playbackInstallationId = ""
     if m.screen <> invalid
         m.screen.busy = true
     end if
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.capabilitiesPath(), "GET")
+    m.httpTask.control = "RUN"
+end sub
+
+sub sendPlaybackStart()
+    if m.session = invalid or m.playLaunch = invalid
+        return
+    end if
+    m.pending = "playbackStart"
     forced = Prairie.Playback.forcedPlayMethodFromStore(m.store)
     settings = Prairie.PlaybackSettings.load(m.store)
     body = Prairie.Playback.buildStartBody({
@@ -1440,8 +1452,10 @@ sub startPlaybackSession()
         forcedPlayMethod: forced,
         qualityPreference: settings.preferredQuality,
         startPosition: m.playLaunch.startPosition,
-        audioTrackIndex: rememberedAudioIndex()
+        audioTrackIndex: rememberedAudioIndex(),
+        installationId: m.playbackInstallationId
     })
+    m.playbackStartBody = body
     requestBody = ParseJson(body)
     if requestBody <> invalid and requestBody.playback_attempt_id <> invalid
         m.playbackAttemptId = requestBody.playback_attempt_id as string
@@ -1449,7 +1463,7 @@ sub startPlaybackSession()
         m.playbackAttemptId = invalid
     end if
     m.playbackRoute = "v2"
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/start", "POST", body)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.startPath(), "POST", body)
     m.httpTask.control = "RUN"
 end sub
 
@@ -1555,7 +1569,7 @@ sub startPlaybackTranscode(seekSeconds as dynamic, qualityId = invalid as dynami
         bodyInput.copyVideo = targets.copyVideo
     end if
     body = Prairie.Playback.buildTranscodeStartBody(bodyInput)
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.transcodeStartPath(), "POST", body)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.legacyTranscodeStartPath(), "POST", body)
     m.httpTask.control = "RUN"
 end sub
 
@@ -1589,7 +1603,8 @@ sub reportPlayerProgress(force as boolean)
     end if
     position = m.screen.positionSeconds
     isPaused = m.screen.isPaused
-    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.progressPath(sid as string), "POST", Prairie.Playback.buildProgressBody(position, isPaused))
+    body = Prairie.Playback.buildProgressBody(playbackInstallationId(), Prairie.Playback.nextSequence(m.playbackSession), position, isPaused)
+    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.progressPath(sid as string), "POST", body)
     m.progressTask.request = req
     m.progressTask.control = "RUN"
 end sub
@@ -1602,10 +1617,27 @@ sub stopPlaybackSessionAsync()
     if sid = invalid or (sid as string).len() = 0
         return
     end if
-    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(sid as string), "DELETE")
+    ' Final sample rides on the stop; without a screen there is none.
+    sequence = 0
+    position = 0.0
+    isPaused = false
+    if m.screen <> invalid
+        sequence = Prairie.Playback.nextSequence(m.playbackSession)
+        position = m.screen.positionSeconds
+        isPaused = m.screen.isPaused
+    end if
+    body = Prairie.Playback.buildStopBody(playbackInstallationId(), Prairie.Playback.newStopId(), sequence, position, isPaused)
+    req = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(sid as string), "DELETE", body)
     m.progressTask.request = req
     m.progressTask.control = "RUN"
 end sub
+
+function playbackInstallationId() as string
+    if m.playbackSession <> invalid and m.playbackSession.installation_id <> invalid
+        return m.playbackSession.installation_id as string
+    end if
+    return ""
+end function
 
 function isSeriesDetail(detail as object) as boolean
     if detail = invalid or detail.type = invalid
@@ -2470,10 +2502,23 @@ sub onPlayerAudioCycle()
         nextIndex = 0
     end if
     m.audioTrackIndex = nextIndex
-    m.pending = "audioSwitch"
     sid = m.playbackSession.session_id as string
+    if m.playbackSession.is_protocol_v3 = true
+        ' v2 has no audio PATCH: switch tracks with a track_change replan.
+        m.pending = "audioReplan"
+        quality = "auto"
+        if m.activeQualityId <> invalid and (m.activeQualityId as string).len() > 0
+            quality = m.activeQualityId as string
+        end if
+        body = Prairie.Playback.buildAudioReplanBody(m.playbackSession, nextIndex, quality, m.screen.positionSeconds)
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.replanPath(sid), "POST", body)
+        m.httpTask.control = "RUN"
+        return
+    end if
+    ' Legacy session from the /api/v1/playback/start fallback.
+    m.pending = "audioSwitch"
     body = Prairie.Playback.buildAudioBody(nextIndex, m.screen.positionSeconds)
-    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.audioPath(sid), "PATCH", body)
+    m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.legacyAudioPath(sid), "PATCH", body)
     m.httpTask.control = "RUN"
 end sub
 
@@ -2577,7 +2622,7 @@ sub applyPlayerQuality(requested as dynamic, persist as boolean)
         if sid = invalid or (sid as string).len() = 0
             return
         end if
-        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), "/api/v2/playback/" + (sid as string).encodeUriComponent() + "/replan", "POST", body)
+        m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.replanPath(sid as string), "POST", body)
         m.httpTask.control = "RUN"
         return
     end if
@@ -2836,6 +2881,22 @@ sub onHttpResponse()
         if response.error <> invalid and response.error.status <> invalid
             status = response.error.status as integer
         end if
+        if pending = "playbackCapabilities"
+            ' Older servers lack capabilities; start without an id and let
+            ' the v1 fallback below take over if v2 start is missing too.
+            m.playbackInstallationId = ""
+            sendPlaybackStart()
+            return
+        end if
+        if pending = "audioReplan"
+            if m.playbackSession <> invalid and m.playbackSession.audio_track_index <> invalid
+                m.audioTrackIndex = m.playbackSession.audio_track_index as integer
+            end if
+            if m.screen <> invalid
+                m.screen.errorText = "Could not switch audio"
+            end if
+            return
+        end if
         if (pending = "playbackStart" or pending = "playbackReplan") and m.playbackRoute = "v2" and (status = 404 or status = 405)
             m.playbackRoute = "v1"
             if pending = "playbackStart"
@@ -2849,7 +2910,7 @@ sub onHttpResponse()
             else
                 m.pending = "playbackReplan"
                 body = Prairie.Playback.buildReplanBody(m.playbackSession, m.pendingQualityPreference, m.screen.positionSeconds)
-                m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.sessionPath(m.playbackSession.session_id) + "/replan", "POST", body)
+                m.httpTask.request = Prairie.Api.buildRequest(Prairie.Api.sessionOptions(m.session), Prairie.Playback.legacyReplanPath(m.playbackSession.session_id), "POST", body)
             end if
             m.httpTask.control = "RUN"
             return
@@ -3135,12 +3196,17 @@ sub onHttpResponse()
             startPosition: Prairie.Playback.resumeSeconds(watch),
             watch: watch
         })
+    else if pending = "playbackCapabilities"
+        m.playbackInstallationId = Prairie.Playback.installationIdFromCapabilities(response.data)
+        sendPlaybackStart()
     else if pending = "playbackStart"
         playback = Prairie.Playback.normalizeStartResponse(response.data)
         if playback = invalid or playback.session_id = invalid or playback.stream_url = invalid
             m.screen.errorText = "Playback failed to start"
             return
         end if
+        playback.installation_id = m.playbackInstallationId
+        playback.progress_sequence = 0
     if playback <> invalid and m.playbackAttemptId <> invalid
         playback.playback_attempt_id = m.playbackAttemptId
     end if
@@ -3179,6 +3245,20 @@ sub onHttpResponse()
         m.playbackSession = replanned
         m.screen.startPosition = m.screen.positionSeconds
         applyPlayerStream(replanned)
+    else if pending = "audioReplan"
+        replanned = Prairie.Playback.applyReplanResponse(m.playbackSession, response.data)
+        if replanned = invalid or replanned.stream_url = invalid
+            m.screen.errorText = "Could not switch audio"
+            return
+        end if
+        m.playbackSession = replanned
+        if replanned.audio_track_index <> invalid
+            m.audioTrackIndex = replanned.audio_track_index as integer
+        end if
+        rememberPlayerAudio()
+        m.screen.startPosition = m.screen.positionSeconds
+        applyPlayerStream(replanned)
+        m.screen.errorText = "Audio track " + (m.audioTrackIndex + 1).toStr()
     else if pending = "playbackTranscodeStart"
         transcode = response.data
         if transcode = invalid or transcode.manifest_url = invalid

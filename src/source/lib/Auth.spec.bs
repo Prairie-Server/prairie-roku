@@ -5,8 +5,8 @@ namespace tests
         @describe("paths and bodies")
         @it("builds login and verify-pin payloads")
         sub _()
-            m.assertEqual(Prairie.Auth.loginPath(), "/api/v1/auth/login")
-            m.assertEqual(Prairie.Auth.setupStatusPath(), "/api/v1/auth/setup")
+            m.assertEqual(Prairie.Auth.loginPath(), "/api/v2/auth/login")
+            m.assertEqual(Prairie.Auth.setupStatusPath(), "/api/v2/system/setup")
             validNeeds = Prairie.Auth.parseSetupStatus({ needs_setup: true })
             m.assertTrue(validNeeds.ok)
             m.assertTrue(validNeeds.needsSetup)
@@ -25,9 +25,9 @@ namespace tests
             pinBody = ParseJson(Prairie.Auth.buildVerifyPinBody("1234"))
             m.assertEqual(pinBody.pin, "1234")
             m.assertTrue(Prairie.Auth.verifyPinPath("p 1").instr("p%201") >= 0)
-            m.assertEqual(Prairie.Auth.profilesPath(), "/api/v1/profiles")
-            m.assertEqual(Prairie.Auth.deviceStartPath(), "/api/v1/auth/device/start")
-            m.assertEqual(Prairie.Auth.devicePollPath(), "/api/v1/auth/device/poll")
+            m.assertEqual(Prairie.Auth.profilesPath(), "/api/v2/profiles")
+            m.assertEqual(Prairie.Auth.deviceStartPath(), "/api/v2/auth/device/start")
+            m.assertEqual(Prairie.Auth.devicePollPath(), "/api/v2/auth/device/poll")
             startBody = ParseJson(Prairie.Auth.buildDeviceStartBody("Prairie Roku", "roku"))
             m.assertEqual(startBody.device_name, "Prairie Roku")
             m.assertEqual(startBody.device_platform, "roku")
@@ -73,6 +73,15 @@ namespace tests
             m.assertEqual(clampedPoll.status, "approved")
             m.assertEqual(clampedPoll.pollAfter, 3)
             m.assertEqual(clampedPoll.accessToken, "tok")
+            nestedPoll = Prairie.Auth.parseDevicePoll({
+                status: "approved",
+                poll_after: 5,
+                tokens: { access_token: "a2", refresh_token: "r2", user: { username: "ada" } }
+            })
+            m.assertTrue(nestedPoll.ok)
+            m.assertEqual(nestedPoll.accessToken, "a2")
+            m.assertEqual(nestedPoll.refreshToken, "r2")
+            m.assertEqual(nestedPoll.user.username, "ada")
         end sub
 
         @describe("profiles")
@@ -96,6 +105,11 @@ namespace tests
                 profiles: [{ id: "1" }]
             })
             m.assertEqual(list.count(), 1)
+            items = Prairie.Auth.profilesFromResponse({
+                items: [{ id: "1" }, { id: "2" }],
+                page: { limit: 50 }
+            })
+            m.assertEqual(items.count(), 2)
             m.assertEqual(Prairie.Auth.profilesFromResponse(invalid).count(), 0)
             m.assertEqual(Prairie.Auth.profilesFromResponse([]).count(), 0)
             m.assertEqual(Prairie.Auth.profilesFromResponse({ profiles: "nope" }).count(), 0)

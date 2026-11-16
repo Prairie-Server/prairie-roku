@@ -1,6 +1,6 @@
 # Prairie Roku 1.0 Roadmap
 
-Native Roku (BrightScript / SceneGraph) client for Prairie `/api/v1`, feature-aligned
+Native Roku (BrightScript / SceneGraph) client for Prairie `/api/v2`, feature-aligned
 with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 
 ## Quality bar (every PR)
@@ -29,7 +29,7 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 - [x] Connect (username / password) to Prairie server _(implemented; device validation pending)_
 - [x] Quick Connect device login on Connect screen _(QR + code + poll; approve from web/mobile Settings)_
 - [x] Profile picker (+ PIN when required) _(implemented; device validation pending)_
-- [x] Home sections from `/api/v1/home/sections` _(implemented; device validation pending)_
+- [x] Home sections from `/api/v2/home/sections` _(implemented; device validation pending)_
 - [x] Libraries + catalog pagination _(implemented; device validation pending)_
 - [x] Collections (library + personal) _(implemented; device validation pending)_
 - [x] Search _(implemented; device validation pending)_
@@ -39,17 +39,18 @@ with [prairie-smarttv](https://github.com/Prairie-Server/prairie-smarttv) 1.0.
 - [x] Upgrade-safe registry persistence (session + settings + last server URL)
 - [x] Sideload `.zip` package script + Channel Store notes
 
-## API surface (native `/api/v1`)
+## API surface (native `/api/v2`)
 
-1. `POST /api/v1/auth/login`
-2. `GET /api/v1/profiles` (+ `POST …/verify-pin`)
-3. `GET /api/v1/home/sections`
-4. `GET /api/v1/user/libraries` · `GET /api/v1/catalog`
-5. `GET /api/v1/library/{id}/collections` · `GET /api/v1/collections`
-6. `GET /api/v1/catalog/items/{id}` · seasons/episodes · `GET /api/v1/watch/{id}`
-7. `POST /api/v1/playback/start` · progress · DELETE session
-8. `GET /api/v1/livetv/channels` · guide · channel session
+1. `POST /api/v2/auth/login` · `GET /api/v2/system/setup` · `POST /api/v2/auth/device/start|poll`
+2. `GET /api/v2/profiles` (+ `POST …/verify-pin`)
+3. `GET /api/v2/home/sections`
+4. `GET /api/v2/user/libraries` · `GET /api/v2/catalog`
+5. `GET /api/v2/library/{id}/collections` · `GET /api/v2/collections`
+6. `GET /api/v2/catalog/items/{id}` · seasons/episodes · `GET /api/v2/watch/{id}`
+7. `POST /api/v2/playback/start` · progress · DELETE session _(progress, stop, audio and
+   transcode still call `/api/v1`; v2 playback protocol port pending)_
+8. `GET /api/v2/livetv/channels` · guide · channel session
 
-Device headers: `X-Prairie-Device-Platform: roku`, `X-Prairie-Device-Name: Prairie Roku`.
+Device headers: `X-Prairie-Device-Platform: roku`, `X-Prairie-Device-Name: Prairie Roku`, `X-Prairie-Client-Family: tv`.
 Server `deviceclass` does not yet map `roku` → TV (w200 posters); coordinate adding it.
 Until then the client rewrites Prairie-signed non-original artwork URLs to `/w200.` via `Artwork.preferred(…, 200)`.

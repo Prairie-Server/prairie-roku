@@ -9,11 +9,12 @@
 
 ## Prairie Workspace Context
 
-- `prairie-server` — Go backend and `/api/v1` contracts
+- `prairie-server` — Go backend and `/api/v2` contracts (`contracts/api/v2/openapi.json`)
 - `prairie-smarttv` — Tizen/webOS client; keep feature parity with its 1.0 surface
 - `prairie-apple` / `prairie-android` — mobile/TV clients for behavior reference
 
-Prefer native `/api/v1` over Jellyfin-primary paths.
+Prefer native `/api/v2` over Jellyfin-primary paths. Do not add new `/api/v1` calls;
+v1 is tombstoned on current servers (410).
 
 ## Quality Rules
 

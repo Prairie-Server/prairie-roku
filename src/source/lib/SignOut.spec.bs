@@ -27,7 +27,7 @@ namespace tests
             m.assertEqual(Prairie.SignOut.choiceAt(-1), "cancel")
             m.assertEqual(Prairie.SignOut.dialogTitle(), "Sign Out")
             m.assertTrue(Prairie.SignOut.dialogMessage().len() > 0)
-            m.assertEqual(Prairie.SignOut.logoutPath(), "/api/v1/auth/logout")
+            m.assertEqual(Prairie.SignOut.logoutPath(), "/api/v2/auth/logout")
             m.assertEqual(Prairie.SignOut.logoutTimeoutMs(), 5000)
             m.assertTrue(Prairie.SignOut.sessionChangedMessage().len() > 0)
         end sub

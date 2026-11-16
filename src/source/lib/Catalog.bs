@@ -81,15 +81,15 @@ namespace Prairie.Catalog
         return Prairie.Api.buildRequest(options, "/api/v2/catalog/query", "POST", FormatJson(body))
     end function
     function itemDetailPath(contentId as string) as string
-        return "/api/v1/catalog/items/" + contentId.encodeUriComponent()
+        return "/api/v2/catalog/items/" + contentId.encodeUriComponent()
     end function
 
     function seasonsPath(seriesId as string) as string
-        return "/api/v1/catalog/series/" + seriesId.encodeUriComponent() + "/seasons"
+        return "/api/v2/catalog/series/" + seriesId.encodeUriComponent() + "/seasons"
     end function
 
     function episodesPath(seriesId as string, seasonNumber as integer) as string
-        return "/api/v1/catalog/series/" + seriesId.encodeUriComponent() + "/seasons/" + seasonNumber.toStr() + "/episodes"
+        return "/api/v2/catalog/series/" + seriesId.encodeUriComponent() + "/seasons/" + seasonNumber.toStr() + "/episodes"
     end function
 
     ' GET /api/v2/recommendations/similar/{item_id} (the More Like This rail).
@@ -214,11 +214,21 @@ namespace Prairie.Catalog
         return arrayFromResponse(data, "items")
     end function
 
+    ' v2 season and episode lists come wrapped in "items"; the older
+    ' "seasons" / "episodes" keys are still read.
     function seasonsFromResponse(data as dynamic) as object
+        items = arrayFromResponse(data, "items")
+        if items.count() > 0
+            return items
+        end if
         return arrayFromResponse(data, "seasons")
     end function
 
     function episodesFromResponse(data as dynamic) as object
+        items = arrayFromResponse(data, "items")
+        if items.count() > 0
+            return items
+        end if
         return arrayFromResponse(data, "episodes")
     end function
 

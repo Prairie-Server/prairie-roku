@@ -5,10 +5,10 @@ namespace tests
         @describe("isAuthLoginPath")
         @it("detects login paths with query and trailing slash")
         sub _()
-            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v1/auth/login"))
-            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v1/auth/login/"))
-            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v1/auth/login?x=1"))
-            m.assertFalse(Prairie.Api.isAuthLoginPath("/api/v1/profiles"))
+            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v2/auth/login"))
+            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v2/auth/login/"))
+            m.assertTrue(Prairie.Api.isAuthLoginPath("/api/v2/auth/login?x=1"))
+            m.assertFalse(Prairie.Api.isAuthLoginPath("/api/v2/profiles"))
         end sub
 
         @describe("shouldNotifyUnauthorized")
@@ -40,6 +40,7 @@ namespace tests
             m.assertEqual(headers["X-Profile-Token"], "pt")
             m.assertEqual(headers["Content-Type"], "application/json")
             m.assertEqual(headers["X-Prairie-Device-Platform"], "roku")
+            m.assertEqual(headers["X-Prairie-Client-Family"], "tv")
             formats = headers["X-Prairie-Image-Formats"]
             m.assertTrue(formats = "webp,png" or formats = "png")
         end sub
@@ -91,15 +92,15 @@ namespace tests
             req = Prairie.Api.buildRequest({
                 serverUrl: "https://prairie.example.com/",
                 accessToken: "tok"
-            }, "/api/v1/home/sections", "get", invalid)
-            m.assertEqual(req.url, "https://prairie.example.com/api/v1/home/sections")
+            }, "/api/v2/home/sections", "get", invalid)
+            m.assertEqual(req.url, "https://prairie.example.com/api/v2/home/sections")
             m.assertEqual(req.method, "GET")
             m.assertInvalid(req.headers["Content-Type"])
 
             posted = Prairie.Api.buildRequest({
                 serverUrl: "https://prairie.example.com",
                 accessToken: "tok"
-            }, "/api/v1/auth/login", "POST", "{}")
+            }, "/api/v2/auth/login", "POST", "{}")
             m.assertEqual(posted.headers["Content-Type"], "application/json")
             m.assertEqual(posted.body, "{}")
             m.assertEqual(posted.timeoutMs, Prairie.Api.defaultTimeoutMs())
