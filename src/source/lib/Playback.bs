@@ -5,11 +5,13 @@ import "pkg:/source/lib/QualityLadder.bs"
 namespace Prairie.Playback
 
     function startPath() as string
-        return "/api/v1/playback/start"
+        return "/api/v2/playback/start"
     end function
 
-    function transcodeStartPath() as string
-        return "/api/v1/playback/transcode/start"
+    ' GET; its installation_id must accompany every v2 start, replan,
+    ' progress and stop (409 installation_changed when it differs).
+    function capabilitiesPath() as string
+        return "/api/v2/playback/capabilities"
     end function
 
     function qualityLadderPath() as string
@@ -17,15 +19,56 @@ namespace Prairie.Playback
     end function
 
     function progressPath(sessionId as string) as string
-        return "/api/v1/playback/" + sessionId.encodeUriComponent() + "/progress"
+        return sessionPath(sessionId) + "/progress"
     end function
 
+    ' DELETE with a PlaybackStopBody stops the session.
     function sessionPath(sessionId as string) as string
-        return "/api/v1/playback/" + sessionId.encodeUriComponent()
+        return "/api/v2/playback/" + sessionId.encodeUriComponent()
     end function
 
-    function audioPath(sessionId as string) as string
+    ' Quality and audio changes both replan in v2.
+    function replanPath(sessionId as string) as string
+        return sessionPath(sessionId) + "/replan"
+    end function
+
+    ' Legacy v1 routes, used only by a session that came from the
+    ' /api/v1/playback/start fallback (servers without v2 playback).
+    ' v2 has no transcode/start or audio PATCH.
+    function legacyTranscodeStartPath() as string
+        return "/api/v1/playback/transcode/start"
+    end function
+
+    function legacyAudioPath(sessionId as string) as string
         return "/api/v1/playback/" + sessionId.encodeUriComponent() + "/audio"
+    end function
+
+    function legacyReplanPath(sessionId as string) as string
+        return "/api/v1/playback/" + sessionId.encodeUriComponent() + "/replan"
+    end function
+
+    function installationIdFromCapabilities(data as dynamic) as string
+        if data = invalid or type(data) <> "roAssociativeArray" or data.installation_id = invalid
+            return ""
+        end if
+        return (data.installation_id as string).trim()
+    end function
+
+    ' Next progress sequence for this session (1, 2, ...). The server refuses
+    ' a lower sequence as stale, so the counter lives on the playback object.
+    function nextSequence(playback as object) as integer
+        current = 0
+        if playback.progress_sequence <> invalid
+            current = playback.progress_sequence as integer
+        end if
+        current = current + 1
+        playback.progress_sequence = current
+        return current
+    end function
+
+    ' Canonical lowercase UUID; the server rejects any other stop_id form.
+    function newStopId() as string
+        return LCase(CreateObject("roDeviceInfo").GetRandomUUID())
     end function
 
     function defaultCapabilities() as object
@@ -61,6 +104,9 @@ namespace Prairie.Playback
             client_capabilities: buildClientCapabilities(caps),
             client_playback_context: buildClientPlaybackContext()
         }
+        if input.installationId <> invalid and (input.installationId as string).len() > 0
+            body.installation_id = input.installationId as string
+        end if
         if input.qualityPreference <> invalid and (input.qualityPreference as string).len() > 0
             body.quality_preference = input.qualityPreference as string
         end if
@@ -209,8 +255,12 @@ namespace Prairie.Playback
             end if
         end if
         audioIndex = 0
+        selectedAudio = invalid
         if plan.selected_tracks <> invalid and plan.selected_tracks.audio <> invalid and plan.selected_tracks.audio.index <> invalid
             audioIndex = plan.selected_tracks.audio.index as integer
+            if plan.selected_tracks.audio.id <> invalid
+                selectedAudio = { id: plan.selected_tracks.audio.id as string, index: audioIndex }
+            end if
         end if
         duration = invalid
         if plan.source <> invalid and plan.source.duration_seconds <> invalid
@@ -242,6 +292,7 @@ namespace Prairie.Playback
             is_paused: false,
             stream_url: streamUrl,
             audio_track_index: audioIndex,
+            selected_audio: selectedAudio,
             duration_seconds: duration,
             effective_height: effectiveHeight,
             playback_info: {
@@ -259,14 +310,43 @@ namespace Prairie.Playback
         }
     end function
 
+    ' Quality change: keeps the current audio track.
     function buildReplanBody(playback as object, qualityPreference as string, positionSeconds as float) as string
+        selectedTracks = {}
+        if playback.audio_track_index <> invalid
+            selectedTracks.audio = audioTrackIdentity(playback, playback.audio_track_index as integer)
+        end if
+        return replanBody(playback, "quality_change", qualityPreference, positionSeconds, selectedTracks)
+    end function
+
+    ' Audio change (v2 has no audio PATCH): a track_change replan at the
+    ' current quality.
+    function buildAudioReplanBody(playback as object, audioTrackIndex as integer, qualityPreference as string, positionSeconds as float) as string
+        return replanBody(playback, "track_change", qualityPreference, positionSeconds, { audio: audioTrackIdentity(playback, audioTrackIndex) })
+    end function
+
+    ' The plan's own identity when the index matches, else the stable
+    ' "file:{id}:audio:{index}" form the other clients use.
+    function audioTrackIdentity(playback as object, audioTrackIndex as integer) as object
+        selected = playback.selected_audio
+        if selected <> invalid and selected.index <> invalid and (selected.index as integer) = audioTrackIndex
+            return { id: selected.id as string, index: audioTrackIndex }
+        end if
+        fileId = ""
+        if playback.media_file_id <> invalid
+            fileId = (playback.media_file_id as integer).toStr()
+        end if
+        return { id: "file:" + fileId + ":audio:" + audioTrackIndex.toStr(), index: audioTrackIndex }
+    end function
+
+    function replanBody(playback as object, operation as string, qualityPreference as string, positionSeconds as float, selectedTracks as object) as string
         attemptId = playback.playback_attempt_id as string
         planId = playback.plan_id as string
         planKey = playback.plan_attempt_key as string
         body = {
             protocol_version: 3,
             client_features: ["playback_plan_v3", "neutral_playback_v3_contract_v1", "embedded_subtitles_v1"],
-            operation: "quality_change",
+            operation: operation,
             playback_attempt_id: attemptId,
             replan_request_id: newRequestId(),
             failed_plan_id: planId,
@@ -277,10 +357,13 @@ namespace Prairie.Playback
             quality_preference: qualityPreference,
             position_seconds: positionSeconds,
             metered: false,
-            selected_tracks: {},
+            selected_tracks: selectedTracks,
             client_capabilities: buildClientCapabilities(defaultCapabilities()),
             client_playback_context: buildClientPlaybackContext()
         }
+        if playback.installation_id <> invalid and (playback.installation_id as string).len() > 0
+            body.installation_id = playback.installation_id as string
+        end if
         return FormatJson(body)
     end function
 
@@ -311,6 +394,9 @@ namespace Prairie.Playback
             end if
         end if
         nextPlayback.attempted_plan_keys = keys
+        ' Session-scoped state the replan response does not repeat.
+        nextPlayback.installation_id = playback.installation_id
+        nextPlayback.progress_sequence = playback.progress_sequence
         return nextPlayback
     end function
 
@@ -382,11 +468,28 @@ namespace Prairie.Playback
         return FormatJson(body)
     end function
 
-    function buildProgressBody(position as float, isPaused as boolean) as string
+    function buildProgressBody(installationId as string, sequence as integer, position as float, isPaused as boolean) as string
         return FormatJson({
+            installation_id: installationId,
+            sequence: sequence,
             position: position,
             is_paused: isPaused
         })
+    end function
+
+    ' DELETE /api/v2/playback/{id} body. The server wants position exactly
+    ' when sequence > 0; sequence 0 sends no final sample.
+    function buildStopBody(installationId as string, stopId as string, sequence as integer, position as float, isPaused as boolean) as string
+        body = {
+            installation_id: installationId,
+            stop_id: stopId
+        }
+        if sequence > 0
+            body.sequence = sequence
+            body.position = position
+            body.is_paused = isPaused
+        end if
+        return FormatJson(body)
     end function
 
     function buildAudioBody(audioTrackIndex as integer, position as float) as string

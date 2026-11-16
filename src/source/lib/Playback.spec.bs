@@ -5,10 +5,13 @@ namespace tests
         @describe("paths and bodies")
         @it("builds start/progress/audio payloads and paths")
         sub _()
-            m.assertEqual(Prairie.Playback.startPath(), "/api/v1/playback/start")
-            m.assertEqual(Prairie.Playback.transcodeStartPath(), "/api/v1/playback/transcode/start")
-            m.assertTrue(Prairie.Playback.progressPath("ab/c").instr("ab%2Fc") >= 0)
-            m.assertTrue(Prairie.Playback.sessionPath("s1").instr("/api/v1/playback/s1") >= 0)
+            m.assertEqual(Prairie.Playback.startPath(), "/api/v2/playback/start")
+            m.assertEqual(Prairie.Playback.capabilitiesPath(), "/api/v2/playback/capabilities")
+            m.assertEqual(Prairie.Playback.progressPath("ab/c"), "/api/v2/playback/ab%2Fc/progress")
+            m.assertEqual(Prairie.Playback.sessionPath("s1"), "/api/v2/playback/s1")
+            m.assertEqual(Prairie.Playback.replanPath("s/1"), "/api/v2/playback/s%2F1/replan")
+            m.assertEqual(Prairie.Playback.legacyTranscodeStartPath(), "/api/v1/playback/transcode/start")
+            m.assertEqual(Prairie.Playback.legacyReplanPath("s/1"), "/api/v1/playback/s%2F1/replan")
             body = ParseJson(Prairie.Playback.buildStartBody({
                 fileId: 9,
                 profileId: "p1",
@@ -19,6 +22,13 @@ namespace tests
             m.assertEqual(body.file_id, 9)
             m.assertEqual(body.profile_id, "p1")
             m.assertEqual(body.quality_preference, "original")
+            m.assertInvalid(body.installation_id)
+            withInstall = ParseJson(Prairie.Playback.buildStartBody({
+                fileId: 9,
+                profileId: "p1",
+                installationId: "inst-1"
+            }))
+            m.assertEqual(withInstall.installation_id, "inst-1")
             preferred = ParseJson(Prairie.Playback.buildStartBody({
                 fileId: 9,
                 profileId: "p1",
@@ -35,7 +45,9 @@ namespace tests
             m.assertEqual(body.client_playback_context.protocol_version, 3)
             m.assertEqual(body.client_playback_context.device.platform, "roku")
             m.assertEqual(body.start_position, 30)
-            progress = ParseJson(Prairie.Playback.buildProgressBody(12.5, true))
+            progress = ParseJson(Prairie.Playback.buildProgressBody("inst-1", 3, 12.5, true))
+            m.assertEqual(progress.installation_id, "inst-1")
+            m.assertEqual(progress.sequence, 3)
             m.assertEqual(progress.position, 12.5)
             m.assertTrue(progress.is_paused)
             remux = ParseJson(Prairie.Playback.buildTranscodeStartBody({
@@ -108,7 +120,7 @@ namespace tests
             m.assertTrue(manifestUrl.instr("master.m3u8") >= 0)
             audio = ParseJson(Prairie.Playback.buildAudioBody(2, 15.0))
             m.assertEqual(audio.audio_track_index, 2)
-            m.assertEqual(Prairie.Playback.audioPath("s/1").instr("s%2F1") >= 0, true)
+            m.assertEqual(Prairie.Playback.legacyAudioPath("s/1"), "/api/v1/playback/s%2F1/audio")
             applied = Prairie.Playback.applyTranscodeResponse({
                 session_id: "s1",
                 stream_url: "/placeholder",
@@ -210,6 +222,18 @@ namespace tests
             m.assertEqual(replan.plan_attempt_key, "v3:plan-12345678")
             m.assertEqual(replan.quality_preference, "720p")
             m.assertEqual(replan.position_seconds, 120)
+            m.assertInvalid(replan.installation_id)
+            m.assertEqual(replan.selected_tracks.audio.id, "a1")
+            m.assertEqual(replan.selected_tracks.audio.index, 2)
+
+            playback.installation_id = "inst-1"
+            playback.progress_sequence = 4
+            audioReplan = ParseJson(Prairie.Playback.buildAudioReplanBody(playback, 1, "auto", 30.0))
+            m.assertEqual(audioReplan.operation, "track_change")
+            m.assertEqual(audioReplan.installation_id, "inst-1")
+            m.assertEqual(audioReplan.quality_preference, "auto")
+            m.assertEqual(audioReplan.selected_tracks.audio.id, "file:9:audio:1")
+            m.assertEqual(audioReplan.selected_tracks.audio.index, 1)
 
             updated = Prairie.Playback.applyReplanResponse(playback, {
                 protocol_version: 3,
@@ -230,6 +254,49 @@ namespace tests
             m.assertEqual(updated.effective_height, 720)
             m.assertEqual(updated.play_method, "transcode")
             m.assertEqual(updated.attempted_plan_keys.count(), 2)
+            m.assertEqual(updated.installation_id, "inst-1")
+            m.assertEqual(updated.progress_sequence, 4)
+        end sub
+
+        @describe("v2 session state")
+        @it("reads installation id, numbers progress and builds stop bodies")
+        sub _()
+            m.assertEqual(Prairie.Playback.installationIdFromCapabilities({ installation_id: " inst-1 " }), "inst-1")
+            m.assertEqual(Prairie.Playback.installationIdFromCapabilities({}), "")
+            m.assertEqual(Prairie.Playback.installationIdFromCapabilities(invalid), "")
+
+            playback = {}
+            m.assertEqual(Prairie.Playback.nextSequence(playback), 1)
+            m.assertEqual(Prairie.Playback.nextSequence(playback), 2)
+            m.assertEqual(playback.progress_sequence, 2)
+
+            stopId = Prairie.Playback.newStopId()
+            m.assertEqual(stopId.len(), 36)
+            m.assertEqual(stopId, LCase(stopId))
+            m.assertNotEqual(stopId, Prairie.Playback.newStopId())
+
+            final = ParseJson(Prairie.Playback.buildStopBody("inst-1", "stop-1", 5, 42.5, false))
+            m.assertEqual(final.installation_id, "inst-1")
+            m.assertEqual(final.stop_id, "stop-1")
+            m.assertEqual(final.sequence, 5)
+            m.assertEqual(final.position, 42.5)
+            m.assertFalse(final.is_paused)
+            bare = ParseJson(Prairie.Playback.buildStopBody("inst-1", "stop-2", 0, 0.0, false))
+            m.assertEqual(bare.stop_id, "stop-2")
+            m.assertInvalid(bare.sequence)
+            m.assertInvalid(bare.position)
+            m.assertInvalid(bare.is_paused)
+
+            ' Plan identity is used only when its index matches.
+            planned = { selected_audio: { id: "a1", index: 2 }, media_file_id: 7 }
+            m.assertEqual(Prairie.Playback.audioTrackIdentity(planned, 2).id, "a1")
+            m.assertEqual(Prairie.Playback.audioTrackIdentity(planned, 0).id, "file:7:audio:0")
+            noAudio = ParseJson(Prairie.Playback.buildReplanBody({
+                playback_attempt_id: "a",
+                plan_id: "p",
+                plan_attempt_key: "k"
+            }, "auto", 0.0))
+            m.assertInvalid(noAudio.selected_tracks.audio)
         end sub
 
     end class
