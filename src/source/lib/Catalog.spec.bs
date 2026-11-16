@@ -29,7 +29,7 @@ namespace tests
         @it("encodes seasons and episodes path segments")
         sub _()
             seasons = Prairie.Catalog.seasonsPath("show/1")
-            m.assertTrue(seasons.instr("/api/v1/catalog/series/") = 0)
+            m.assertTrue(seasons.instr("/api/v2/catalog/series/") = 0)
             m.assertTrue(seasons.instr("show%2F1") >= 0)
             m.assertTrue(seasons.right(8) = "/seasons")
             episodes = Prairie.Catalog.episodesPath("show/1", 2)
@@ -45,6 +45,8 @@ namespace tests
             m.assertEqual(Prairie.Catalog.seasonsFromResponse({ seasons: [1] }).count(), 1)
             m.assertEqual(Prairie.Catalog.seasonsFromResponse([1, 2]).count(), 2)
             m.assertEqual(Prairie.Catalog.episodesFromResponse({ episodes: [1] }).count(), 1)
+            m.assertEqual(Prairie.Catalog.seasonsFromResponse({ items: [1, 2, 3] }).count(), 3)
+            m.assertEqual(Prairie.Catalog.episodesFromResponse({ items: [1, 2] }).count(), 2)
             m.assertEqual(Prairie.Catalog.itemsFromResponse("nope").count(), 0)
         end sub
 

@@ -1,7 +1,7 @@
 namespace Prairie.Libraries
 
     function librariesPath() as string
-        return "/api/v1/user/libraries"
+        return "/api/v2/user/libraries"
     end function
 
     function librariesFromResponse(data as dynamic) as object
@@ -11,6 +11,9 @@ namespace Prairie.Libraries
         end if
         if GetInterface(data, "ifArray") <> invalid
             raw = data
+        else if type(data) = "roAssociativeArray" and type(data.items) = "roArray"
+            ' GET /api/v2/user/libraries wraps the list in "items".
+            raw = data.items
         else if type(data) = "roAssociativeArray" and type(data.libraries) = "roArray"
             raw = data.libraries
         else
@@ -33,9 +36,7 @@ namespace Prairie.Libraries
             type: "",
             poster_url: ""
         }
-        if entry.id <> invalid
-            library.id = entry.id as integer
-        end if
+        library.id = idFromValue(entry.id)
         if entry.name <> invalid and (entry.name as string).len() > 0
             library.name = entry.name as string
         end if
@@ -46,6 +47,22 @@ namespace Prairie.Libraries
             library.poster_url = entry.poster_url as string
         end if
         return library
+    end function
+
+    ' v2 sends library ids as strings ("3"); the rest of the client keys
+    ' libraries by integer id (catalog filters, collection paths).
+    function idFromValue(value as dynamic) as integer
+        if value = invalid
+            return 0
+        end if
+        kind = LCase(type(value))
+        if kind = "string" or kind = "rostring"
+            return (value as string).trim().toInt()
+        end if
+        if kind = "integer" or kind = "roint" or kind = "rointeger" or kind = "longinteger" or kind = "rolonginteger" or kind = "float" or kind = "rofloat" or kind = "double" or kind = "rodouble"
+            return Int(value)
+        end if
+        return 0
     end function
 
 end namespace

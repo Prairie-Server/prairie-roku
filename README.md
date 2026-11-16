@@ -1,7 +1,10 @@
 # Prairie Roku
 
 AGPL-3.0 client for **Roku** (BrightScript / SceneGraph) that talks to Prairie over
-native `/api/v1` (not Jellyfin-primary).
+native `/api/v2` (not Jellyfin-primary). The only `/api/v1` calls left are the
+LAN discovery probe (`/api/v1/health`) and playback (start fallback for older
+servers, progress, stop, audio and transcode), which still need the v2
+playback-protocol port.
 
 **Version 1.0.0** — Prairie Dusk UI: deep slate `#141820`, amber `#e0a84a`.
 

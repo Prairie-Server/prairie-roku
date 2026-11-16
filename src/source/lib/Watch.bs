@@ -1,7 +1,7 @@
 namespace Prairie.Watch
 
     function watchPath(contentId as string) as string
-        return "/api/v1/watch/" + contentId.encodeUriComponent()
+        return "/api/v2/watch/" + contentId.encodeUriComponent()
     end function
 
     function selectPlaybackFileId(watch as object, preferredFileId = invalid as dynamic) as dynamic

@@ -12,7 +12,11 @@ namespace tests
             m.assertEqual(wrapped.count(), 1)
             m.assertEqual(wrapped[0].name, "Library")
             m.assertEqual(Prairie.Libraries.librariesFromResponse(invalid).count(), 0)
-            m.assertEqual(Prairie.Libraries.librariesPath(), "/api/v1/user/libraries")
+            v2 = Prairie.Libraries.librariesFromResponse({ items: [{ id: "7", name: "Shows", type: "series" }], page: {} })
+            m.assertEqual(v2.count(), 1)
+            m.assertEqual(v2[0].id, 7)
+            m.assertEqual(v2[0].name, "Shows")
+            m.assertEqual(Prairie.Libraries.librariesPath(), "/api/v2/user/libraries")
         end sub
 
     end class
