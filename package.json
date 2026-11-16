@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@rokucommunity/bslint": "1.0.0-alpha.58",
-    "brighterscript": "1.0.0-alpha.57",
+    "brighterscript": "1.0.0-alpha.58",
     "brs-node": "2.6.1",
     "prettier": "3.9.10",
     "rimraf": "6.1.3",

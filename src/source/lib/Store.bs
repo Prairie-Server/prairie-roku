@@ -4,11 +4,11 @@ namespace Prairie.Store
     ' Set failWrites to true to make setItem report a failed save.
     function createMemoryStore() as object
         return {
-            values: {},
+            entries: {},
             failWrites: false,
             getItem: function(key as string) as dynamic
-                if m.values.doesExist(key)
-                    return m.values[key]
+                if m.entries.doesExist(key)
+                    return m.entries[key]
                 end if
                 return invalid
             end function,
@@ -17,12 +17,12 @@ namespace Prairie.Store
                 if m.failWrites = true
                     return false
                 end if
-                m.values[key] = value
+                m.entries[key] = value
                 return true
             end function,
             removeItem: sub(key as string)
-                if m.values.doesExist(key)
-                    m.values.delete(key)
+                if m.entries.doesExist(key)
+                    m.entries.delete(key)
                 end if
             end sub
         }
